@@ -29,6 +29,10 @@ PadAction standard_pad_action(PadControl control, const PadConsole& console) {
             return console.has_zl_zr || console.game_uses_every_control ? PadAction::Zr : PadAction::Nothing;
         case PadControl::Plus: return PadAction::Start;
         case PadControl::Minus: return PadAction::Select;
+        case PadControl::Up: return PadAction::Up;
+        case PadControl::Down: return PadAction::Down;
+        case PadControl::Left: return PadAction::Left;
+        case PadControl::Right: return PadAction::Right;
         case PadControl::LeftStick:
             if (console.game_uses_every_control) return PadAction::LeftStickButton;
             // Swapping screens is also in the quick menu, a press away, while
@@ -148,18 +152,22 @@ bool pad_action_is_shortcut(PadAction action) {
 
 const char* pad_control_name(PadControl control) {
     switch (control) {
-        case PadControl::A: return "A";
-        case PadControl::B: return "B";
-        case PadControl::X: return "X";
-        case PadControl::Y: return "Y";
-        case PadControl::L: return "L";
-        case PadControl::R: return "R";
-        case PadControl::Zl: return "ZL";
-        case PadControl::Zr: return "ZR";
-        case PadControl::Plus: return "Plus";
-        case PadControl::Minus: return "Minus";
+        case PadControl::A: return "A Button";
+        case PadControl::B: return "B Button";
+        case PadControl::X: return "X Button";
+        case PadControl::Y: return "Y Button";
+        case PadControl::L: return "L Button";
+        case PadControl::R: return "R Button";
+        case PadControl::Zl: return "ZL Button";
+        case PadControl::Zr: return "ZR Button";
+        case PadControl::Plus: return "Plus Button";
+        case PadControl::Minus: return "Minus Button";
         case PadControl::LeftStick: return "Left Stick Button";
         case PadControl::RightStick: return "Right Stick Button";
+        case PadControl::Up: return "Up Button";
+        case PadControl::Down: return "Down Button";
+        case PadControl::Left: return "Left Button";
+        case PadControl::Right: return "Right Button";
         case PadControl::Count: break;
     }
     return "?";
@@ -168,24 +176,24 @@ const char* pad_control_name(PadControl control) {
 const char* pad_action_name(PadAction action) {
     switch (action) {
         case PadAction::Standard: return "Standard";
-        case PadAction::A: return "A";
-        case PadAction::B: return "B";
-        case PadAction::X: return "X";
-        case PadAction::Y: return "Y";
-        case PadAction::L: return "L";
-        case PadAction::R: return "R";
-        case PadAction::Zl: return "ZL";
-        case PadAction::Zr: return "ZR";
-        case PadAction::Start: return "Start";
-        case PadAction::Select: return "Select";
-        case PadAction::Up: return "Up";
-        case PadAction::Down: return "Down";
-        case PadAction::Left: return "Left";
-        case PadAction::Right: return "Right";
+        case PadAction::A: return "A Button";
+        case PadAction::B: return "B Button";
+        case PadAction::X: return "X Button";
+        case PadAction::Y: return "Y Button";
+        case PadAction::L: return "L Button";
+        case PadAction::R: return "R Button";
+        case PadAction::Zl: return "ZL Button";
+        case PadAction::Zr: return "ZR Button";
+        case PadAction::Start: return "Start Button";
+        case PadAction::Select: return "Select Button";
+        case PadAction::Up: return "Up Button";
+        case PadAction::Down: return "Down Button";
+        case PadAction::Left: return "Left Button";
+        case PadAction::Right: return "Right Button";
         case PadAction::LeftStickButton: return "Left Stick Button";
         case PadAction::RightStickButton: return "Right Stick Button";
         case PadAction::TouchCursor: return "Activate Touch Cursor";
-        case PadAction::QuickMenu: return "Quick Menu";
+        case PadAction::QuickMenu: return "Open Menu";
         case PadAction::SwapScreens: return "Swap Screens";
         case PadAction::ScreenSmoothing: return "Screen Smoothing";
         case PadAction::BlowIntoMic: return "Blow into Mic";
@@ -254,6 +262,10 @@ const char* pad_control_key(PadControl control) {
         case PadControl::Minus: return "minus";
         case PadControl::LeftStick: return "l3";
         case PadControl::RightStick: return "r3";
+        case PadControl::Up: return "up";
+        case PadControl::Down: return "down";
+        case PadControl::Left: return "left";
+        case PadControl::Right: return "right";
         case PadControl::Count: break;
     }
     return "";

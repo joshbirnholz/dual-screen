@@ -12,22 +12,32 @@
 
 namespace ds {
 
-// The controls on a player's pad that Button Mapping can give another job, in
-// the order it lists them. Named for where they sit on a Nintendo pad -- A is
-// the east face button -- the same positions the rest of this app reads them
-// by (see kFaceButtonsByPosition).
+// The controls on a player's pad that Button Mapping can give another job.
+// Named for where they sit on a Nintendo pad -- A is the east face button --
+// the same positions the rest of this app reads them by (see
+// kFaceButtonsByPosition). Sent over the wire by number, so new ones go at
+// the end; kPadControlRows is the order the page lists them in.
 //
-// The d-pad and the sticks are not among them: the d-pad is the d-pad, the
-// left stick moves as it does, and what the right stick does is Right
-// Stick's. Their presses are, since those are buttons like any other.
+// The sticks are not among them: the left stick moves as it does, and what
+// the right stick does is Right Stick's. Their presses are, since those are
+// buttons like any other, and so is each of the d-pad's directions.
 enum class PadControl : uint8_t {
     A, B, X, Y,
     L, R, Zl, Zr,
     Plus, Minus,
     LeftStick, RightStick,
+    Up, Down, Left, Right,
     Count,
 };
 inline constexpr std::size_t kPadControls = static_cast<std::size_t>(PadControl::Count);
+// The page's rows, top to bottom: the face buttons, the d-pad, the
+// shoulders, Plus and Minus, the stick presses.
+inline constexpr std::array<PadControl, kPadControls> kPadControlRows = {
+    PadControl::A,  PadControl::B,     PadControl::X,         PadControl::Y,
+    PadControl::Up, PadControl::Down,  PadControl::Left,      PadControl::Right,
+    PadControl::L,  PadControl::R,     PadControl::Zl,        PadControl::Zr,
+    PadControl::Plus, PadControl::Minus, PadControl::LeftStick, PadControl::RightStick,
+};
 
 // What a control does. Saved by key and sent over the wire by number, so the
 // numbers are part of the protocol: new ones go at the end.
@@ -100,8 +110,9 @@ struct TouchSpot {
 // changed.
 struct ButtonMapping {
     std::array<PadAction, kPadControls> actions{};
-    // For a control that is Turbo, the console button it presses; Standard
-    // while none has been chosen, which presses nothing.
+    // For a control that is Turbo, the console button it presses, or
+    // TouchPoint for its spot touched over and over; Standard while none has
+    // been chosen, which presses nothing.
     std::array<PadAction, kPadControls> turbo_of{};
     // For a control that is Touch Point, where it touches. Kept when the
     // control is given another job, to be where it was if it is put back.
@@ -126,7 +137,7 @@ struct ButtonMapping {
 };
 
 // What Button Mapping's picker offers, in its order: the console's buttons,
-// then this app's, then Nothing. Only what the console has -- a DS has no ZL
+// then the touch screen's and this app's, then Nothing -- one list. Only what the console has -- a DS has no ZL
 // and no Touch Cursor tip without a Touch Cursor.
 std::vector<PadAction> pad_action_choices(const PadConsole& console);
 // What Turbo can press: the console's own buttons.
@@ -135,7 +146,8 @@ std::vector<PadAction> turbo_choices(const PadConsole& console);
 // second, a little slower than a game reads its buttons, so none is missed.
 bool turbo_down_at(uint32_t ms);
 
-// Where a choice is in the picker, for the heading it goes under.
+// What kind of thing a choice is: one of the console's buttons, a touch, or
+// this app's own.
 enum class PadActionGroup { Console, TouchScreen, Dualscreen };
 PadActionGroup pad_action_group(PadAction action);
 

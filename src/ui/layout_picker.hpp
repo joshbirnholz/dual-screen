@@ -179,7 +179,7 @@ struct LayoutPickerState {
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
     std::vector<RightStickMode> right_stick_modes;
-    // A DS or 3DS game's Change Button Mapping, at the top of Controls.
+    // A DS or 3DS game's Change Controls, at the top of Controls.
     bool button_mapping_available = false;
     // A Rumble Pak in a DS's GBA slot, and whether that is on offer at all:
     // only where the core running the game can put one there. Nothing says

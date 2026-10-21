@@ -1299,6 +1299,10 @@ uint32_t InputManager::controls_held_in(const RawPadState& raw) const {
         {SDL_CONTROLLER_BUTTON_BACK, PadControl::Minus},
         {SDL_CONTROLLER_BUTTON_LEFTSTICK, PadControl::LeftStick},
         {SDL_CONTROLLER_BUTTON_RIGHTSTICK, PadControl::RightStick},
+        {SDL_CONTROLLER_BUTTON_DPAD_UP, PadControl::Up},
+        {SDL_CONTROLLER_BUTTON_DPAD_DOWN, PadControl::Down},
+        {SDL_CONTROLLER_BUTTON_DPAD_LEFT, PadControl::Left},
+        {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PadControl::Right},
     };
     uint32_t held = 0;
     for (const auto& [button, control] : kButtons) {
@@ -1325,16 +1329,7 @@ PadConsole InputManager::pad_console() const {
 DsInputState InputManager::held_state_from(const RawPadState& raw) const {
     DsInputState held;
 
-    // The d-pad is the d-pad, whatever else is mapped.
-    for (const SDL_GameControllerButton button :
-         {SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
-          SDL_CONTROLLER_BUTTON_DPAD_RIGHT}) {
-        DsButton ds_button = DsButton::A;
-        if (raw.buttons[button] && ds_button_for_controller_button(button, ds_button)) {
-            held.set(ds_button, true);
-        }
-    }
-    // Every other button is whatever this game's Button Mapping makes it --
+    // Every button, the d-pad's directions among them, is whatever this game's Button Mapping makes it --
     // see ButtonMapping. This app's own shortcuts are pressed rather than
     // held, and are raised in end_frame().
     const uint32_t controls = controls_held_in(raw);
@@ -1636,8 +1631,12 @@ void InputManager::end_frame(const Layout& layout,
             const PadConsole console = pad_console();
             for (std::size_t index = 0; index < kPadControls; ++index) {
                 const PadControl control = static_cast<PadControl>(index);
-                if ((touching_controls_ & control_bit(control)) == 0 ||
-                    button_mapping_.resolved(control, console) != PadAction::TouchPoint) {
+                if ((touching_controls_ & control_bit(control)) == 0) continue;
+                // Or on turbo, touches and lets go over and over.
+                const PadAction action = button_mapping_.resolved(control, console);
+                const bool turbo_touch = action == PadAction::Turbo &&
+                                         button_mapping_.turbo(control) == PadAction::TouchPoint;
+                if (action != PadAction::TouchPoint && !(turbo_touch && turbo_down_at(SDL_GetTicks()))) {
                     continue;
                 }
                 const TouchSpot& spot = button_mapping_.spot(control);

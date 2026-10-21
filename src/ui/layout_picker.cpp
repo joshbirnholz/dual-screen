@@ -296,7 +296,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
         case Option::ControllerOrder: return "Controller Order";
-        case Option::ButtonMapping: return "Change Button Mapping";
+        case Option::ButtonMapping: return "Change Controls";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;

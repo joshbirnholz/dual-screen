@@ -30,14 +30,14 @@ struct ButtonMappingScreenResult {
     std::optional<ButtonMapping> changed;
 };
 
-// A DS or 3DS game's Button Mapping, from Controls in its quick menu: each of
-// the pad's buttons down the left with what it does, and on the right the
-// console, the button the highlighted one presses picked out on it. A picks
-// another job for it from a list beside its row -- the console's buttons,
-// then this app's -- X puts every button back to the standard mapping, after
-// asking, and B goes back to the menu. Turbo asks next which button it
-// presses, and Touch Point where on the touch screen it touches, on the
-// paused game's own touch screen.
+// A DS or 3DS game's Change Controls, from Controls in its quick menu: each of
+// the pad's buttons down the left as its icon, with what it does, and on the
+// right the console, the button the highlighted one presses picked out on
+// it. A picks another job for it from one list beside its row -- the
+// console's buttons, then the rest -- Y puts a console button or Touch Point
+// on turbo or takes it off, X puts every button back to the standard mapping,
+// after asking, and B goes back to the menu. Touch Point asks where on the
+// touch screen it touches, on the paused game's own touch screen.
 //
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
@@ -71,13 +71,13 @@ public:
                 float output_width, float output_height);
     void describe_for_sound(UiSoundView& view) const;
 
-    // The row the cursor is on: a PadControl.
+    // The row the cursor is on: an index into kPadControlRows.
     int focus() const { return focus_; }
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
     int confirm_focus() const { return confirm_cursor_.focus(); }
-    // What a row says it does: "L", say, or "L (turbo)".
+    // What a row says it does: "L Button", say, or "L Button (turbo)".
     std::string action_label(PadControl control) const;
     // A Touch Point being placed, and where so far.
     bool placing() const { return placing_; }
@@ -100,7 +100,7 @@ public:
                        float output_height);
 
     // MenuPage: the list scrolls under a finger, the mouse and the wheel, and
-    // the picker does while it is up. Entries: a row is its PadControl, a
+    // the picker does while it is up. Entries: a row is its index, a
     // choice in the picker kChoiceEntryBase plus its index, a button of
     // Reset to Default's question kConfirmEntryBase plus its, a spot on
     // the touch screen being placed on kSpotEntryBase plus spot_entry(), and
@@ -170,7 +170,7 @@ private:
     std::vector<PopupButton> confirm_buttons() const;
     void handle_tap(int entry, ButtonMappingScreenResult& result, float output_width,
                     float output_height);
-    PadControl focused_control() const { return static_cast<PadControl>(focus_); }
+    PadControl focused_control() const { return kPadControlRows[static_cast<std::size_t>(focus_)]; }
     // What the console is called on the page: "DS", "3DS".
     std::string console_name() const;
     // The words under the console, for what the focused button does: after
@@ -188,7 +188,7 @@ private:
     float scroll_ = 0.0f;
     ListDrag drag_;
     ScrollEase scroll_ease_;
-    // The picker, and what each of its lines is: an action, or a heading.
+    // The picker, and the action each of its lines is.
     ChoicePopup choice_;
     std::vector<PadAction> choice_actions_;
     // Touch Point's page.

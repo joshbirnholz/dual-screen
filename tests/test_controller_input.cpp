@@ -1247,7 +1247,8 @@ void test_holding_a_direction_keeps_moving() {
 
 // A game's Button Mapping decides what each button presses: one moved
 // elsewhere presses only where it was moved to, one made Nothing presses
-// nothing, and a trigger is a button like any other.
+// nothing, and a trigger and each of the d-pad's directions are buttons like
+// any other.
 void test_a_game_can_move_its_buttons() {
     VirtualPad pad;
     if (!pad.attach()) {
@@ -1261,6 +1262,7 @@ void test_a_game_can_move_its_buttons() {
     mapping[PadControl::B] = PadAction::A;
     mapping[PadControl::Zr] = PadAction::X;
     mapping[PadControl::LeftStick] = PadAction::Select;
+    mapping[PadControl::Up] = PadAction::B;
     input.set_button_mapping(mapping);
 
     int swaps = 0;
@@ -1308,6 +1310,17 @@ void test_a_game_can_move_its_buttons() {
     pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
     frame();
     CHECK_EQ(swaps, 0);
+    // Up on the d-pad is B; Down is still Down.
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_UP, true);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, only(DsButton::B));
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_UP, false);
+    frame();
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, only(DsButton::Down));
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false);
+    frame();
 
     input.shutdown();
     pad.detach();

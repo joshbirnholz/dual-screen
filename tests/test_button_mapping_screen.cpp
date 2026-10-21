@@ -1,4 +1,4 @@
-// A DS or 3DS game's Button Mapping page, driven the way a player drives it --
+// A DS or 3DS game's Change Controls page, driven the way a player drives it --
 // presses and taps in, the mapping it asks the game to keep out: the cursor
 // down the list, a button given another job from the picker beside it, the
 // standard job kept as Standard, Reset to Default after asking, and the
@@ -39,26 +39,24 @@ ButtonMappingScreenResult tap_entry(ButtonMappingScreen& screen, int entry) {
     return screen.update({}, {}, kWidth, kHeight);
 }
 
-void move_to(ButtonMappingScreen& screen, PadControl control) {
-    while (screen.focus() > static_cast<int>(control)) press(screen, UiAction::Up);
-    while (screen.focus() < static_cast<int>(control)) press(screen, UiAction::Down);
+// The row `control` is on.
+int row_of(PadControl control) {
+    for (std::size_t row = 0; row < kPadControls; ++row) {
+        if (kPadControlRows[row] == control) return static_cast<int>(row);
+    }
+    return -1;
 }
 
-// Where `action` is in the picker as it is for the focused row: past the
-// headings, which take a line each.
+void move_to(ButtonMappingScreen& screen, PadControl control) {
+    while (screen.focus() > row_of(control)) press(screen, UiAction::Up);
+    while (screen.focus() < row_of(control)) press(screen, UiAction::Down);
+}
+
+// Where `action` is in the picker: one list, no headings.
 int choice_index(const ButtonMappingScreen& screen, PadAction action) {
-    const PadConsole console = ds_console();
-    int index = 0;
-    bool first = true;
-    PadActionGroup group = PadActionGroup::Console;
-    for (const PadAction choice : pad_action_choices(console)) {
-        if (first || pad_action_group(choice) != group) {
-            ++index;
-            group = pad_action_group(choice);
-            first = false;
-        }
-        if (choice == action) return index;
-        ++index;
+    const std::vector<PadAction> choices = pad_action_choices(ds_console());
+    for (std::size_t index = 0; index < choices.size(); ++index) {
+        if (choices[index] == action) return static_cast<int>(index);
     }
     (void)screen;
     return -1;
@@ -94,11 +92,8 @@ void test_a_button_is_given_another_job_and_put_back() {
         CHECK((*changed.changed)[PadControl::Zr] == PadAction::QuickMenu);
         CHECK(!changed.changed->is_standard(ds_console()));
     }
-    // A heading is not a choice.
-    press(screen, UiAction::Confirm);
-    CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase).changed.has_value());
-    CHECK(screen.choosing());
     // Back to Disabled, its standard job, which is kept as Standard.
+    press(screen, UiAction::Confirm);
     const ButtonMappingScreenResult back =
         tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::Nothing));
     CHECK(back.changed.has_value());
@@ -133,10 +128,10 @@ void test_b_puts_the_picker_away_then_leaves() {
 }
 
 void test_revert_asks_first() {
-    // Nothing to put back: X does nothing.
+    // X asks even with nothing to put back, as its prompt is always there.
     ButtonMappingScreen standard = open_screen();
     press(standard, UiAction::MenuQuit);
-    CHECK(!standard.confirming());
+    CHECK(standard.confirming());
 
     ButtonMapping mapping;
     mapping[PadControl::A] = PadAction::B;
@@ -152,15 +147,12 @@ void test_revert_asks_first() {
     const ButtonMappingScreenResult reverted = press(screen, UiAction::Confirm);
     CHECK(!screen.confirming());
     CHECK(reverted.changed.has_value() && reverted.changed->is_standard(ds_console()));
-    // And now there is nothing to put back.
-    press(screen, UiAction::MenuQuit);
-    CHECK(!screen.confirming());
 }
 
 void test_a_tap_chooses() {
     ButtonMappingScreen screen = open_screen();
-    tap_entry(screen, static_cast<int>(PadControl::Plus));
-    CHECK_EQ(screen.focus(), static_cast<int>(PadControl::Plus));
+    tap_entry(screen, row_of(PadControl::Plus));
+    CHECK_EQ(screen.focus(), row_of(PadControl::Plus));
     CHECK(screen.choosing());
     CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Start));
     // Off the picker puts it away.
@@ -216,8 +208,8 @@ void test_the_other_device_shows_and_works_the_page() {
     show();
     CHECK_EQ(mirror.focus(), 1);
 
-    tap_on_mirror(static_cast<int>(PadControl::Y));
-    CHECK_EQ(host.focus(), static_cast<int>(PadControl::Y));
+    tap_on_mirror(row_of(PadControl::Y));
+    CHECK_EQ(host.focus(), row_of(PadControl::Y));
     CHECK(host.choosing());
     show();
     CHECK(mirror.choosing());
@@ -265,8 +257,8 @@ void test_the_picker_offers_what_the_console_has() {
     move_to(screen, PadControl::Zr);
     press(screen, UiAction::Confirm);
     CHECK(screen.choosing());
-    CHECK_EQ(screen.choice_focus(), 8);
-    const ButtonMappingScreenResult r = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 6);
+    CHECK_EQ(screen.choice_focus(), 7);
+    const ButtonMappingScreenResult r = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 5);
     CHECK(r.changed.has_value() && (*r.changed)[PadControl::Zr] == PadAction::R);
 }
 
@@ -282,7 +274,7 @@ void test_y_toggles_turbo() {
         CHECK((*on.changed)[PadControl::X] == PadAction::Turbo);
         CHECK(on.changed->turbo(PadControl::X) == PadAction::X);
     }
-    CHECK(screen.action_label(PadControl::X) == "X (turbo)");
+    CHECK(screen.action_label(PadControl::X) == "X Button (turbo)");
 
     // The list: no Turbo, and the cursor on the button it presses.
     press(screen, UiAction::Confirm);
@@ -293,7 +285,7 @@ void test_y_toggles_turbo() {
         tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::B));
     CHECK(other.changed.has_value() && (*other.changed)[PadControl::X] == PadAction::Turbo &&
           other.changed->turbo(PadControl::X) == PadAction::B);
-    CHECK(screen.action_label(PadControl::X) == "B (turbo)");
+    CHECK(screen.action_label(PadControl::X) == "B Button (turbo)");
 
     // Off: back to pressing B once.
     const ButtonMappingScreenResult off = press(screen, UiAction::MenuReset);
@@ -304,6 +296,51 @@ void test_y_toggles_turbo() {
     press(screen, UiAction::Confirm);
     tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::QuickMenu));
     CHECK(!press(screen, UiAction::MenuReset).changed.has_value());
+}
+
+// A Touch Point goes on turbo too, touching its spot over and over, and a
+// spot placed again while on turbo stays on it.
+void test_y_toggles_turbo_for_a_touch_point() {
+    ButtonMapping mapping;
+    mapping[PadControl::L] = PadAction::TouchPoint;
+    mapping.spot(PadControl::L) = TouchSpot{0.25f, 0.75f};
+    ButtonMappingScreen screen = open_screen(mapping);
+    move_to(screen, PadControl::L);
+    const ButtonMappingScreenResult on = press(screen, UiAction::MenuReset);
+    CHECK(on.changed.has_value());
+    if (on.changed) {
+        CHECK((*on.changed)[PadControl::L] == PadAction::Turbo);
+        CHECK(on.changed->turbo(PadControl::L) == PadAction::TouchPoint);
+    }
+    CHECK(screen.action_label(PadControl::L) == "Touch Point (turbo)");
+
+    press(screen, UiAction::Confirm);
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::TouchPoint));
+    press(screen, UiAction::Confirm);
+    CHECK(screen.placing());
+    press(screen, UiAction::Right);
+    const ButtonMappingScreenResult moved = press(screen, UiAction::Confirm);
+    CHECK(moved.changed.has_value() && (*moved.changed)[PadControl::L] == PadAction::Turbo &&
+          moved.changed->turbo(PadControl::L) == PadAction::TouchPoint);
+
+    const ButtonMappingScreenResult off = press(screen, UiAction::MenuReset);
+    CHECK(off.changed.has_value() && (*off.changed)[PadControl::L] == PadAction::TouchPoint &&
+          off.changed->turbo(PadControl::L) == PadAction::Standard);
+}
+
+// Each of the d-pad's directions is a row of its own, pressing its own
+// direction as standard.
+void test_the_d_pad_is_mapped_a_direction_at_a_time() {
+    ButtonMappingScreen screen = open_screen();
+    move_to(screen, PadControl::Down);
+    CHECK_EQ(screen.focus(), 5);
+    CHECK(screen.action_label(PadControl::Down) == "Down Button");
+    press(screen, UiAction::Confirm);
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Down));
+    const ButtonMappingScreenResult changed =
+        tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::A));
+    CHECK(changed.changed.has_value() && (*changed.changed)[PadControl::Down] == PadAction::A);
+    CHECK(screen.action_label(PadControl::Down) == "A Button");
 }
 
 // Touch Point opens a page of its own: the spot moved by the pad or put down
@@ -457,6 +494,8 @@ int main() {
     test_the_other_device_shows_and_works_the_page();
     test_the_picker_offers_what_the_console_has();
     test_y_toggles_turbo();
+    test_y_toggles_turbo_for_a_touch_point();
+    test_the_d_pad_is_mapped_a_direction_at_a_time();
     test_a_touch_point_is_placed();
     test_a_touch_point_is_dragged_and_kept_with_ok();
     test_the_other_device_places_a_touch_point();
