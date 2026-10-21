@@ -1317,6 +1317,8 @@ void DataManagementScreen::render(QuadRenderer& quads,
                                   float output_width,
                                   float output_height) {
     if (!open_) return;
+    float& list_scroll = page_ == Page::Earlier ? earlier_scroll_ : list_scroll_;
+    const ShownScroll shown(list_scroll, scroll_ease_, drag_.dragging(), static_cast<int>(page_));
     const UiTheme& theme = ui_theme();
     const Frame frame = frame_for(output_width, output_height);
     const float scale = frame.scale;

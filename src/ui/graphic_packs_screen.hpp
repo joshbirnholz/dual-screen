@@ -194,9 +194,11 @@ private:
     int item_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    ScrollEase scroll_ease_;
     // The pack's side, scrolled, when it says more than fits.
     float detail_scroll_ = 0.0f;
     ListDrag detail_drag_;
+    ScrollEase detail_ease_;
     // What the other device's page last said about where its cursor is: a
     // page drawn from it follows that cursor only when it moves, and is
     // otherwise where a finger here left it.

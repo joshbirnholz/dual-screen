@@ -142,6 +142,7 @@ private:
 
     // A finger dragging the list, and the glide after it lets go.
     ListDrag drag_;
+    ScrollEase scroll_ease_;
 
     // Where the prompts were drawn, so tapping one does what pressing it does.
     std::vector<GuideHit> guide_hits_;

@@ -173,6 +173,7 @@ private:
     int focus_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    ScrollEase scroll_ease_;
     // The picker, and what each of its lines is: an action, or a heading.
     ChoicePopup choice_;
     std::vector<PadAction> choice_actions_;

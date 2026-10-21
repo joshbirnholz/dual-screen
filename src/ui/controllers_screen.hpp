@@ -134,6 +134,7 @@ private:
     std::string held_;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    ScrollEase scroll_ease_;
     // How many rows the list had when last laid out, and the first of Not
     // used -- what a point is on, and how far the list scrolls, follow them.
     int row_count_ = 0;

@@ -626,6 +626,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         render_placing(quads, text, glyphs, output_width, output_height);
         return;
     }
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging());
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;

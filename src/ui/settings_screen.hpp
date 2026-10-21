@@ -318,6 +318,7 @@ private:
     // -- is not made of rows and would jump past in whole-row steps.
     float scroll_ = 0.0f;
     ListDrag drag_;
+    ScrollEase scroll_ease_;
     // Dragged by a finger on a device with a touch screen -- a Deck, a Switch
     // -- the same as every list.
 

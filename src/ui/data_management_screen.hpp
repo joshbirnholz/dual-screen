@@ -245,6 +245,7 @@ private:
     int row_first_ = 0;
     // A finger dragging the save list or Earlier Saves.
     ListDrag drag_;
+    ScrollEase scroll_ease_;
     void drag_list(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
     bool dialog_up() const {
         return overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm || overlay_ == Overlay::Choice;

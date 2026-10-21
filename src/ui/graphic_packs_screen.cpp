@@ -650,6 +650,8 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                                 const ButtonGlyphSheet& glyphs, float output_width,
                                 float output_height) {
     if (!open_) return;
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging());
+    const ShownScroll shown_detail(detail_scroll_, detail_ease_, detail_drag_.dragging(), focus_);
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;

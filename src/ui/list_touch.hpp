@@ -65,7 +65,7 @@ public:
     // moves between them.
     void update(const std::vector<PointerEvent>& pointers, const PixelRect& list, float& scroll,
                 float max_scroll) {
-        const auto now = clock_ != nullptr ? clock_() : std::chrono::steady_clock::now();
+        const auto now = ListDrag::now();
         float dt = std::chrono::duration<float>(now - last_update_).count();
         if (!started_ || dt < 0.0f) dt = 0.0f;
         dt = std::min(dt, 0.1f);
@@ -138,6 +138,9 @@ public:
     // for a test, whose passes are frames apart however busy the machine is.
     using Clock = std::chrono::steady_clock::time_point (*)();
     static void set_clock(Clock clock) { clock_ = clock; }
+    static std::chrono::steady_clock::time_point now() {
+        return clock_ != nullptr ? clock_() : std::chrono::steady_clock::now();
+    }
     // Whether the wheel turned over `list` this pass.
     static bool wheel_turned(const PixelRect& list) {
         const LiveWheel& wheel = live_wheel();
@@ -162,6 +165,62 @@ private:
     float start_scroll_ = 0.0f;
     float velocity_ = 0.0f;  // pixels a second, positive scrolling down the list
     float wheel_row_ = 0.0f;
+};
+
+// Where a list is drawn, easing after where it is: the cursor moving off the
+// part in view slides the list along to it, as a Switch's lists go, rather
+// than jumping it there. A finger moving the list, or one setting it
+// gliding, is followed exactly. Only the drawing lags: the list is where its
+// scroll says for everything else.
+class ScrollEase {
+public:
+    // Where to draw a list scrolled to `scroll` this pass; `follow` while a
+    // finger is moving it. `content` says which list it is, on a page that
+    // shows one list after another in the same place: a different one is
+    // drawn where it is at once, as is a list not drawn a moment ago.
+    // `settled` is how near counts as there, in the scroll's own measure.
+    float shown(float scroll, bool follow, int content = 0, float settled = 0.5f) {
+        const auto now = ListDrag::now();
+        float dt = std::chrono::duration<float>(now - last_).count();
+        last_ = now;
+        const bool other = content != content_;
+        content_ = content;
+        if (!started_ || follow || other || dt < 0.0f || dt > 0.25f) {
+            shown_ = scroll;
+            started_ = true;
+            return shown_;
+        }
+        shown_ += (scroll - shown_) * (1.0f - std::exp(-kRate * std::min(dt, 0.1f)));
+        if (std::fabs(scroll - shown_) < settled) shown_ = scroll;
+        return shown_;
+    }
+    // Whether the list is still sliding to where it is.
+    bool moving(float scroll) const { return started_ && shown_ != scroll; }
+
+private:
+    // How quickly it closes the distance, per second, exponentially: most of
+    // the way there in about a tenth of a second.
+    static constexpr float kRate = 22.0f;
+    bool started_ = false;
+    int content_ = 0;
+    float shown_ = 0.0f;
+    std::chrono::steady_clock::time_point last_{};
+};
+
+// A page's scroll swapped for where it is drawn, while it is drawn.
+class ShownScroll {
+public:
+    ShownScroll(float& scroll, ScrollEase& ease, bool follow, int content = 0, float settled = 0.5f)
+        : scroll_(scroll), kept_(scroll) {
+        scroll = ease.shown(scroll, follow, content, settled);
+    }
+    ~ShownScroll() { scroll_ = kept_; }
+    ShownScroll(const ShownScroll&) = delete;
+    ShownScroll& operator=(const ShownScroll&) = delete;
+
+private:
+    float& scroll_;
+    float kept_;
 };
 
 }  // namespace ds

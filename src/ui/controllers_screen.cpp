@@ -245,6 +245,7 @@ void ControllersScreen::render(QuadRenderer& quads,
     if (!open_) {
         return;
     }
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging());
     const UiTheme& theme = ui_theme();
     const PadLineup lineup = line_up_pads(pads, order, gamepad_here);
     const std::vector<LineupRow> rows = lineup_rows(lineup);

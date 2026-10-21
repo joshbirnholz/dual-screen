@@ -163,6 +163,7 @@ private:
     // however many rows fit.
     bool fresh_ = true;
     ListDrag drag_;
+    ScrollEase scroll_ease_;
 };
 
 }  // namespace ds

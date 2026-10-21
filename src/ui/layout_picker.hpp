@@ -664,6 +664,7 @@ private:
     // wheel moving it -- the cursor brings it with it only when it moves.
     float content_scroll_ = 0.0f;
     ListDrag content_drag_;
+    ScrollEase content_ease_;
     MenuSection section_ = MenuSection::Layout;
     std::function<bool(UiAction)> repeating_;
     // Whether this menu has been opened before in this run, so the next open

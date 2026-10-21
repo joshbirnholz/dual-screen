@@ -1631,6 +1631,8 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (!is_drawn()) {
         return;
     }
+    const ShownScroll shown(content_scroll_, content_ease_, content_drag_.dragging(), static_cast<int>(section_),
+                            0.01f);
     last_width_ = output_width;
     last_height_ = output_height;
     // Over the row it belongs to, wherever that is drawn now.

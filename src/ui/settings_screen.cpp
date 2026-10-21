@@ -757,6 +757,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         return;
     }
 
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging(), static_cast<int>(page_));
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;

@@ -316,6 +316,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
                          float output_height, const ButtonGlyphSheet* glyphs) {
     if (!open_) return;
     settle_rows(geometry(output_width, output_height).visible);
+    const ShownScroll shown(scroll_rows_, scroll_ease_, drag_.dragging(), 0, 0.01f);
     placed_ = true;
     const UiTheme& theme = ui_theme();
     const Geometry shape = geometry(output_width, output_height);

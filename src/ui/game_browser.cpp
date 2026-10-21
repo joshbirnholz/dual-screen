@@ -406,6 +406,8 @@ void GameBrowser::render(QuadRenderer& quads,
         return;
     }
 
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging(),
+                            static_cast<int>(std::hash<std::string>{}(directory_)));
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const PageFrame frame = page_frame(output_width, output_height);
