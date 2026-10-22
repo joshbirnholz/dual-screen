@@ -681,6 +681,10 @@ struct App::Impl {
     std::string said_pad_slots;
     // Whether the game has each motor on: the GamePad's, then Player 1 to 8.
     bool slot_rumble[1 + kPadPlayers] = {};
+    // A menu or page over the game: every motor the game has on is stopped
+    // until the game has the pads back, when they start again as it left
+    // them -- see apply_pad_rumble().
+    bool rumble_quiet = false;
     // The pads whose motors this app has turned on, by pad_identity(), so that one
     // leaving a rumbling slot -- or the slot going quiet -- is turned off.
     std::map<std::string, KnownPad> rumbling_pads;
@@ -2144,7 +2148,7 @@ void App::Impl::apply_pad_rumble() {
     for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
         const KnownPad& pad = known_pads[index];
         const PadSlot slot = pad_slots[index];
-        if (slot.kind == PadSlot::Kind::NotUsed) continue;
+        if (slot.kind == PadSlot::Kind::NotUsed || rumble_quiet) continue;
         const int motor = slot.kind == PadSlot::Kind::GamePad ? 0 : 1 + slot.player;
         if (slot_rumble[motor]) wanted.emplace(pad_identity(pad), pad);
     }
@@ -8032,6 +8036,12 @@ int App::run(const AppOptions& options) {
         const bool game_running = impl.state == Impl::State::Playing ||
                                   (impl.external_source && page_over_game);
         const bool pads_to_game = impl.state == Impl::State::Playing;
+        // A controller the game was rumbling goes still under a menu, and
+        // takes up again as the game has it when the menu goes.
+        if (impl.rumble_quiet == pads_to_game) {
+            impl.rumble_quiet = !pads_to_game;
+            impl.apply_pad_rumble();
+        }
         // Whichever kind of game this device is playing, if it is playing one.
         // Everything below that only needs a frame out of it asks through here;
         // what is still spelled `impl.source` is genuinely a core's own -- save
