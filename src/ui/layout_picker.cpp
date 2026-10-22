@@ -17,16 +17,20 @@ namespace {
 
 // What Controls shows of a Wii U's line: how many rows -- the GamePad and
 // the players, not a controller not used -- and whether Add Controller is
-// one, with room for another player.
+// one: with a controller not used to add, and room for another player.
 std::pair<int, bool> controls_shape(const std::vector<ControllerRowView>& rows) {
     int shown = 0;
     int players = 0;
+    bool spare = false;
     for (const ControllerRowView& row : rows) {
-        if (row.slot.kind == PadSlot::Kind::NotUsed) continue;
+        if (row.slot.kind == PadSlot::Kind::NotUsed) {
+            if (!row.pad.empty()) spare = true;
+            continue;
+        }
         ++shown;
         if (row.slot.kind == PadSlot::Kind::Player) ++players;
     }
-    return {shown, players < kWiiUPlayers};
+    return {shown, spare && players < kWiiUPlayers};
 }
 
 }  // namespace

@@ -545,7 +545,8 @@ describe a different controller from the one behind it.
 The quick menu's **Controls** lists the line: the GamePad, then each player,
 each with its name, what the game has it as (**Wii U GamePad**, **Wii Remote
 + Nunchuk**) and where it is. A controller not used is not listed: **+ Add
-Controller**, under the players until there are four, opens the next
+Controller**, under the players while a controller is not used and there
+are fewer than four, opens the next
 player's page to choose its type and controller first, and **Add Controller**
 there makes it a player. Controllers join as players in the order they
 connect, and each player is what this game had it as last -- a player with a

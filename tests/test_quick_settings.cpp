@@ -1346,6 +1346,11 @@ void test_wii_u_controls_list_every_controller() {
     }
     picker.set_wii_u_controllers(full);
     CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 5);
+    // Nor with every controller in play.
+    std::vector<ControllerRowView> all_in = state.wii_u_controllers;
+    all_in.pop_back();
+    picker.set_wii_u_controllers(all_in);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
     picker.set_wii_u_controllers(state.wii_u_controllers);
     CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
