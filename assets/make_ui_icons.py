@@ -20,18 +20,20 @@ The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
     android                        an Android device: the robot's head, drawn
                                    here -- a half disc, two antennae, and two
                                    eyes cut out of it
-    wiiu-gamepad                   a Wii U GamePad, for Controller Order:
-                                   Kenney's solid one (CC0),
-                                   assets/ui_icons/wiiu_gamepad.png
+    wiiu-gamepad                   a Wii U GamePad, for Controls and the
+                                   menu's which-screen icon: flanx's
+                                   (forums.launchbox-app.com/topic/93723),
+                                   assets/ui_icons/wiiu_gamepad_flanx.png;
+                                   Kenney's wiiu_gamepad.png is no longer
+                                   drawn
     tv                             a television, drawn here: a screen's
                                    heavy rounded outline on a stem and base,
                                    for the Wii U menu's which-screen icon
-    wiiu-pro, classic-pro,         what a Wii U game has a player as, drawn
-    wii-remote, wii-remote-nunchuk here as solid shapes with their sticks
-    wii-remote-classic             and buttons cut out, after the outlines
-                                   on the back of a Wii U game's box; a
-                                   Wii Remote + Classic Controller is drawn
-                                   as the Classic Controller Pro alone
+    wiiu-pro, classic-pro,         what a Wii U game has a player as, by
+    wii-remote, wii-remote-nunchuk flanx too: wiiu_pro.png, wii_classic.png
+    wii-remote-classic             (both Classic Controller cells),
+                                   wii_remote.png, wii_remote_nunchuk.png,
+                                   each fitted to its whole cell
 
 A Switch and a Switch Lite are drawn alike. New cells go on the end, so the
 ones before them keep their places.
@@ -178,93 +180,7 @@ def in_action(name, x, y):
                 near_segment(x, y, 11, 10, 12.5, 30) <= half or
                 near_segment(x, y, 12.5, 30, 23.5, 30) <= half or
                 near_segment(x, y, 23.5, 30, 25, 10) <= half)
-    if name in WII_U_CONTROLLERS:
-        return in_controller(name, x, y)
     sys.exit("unknown icon " + name)
-
-
-# The controllers a Wii U game can be handed, as solid shapes with their
-# sticks and buttons cut out -- after the outlines on the back of a Wii U
-# game's box that say which it plays with.
-WII_U_CONTROLLERS = ["wiiu-pro", "classic-pro", "wii-remote", "wii-remote-nunchuk", "wii-remote-classic"]
-
-
-def in_box(x, y, left, top, width, height, radius):
-    return rounded_box_distance(x, y, left, top, width, height, radius) <= 0
-
-
-def in_circle(x, y, cx, cy, r):
-    return math.hypot(x - cx, y - cy) <= r
-
-
-def in_cross(x, y, cx, cy, arm, half):
-    return ((abs(x - cx) <= arm and abs(y - cy) <= half) or
-            (abs(y - cy) <= arm and abs(x - cx) <= half))
-
-
-def in_face_buttons(x, y, cx, cy, spread, r):
-    return any(in_circle(x, y, cx + dx * spread, cy + dy * spread, r)
-               for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)))
-
-
-def in_pad(x, y, sticks_low):
-    """A two-handed pad on the 36-unit square: a wide body, a grip under
-    each end. The Pro Controller has its left stick high and its right low;
-    the Classic Controller Pro has its D-pad and buttons high, both sticks
-    low between them."""
-    body = (in_box(x, y, 3, 9, 30, 14, 6) or
-            near_segment(x, y, 8.5, 18, 6.5, 28) <= 5 or
-            near_segment(x, y, 27.5, 18, 29.5, 28) <= 5)
-    if sticks_low:
-        holes = (in_cross(x, y, 9.5, 14.5, 2.9, 1.0) or in_face_buttons(x, y, 26.5, 14.5, 2.5, 1.05) or
-                 in_circle(x, y, 13.8, 20.3, 2.6) or in_circle(x, y, 22.2, 20.3, 2.6))
-    else:
-        holes = (in_circle(x, y, 9.5, 14.5, 2.9) or in_cross(x, y, 13.6, 20.6, 2.6, 0.95) or
-                 in_face_buttons(x, y, 26.5, 14.5, 2.5, 1.05) or in_circle(x, y, 22.4, 20.6, 2.6))
-    return body and not holes
-
-
-def in_remote(x, y, cx, width):
-    """A Wii Remote standing up, `width` wide round `cx`: its D-pad, A, and
-    1 and 2 near the foot cut out."""
-    half = width / 2.0
-    body = in_box(x, y, cx - half, 1.5, width, 33, half)
-    unit = width / 9.0
-    holes = (in_cross(x, y, cx, 7.5, 2.7 * unit, 0.95 * unit) or in_circle(x, y, cx, 13.8, 1.9 * unit) or
-             in_circle(x, y, cx, 25, 1.05 * unit) or in_circle(x, y, cx, 28.6, 1.05 * unit))
-    return body and not holes
-
-
-def in_taper(x, y, x0, y0, r0, x1, y1, r1):
-    """A capsule from (x0, y0) to (x1, y1) whose radius goes from r0 to r1."""
-    dx, dy = x1 - x0, y1 - y0
-    length = math.hypot(dx, dy)
-    steps = 48
-    for step in range(steps + 1):
-        t = step / steps
-        if math.hypot(x - (x0 + t * dx), y - (y0 + t * dy)) <= r0 + (r1 - r0) * t:
-            return True
-    return False
-
-
-def in_controller(name, x, y):
-    if name == "wiiu-pro":
-        return in_pad(x, y, False)
-    if name == "classic-pro":
-        return in_pad(x, y, True)
-    if name == "wii-remote":
-        return in_remote(x, y, 18, 9)
-    if name == "wii-remote-nunchuk":
-        # The Nunchuk on the left, the remote beside it: a round head with
-        # its stick cut out, tapering to a narrower foot.
-        nunchuk = in_taper(x, y, 10, 11.5, 6.6, 10, 29.5, 4.2)
-        stick = in_circle(x, y, 10, 11.5, 2.6)
-        return in_remote(x, y, 26.5, 8) or (nunchuk and not stick)
-    if name == "wii-remote-classic":
-        # The Classic Controller Pro alone: the remote it is plugged into is
-        # there, but not what the player holds.
-        return in_pad(x, y, True)
-    sys.exit("unknown controller " + name)
 
 
 def render_action(name):
@@ -310,7 +226,7 @@ def device_alpha(name):
     return read_png_alpha(f"assets/ui_icons/{name}.png")
 
 
-def render_device(name):
+def render_device(name, band=0.48):
     """The icon's own extent, fitted to a band across the middle of the cell
     half as tall as it is wide, and centred in it. A handheld is wide and a
     tower is not: fitted to the band, the two come out looking the same size
@@ -321,7 +237,7 @@ def render_device(name):
     ys = [y for y in range(sh) for x in range(sw) if alpha[y][x] > 0]
     ex0, ex1, ey0, ey1 = min(xs), max(xs) + 1, min(ys), max(ys) + 1
     # Source pixels per cell pixel.
-    step = max((ex1 - ex0) / (CELL * 0.96), (ey1 - ey0) / (CELL * 0.48))
+    step = max((ex1 - ex0) / (CELL * 0.96), (ey1 - ey0) / (CELL * band))
     extent = step * CELL
     ecx, ecy = (ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0
 
@@ -355,9 +271,12 @@ def main():
     cells = [render_action(name) for name in ["get", "send", "history", "delete"]]
     cells += [render_device(name) for name in DEVICES]
     cells += [render_action("sync")]
-    cells += [render_device("android"), render_device("wiiu_gamepad")]
+    cells += [render_device("android"), render_device("wiiu_gamepad_flanx")]
     cells += [render_action("tv")]
-    cells += [render_action(name) for name in WII_U_CONTROLLERS]
+    # What a Wii U game has a player as, flanx's, each fitted to the whole
+    # square rather than the band: a Wii Remote stands up.
+    cells += [render_device(name, band=0.96) for name in
+              ["wiiu_pro", "wii_classic", "wii_remote", "wii_remote_nunchuk", "wii_classic"]]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):

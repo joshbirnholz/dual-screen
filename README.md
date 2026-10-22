@@ -573,7 +573,7 @@ rather than the first two a Switch would. A Wii U stops at four; Players 5 to
 8 take a Switch's patterns. Over a player's lights is what the game has it
 as, drawn as that controller -- a Wii U Pro Controller, a Wii Remote alone
 or with a Nunchuk to its left, or a Classic Controller Pro -- the way
-the back of a Wii U game's box shows them, and the same pictures are beside
+the back of a Wii U game's box shows them (flanx's drawings), and the same pictures are beside
 each choice of Controller Type. A Switch Lite has no rumble motor, so its own controls cannot buzz. It all
 works mid-game and from either device's buttons, and lasts until the app
 closes: a controller is recognised for as long as it stays connected. As on
