@@ -5,6 +5,7 @@
 
 #include "input/stylus_cursor.hpp"
 #include "ui/page_frame.hpp"
+#include "ui/wii_u_controller_drawing.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -75,9 +76,22 @@ void ButtonMappingScreen::open() {
 
 void ButtonMappingScreen::set_mapping(const ButtonMapping& mapping, SystemId system,
                                       const PadConsole& console) {
+    wii_u_ = false;
     mapping_ = mapping;
     system_ = system;
     console_ = console;
+}
+
+void ButtonMappingScreen::set_wii_u_mapping(const WiiUMapping& mapping, WiiUController controller,
+                                            std::string detail) {
+    wii_u_ = true;
+    wii_u_mapping_ = mapping;
+    // Another controller under the picker: what it lists is no longer this.
+    if (controller != wii_u_controller_) choice_.close();
+    wii_u_controller_ = controller;
+    detail_ = std::move(detail);
+    system_ = SystemId::WiiU;
+    focus_ = std::clamp(focus_, 0, row_count() - 1);
 }
 
 std::string ButtonMappingScreen::console_name() const {
@@ -100,11 +114,11 @@ ButtonMappingScreen::Geometry ButtonMappingScreen::compute_geometry(float output
     const float list_width = std::round(frame.panel.w * 0.58f);
     geometry.list = PixelRect{frame.panel.x, geometry.view_top, list_width,
                               geometry.view_bottom - geometry.view_top};
-    geometry.content_height = static_cast<float>(kRows) * step;
+    geometry.content_height = static_cast<float>(row_count()) * step;
     const bool scrolls = geometry.max_scroll() > 0.5f;
     const float row_width =
         list_width - (scrolls ? scroll_bar_width(geometry.scale) + frame.line * 0.6f : 0.0f);
-    for (std::size_t index = 0; index < static_cast<std::size_t>(kRows); ++index) {
+    for (std::size_t index = 0; index < static_cast<std::size_t>(row_count()); ++index) {
         geometry.rows.push_back(PixelRect{frame.panel.x, geometry.view_top - scroll_ + index * step,
                                           row_width, row_height});
     }
@@ -132,6 +146,11 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
     choice_actions_.clear();
     choice_modes_.clear();
+    choice_wii_u_.clear();
+    if (wii_u_) {
+        open_wii_u_choice(geometry.rows[static_cast<std::size_t>(focus_)]);
+        return;
+    }
     if (on_right_stick()) {
         // The right stick's: what it can be on this console, the Touch
         // Analog Stick going on to a page of its own.
@@ -174,6 +193,101 @@ void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float
             choice_.set_focus(static_cast<int>(index));
         }
     }
+}
+
+void ButtonMappingScreen::open_wii_u_choice(const PixelRect& row) {
+    // A button on turbo shows the button it presses as its choice.
+    const PadControl control = focused_control();
+    const WiiUAction resolved = wii_u_mapping_.resolved(control, wii_u_controller_);
+    const WiiUAction now = resolved == WiiUAction::Turbo ? wii_u_mapping_.turbo(control) : resolved;
+    std::vector<std::string> labels;
+    int current = -1;
+    for (const WiiUAction action : wii_u_action_choices(wii_u_controller_)) {
+        if (action == now) current = static_cast<int>(labels.size());
+        labels.push_back(wii_u_action_name(action, wii_u_controller_));
+        choice_wii_u_.push_back(action);
+    }
+    choice_.open(std::move(labels), std::max(0, current), row);
+}
+
+void ButtonMappingScreen::choose_wii_u(int index, ButtonMappingScreenResult& result) {
+    if (index < 0 || index >= static_cast<int>(choice_wii_u_.size())) return;
+    const PadControl control = focused_control();
+    const WiiUAction action = choice_wii_u_[static_cast<std::size_t>(index)];
+    // A button on turbo stays on it for another of the controller's buttons.
+    if (wii_u_mapping_[control] == WiiUAction::Turbo && is_wii_u_turbo_button(action)) {
+        if (wii_u_mapping_.turbo(control) == action) return;
+        wii_u_mapping_.turbo(control) = action;
+        result.wii_u_changed = wii_u_mapping_;
+        return;
+    }
+    // What the standard mapping already does is kept as Standard, as a DS
+    // game's is.
+    const WiiUAction kept =
+        action == standard_wii_u_action(control, wii_u_controller_) ? WiiUAction::Standard : action;
+    if (kept == wii_u_mapping_[control]) return;
+    wii_u_mapping_[control] = kept;
+    wii_u_mapping_.turbo(control) = WiiUAction::Standard;
+    result.wii_u_changed = wii_u_mapping_;
+}
+
+bool ButtonMappingScreen::is_wii_u_turbo_button(WiiUAction action) const {
+    const std::vector<WiiUAction> buttons = wii_u_turbo_choices(wii_u_controller_);
+    return std::find(buttons.begin(), buttons.end(), action) != buttons.end();
+}
+
+void ButtonMappingScreen::toggle_wii_u_turbo(ButtonMappingScreenResult& result) {
+    const PadControl control = focused_control();
+    const WiiUAction action = wii_u_mapping_.resolved(control, wii_u_controller_);
+    if (action == WiiUAction::Turbo) {
+        const WiiUAction of = wii_u_mapping_.turbo(control);
+        wii_u_mapping_[control] = of == standard_wii_u_action(control, wii_u_controller_) ? WiiUAction::Standard : of;
+        wii_u_mapping_.turbo(control) = WiiUAction::Standard;
+    } else if (is_wii_u_turbo_button(action)) {
+        wii_u_mapping_[control] = WiiUAction::Turbo;
+        wii_u_mapping_.turbo(control) = action;
+    } else {
+        return;
+    }
+    result.wii_u_changed = wii_u_mapping_;
+}
+
+std::string ButtonMappingScreen::wii_u_caption() const {
+    const PadControl control = focused_control();
+    const WiiUAction action = wii_u_mapping_.resolved(control, wii_u_controller_);
+    // The controller as the game has it: a Wii Remote's own buttons are the
+    // remote's, whatever is plugged into it.
+    const auto on = [&](WiiUAction button) -> std::string {
+        const bool remote_own = button == WiiUAction::One || button == WiiUAction::Two ||
+                                (button >= WiiUAction::RemoteA && button <= WiiUAction::RemoteRight);
+        switch (wii_u_controller_) {
+            case WiiUController::GamePad: return "the GamePad";
+            case WiiUController::Pro: return "the Pro Controller";
+            case WiiUController::Remote: return "the Wii Remote";
+            case WiiUController::RemoteNunchuk:
+                return button == WiiUAction::NunchukC || button == WiiUAction::NunchukZ ? "the Nunchuk"
+                                                                                          : "the Wii Remote";
+            case WiiUController::RemoteClassic: return remote_own ? "the Wii Remote" : "the Classic Controller";
+        }
+        return "the controller";
+    };
+    // Named as the controller prints it, without the remote's own "Wii
+    // Remote" in front where the sentence says so already.
+    const auto name = [&](WiiUAction button) {
+        std::string said = wii_u_action_name(button, wii_u_controller_);
+        const std::string prefix = "Wii Remote ";
+        if (said.rfind(prefix, 0) == 0) said = said.substr(prefix.size());
+        return said;
+    };
+    if (action == WiiUAction::Nothing) return "is disabled in this game.";
+    if (action == WiiUAction::Turbo) {
+        const WiiUAction of = wii_u_mapping_.turbo(control);
+        if (of == WiiUAction::Standard) return "does nothing until Turbo has a button.";
+        return "presses the " + name(of) + " on " + on(of) + " over and over while it's held.";
+    }
+    unsigned bit = 0;
+    if (wii_u_action_button(action, bit)) return "presses the " + name(action) + " on " + on(action) + ".";
+    return std::string();
 }
 
 void ButtonMappingScreen::start_placing() {
@@ -294,6 +408,15 @@ bool ButtonMappingScreen::drag_spot(float output_width, float output_height) {
 }
 
 std::string ButtonMappingScreen::action_label(PadControl control) const {
+    if (wii_u_) {
+        const WiiUAction action = wii_u_mapping_.resolved(control, wii_u_controller_);
+        if (action == WiiUAction::Turbo) {
+            const WiiUAction of = wii_u_mapping_.turbo(control);
+            return of == WiiUAction::Standard ? std::string("Turbo")
+                                              : wii_u_action_name(of, wii_u_controller_) + " (turbo)";
+        }
+        return wii_u_action_name(action, wii_u_controller_);
+    }
     const PadAction action = mapping_.resolved(control, console_);
     if (action == PadAction::Turbo) {
         const PadAction of = mapping_.turbo(control);
@@ -303,6 +426,10 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
 }
 
 void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
+    if (wii_u_) {
+        choose_wii_u(index, result);
+        return;
+    }
     if (on_right_stick()) {
         if (index < 0 || index >= static_cast<int>(choice_modes_.size())) return;
         const RightStickMode mode = choice_modes_[static_cast<std::size_t>(index)];
@@ -342,6 +469,10 @@ bool ButtonMappingScreen::is_turbo_button(PadAction action) const {
 }
 
 bool ButtonMappingScreen::can_toggle_turbo() const {
+    if (wii_u_) {
+        const WiiUAction action = wii_u_mapping_.resolved(focused_control(), wii_u_controller_);
+        return action == WiiUAction::Turbo || is_wii_u_turbo_button(action);
+    }
     if (on_right_stick()) return false;
     const PadAction action = mapping_.resolved(focused_control(), console_);
     return action == PadAction::Turbo || action == PadAction::TouchPoint || is_turbo_button(action);
@@ -349,6 +480,10 @@ bool ButtonMappingScreen::can_toggle_turbo() const {
 
 void ButtonMappingScreen::toggle_turbo(ButtonMappingScreenResult& result) {
     if (!can_toggle_turbo()) return;
+    if (wii_u_) {
+        toggle_wii_u_turbo(result);
+        return;
+    }
     const PadControl control = focused_control();
     const PadAction action = mapping_.resolved(control, console_);
     if (action == PadAction::Turbo) {
@@ -371,13 +506,19 @@ void ButtonMappingScreen::ask_revert() {
 void ButtonMappingScreen::answer_revert(int button, ButtonMappingScreenResult& result) {
     confirming_ = false;
     if (button != 1) return;
+    if (wii_u_) {
+        wii_u_mapping_ = WiiUMapping();
+        result.wii_u_changed = wii_u_mapping_;
+        return;
+    }
     mapping_ = ButtonMapping();
     result.changed = mapping_;
 }
 
 PopupText ButtonMappingScreen::confirm_text() const {
     PopupText words;
-    words.message = "Every button will go back to the standard mapping for this game.";
+    words.message = wii_u_ ? "Every button will go back to the standard mapping for this controller."
+                           : "Every button will go back to the standard mapping for this game.";
     return words;
 }
 
@@ -477,7 +618,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         return result;
     }
 
-    const int last = kRows - 1;
+    const int last = row_count() - 1;
     for (const UiAction action : actions) {
         switch (action) {
             // No going round: the list stops at its ends.
@@ -559,12 +700,13 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         choose(index, result);
         return;
     }
-    if (choice_.is_open() || confirming_ || entry >= kRows) return;
+    if (choice_.is_open() || confirming_ || entry >= row_count()) return;
     // A tap chooses.
     if (tap_chooses(focus_, entry)) open_choice(output_width, output_height);
 }
 
 std::string ButtonMappingScreen::caption() const {
+    if (wii_u_) return wii_u_caption();
     if (on_right_stick()) {
         switch (console_.right_stick) {
             case RightStickMode::CStick: return "is the 3DS's C-Stick.";
@@ -734,17 +876,19 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     const float line = geometry.line;
     const PageFrame frame = page_frame(output_width, output_height);
     draw_page_background(quads, output_width, output_height, over_game_);
-    draw_page_header(quads, text, frame, "Change Controls");
+    draw_page_header(quads, text, frame, wii_u_ ? "Button Mapping" : "Change Controls",
+                     wii_u_ ? detail_ : std::string());
 
     quads.set_clip(menu_list_clip(PixelRect{geometry.list.x, geometry.view_top, geometry.list.w,
                                             geometry.view_bottom - geometry.view_top},
                                   scale));
     const float pad = menu_row_pad(line);
     const float glyph_height = std::round(line * 1.7f);
-    for (std::size_t index = 0; index < static_cast<std::size_t>(kRows); ++index) {
+    const std::size_t rows = static_cast<std::size_t>(row_count());
+    for (std::size_t index = 0; index < rows; ++index) {
         const PixelRect& row = geometry.rows[index];
         const bool focused = static_cast<int>(index) == focus_;
-        draw_menu_row(quads, row, focused, scale, index + 1 == static_cast<std::size_t>(kRows),
+        draw_menu_row(quads, row, focused, scale, index + 1 == rows,
                       static_cast<int>(index) == focus_ + 1);
         // The button as its icon alone, and what it does on the right; the
         // right stick, what it is.
@@ -767,7 +911,13 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     }
 
     // The console, what the highlighted button presses picked out on it.
-    draw_console(quads, geometry.diagram, focused_control());
+    if (wii_u_) {
+        const WiiUAction resolved = wii_u_mapping_.resolved(focused_control(), wii_u_controller_);
+        draw_wii_u_controller(quads, geometry.diagram, wii_u_controller_,
+                              resolved == WiiUAction::Turbo ? wii_u_mapping_.turbo(focused_control()) : resolved);
+    } else {
+        draw_console(quads, geometry.diagram, focused_control());
+    }
     const float caption_scale = scale * 0.85f;
     // The button leads, as its icon: wrapped with a word as wide standing in
     // for it, then drawn in that word's place.
@@ -907,7 +1057,7 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     if (!open_) open();
     last_width_ = output_width;
     last_height_ = output_height;
-    focus_ = std::clamp(static_cast<int>(view.focus), 0, kRows - 1);
+    focus_ = std::clamp(static_cast<int>(view.focus), 0, row_count() - 1);
     // The other device's cursor brings the list with it when it moves;
     // otherwise the list is where a finger here left it.
     if (focus_ != mirrored_focus_) {
@@ -1005,6 +1155,9 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(console_.right_stick));
     for (const PadAction action : mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
     for (const PadAction action : mapping_.turbo_of) mix_sound_state(view.rest, static_cast<uint64_t>(action));
+    mix_sound_state(view.rest, wii_u_ ? 1u : 0u);
+    for (const WiiUAction action : wii_u_mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
+    for (const WiiUAction action : wii_u_mapping_.turbo_of) mix_sound_state(view.rest, static_cast<uint64_t>(action));
 }
 
 net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& screen) {
@@ -1014,6 +1167,12 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     view.focus = static_cast<uint8_t>(screen.focus());
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.confirm_focus = screen.confirming() ? static_cast<uint8_t>(screen.confirm_focus() + 1) : 0;
+    view.wii_u = screen.wii_u();
+    if (view.wii_u) {
+        view.wii_u_controller = static_cast<uint8_t>(screen.wii_u_controller());
+        view.wii_u_detail = screen.detail();
+        view.wii_u_mapping = screen.wii_u_mapping();
+    }
     view.placing = screen.placing();
     if (view.placing) {
         view.spot_u = screen.spot().u;

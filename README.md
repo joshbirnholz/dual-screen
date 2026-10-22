@@ -565,9 +565,23 @@ can be mapped as well, though few games want them.
 **A** (Edit) opens
 the GamePad's or a player's page: **Controller Type**, above, and
 **Controller**, which is any controller on either device, this device's
-listed first -- picking one another player has swaps the two -- and
-**Disconnect**, which takes it out of play. **Y** there, **Detect Controller**, takes whichever controller a button
-is pressed on in the next ten seconds. In Controls itself, **X** (Identify)
+listed first -- picking one another player has swaps the two --
+**Edit Button Mapping**, and **Disconnect**, which takes it out of play.
+**Y** there, **Detect Controller**, takes whichever controller a button
+is pressed on in the next ten seconds.
+
+**Edit Button Mapping** is the same page as a DS game's Change Controls,
+for the controller the game has the player as: each of the pad's buttons,
+what it presses on that controller, and the controller drawn beside the
+list with that button filled in. A Wii Remote is held upright -- A and B as
+they are, 1 on X and 2 on Y, the Nunchuk's C and Z on L and ZL -- and the
+GamePad, a Pro Controller and a Classic Controller have their buttons
+straight across. **A** picks another button for one, **HOME** and Disabled
+included; **Y** puts it on turbo; **X** puts every button back. Each player
+keeps a mapping for each controller type, with the game, so changing a
+player's type and back keeps what it had. Dualscreen does the mapping and
+hands Cemu the controller's own buttons, so Cemu's own input settings for
+these controllers are not used. In Controls itself, **X** (Identify)
 buzzes the highlighted controller and **Y** (Change Order) picks a player's
 or the GamePad's up -- drawn white, its words in the accent colour, with
 arrows before its name: move it up or down the line, up from Player 1 to be

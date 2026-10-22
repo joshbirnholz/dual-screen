@@ -2163,7 +2163,7 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.spot_u == 0.5f && std::fabs(received.spot_v - 1.0f) < 0.001f);
     CHECK(!received.placing_stick);
     // From a host from before it: not placing.
-    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 7, received));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 8, received));
     CHECK(!received.placing);
     // The Touch Analog Stick's page: its centre the spot, and its size.
     sent.placing_stick = true;
@@ -2174,6 +2174,22 @@ void test_button_mapping_view_round_trip() {
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
     CHECK(received.placing && received.placing_stick);
     CHECK(std::fabs(received.stick_radius - 0.375f) < 0.001f);
+
+    // A Wii U controller's page carries its mapping and what it is.
+    sent.placing = false;
+    sent.placing_stick = false;
+    sent.wii_u = true;
+    sent.wii_u_controller = static_cast<uint8_t>(WiiUController::RemoteClassic);
+    sent.wii_u_detail = "Player 3 \u00b7 Wii Classic Controller";
+    sent.wii_u_mapping[PadControl::Y] = WiiUAction::Turbo;
+    sent.wii_u_mapping.turbo(PadControl::Y) = WiiUAction::RemoteA;
+    buffer.clear();
+    encode_button_mapping_view(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received.wii_u && received.wii_u_detail == sent.wii_u_detail);
+    CHECK(received.wii_u_mapping == sent.wii_u_mapping);
+    CHECK(received.wii_u_controller == sent.wii_u_controller);
 
     // Closed is a message too.
     buffer.clear();

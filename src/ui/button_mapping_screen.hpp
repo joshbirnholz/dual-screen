@@ -7,6 +7,7 @@
 #include "core/system.hpp"
 #include "input/button_mapping.hpp"
 #include "input/input_manager.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "net/protocol.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
@@ -30,6 +31,8 @@ struct ButtonMappingScreenResult {
     std::optional<ButtonMapping> changed;
     // Right Stick given another job, for the caller to take on.
     std::optional<RightStickMode> right_stick;
+    // A Wii U controller's mapping changed: the whole of it as it now is.
+    std::optional<WiiUMapping> wii_u_changed;
 };
 
 // A DS or 3DS game's Change Controls, from Controls in its quick menu: each of
@@ -42,6 +45,11 @@ struct ButtonMappingScreenResult {
 // touch screen it touches, on the paused game's own touch screen. Last of the
 // rows is the right stick's: what it is, and for the Touch Analog Stick where
 // it sits on the touch screen and how big it is, placed the same way.
+//
+// A Wii U game's Button Mapping, from a player's page or the GamePad's, is
+// the same page for one of its controllers: the console's buttons are that
+// controller's, drawn beside the list, and there is no right stick's row --
+// a stick is a stick on a Wii U.
 //
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
@@ -62,6 +70,13 @@ public:
     // on, which decides what Standard is and what can be chosen. Every frame:
     // the mapping can change under the page, from the other device.
     void set_mapping(const ButtonMapping& mapping, SystemId system, const PadConsole& console);
+    // Or a Wii U controller's, as `controller`, with `detail` -- "Player 2 ·
+    // Wii Remote + Nunchuk" -- at the right of the heading.
+    void set_wii_u_mapping(const WiiUMapping& mapping, WiiUController controller, std::string detail);
+    bool wii_u() const { return wii_u_; }
+    WiiUController wii_u_controller() const { return wii_u_controller_; }
+    const WiiUMapping& wii_u_mapping() const { return wii_u_mapping_; }
+    const std::string& detail() const { return detail_; }
     // The game's touch screen as it was paused, for placing a Touch Point
     // on. None draws an empty screen.
     void set_touch_screen(const Texture* touch_screen) { touch_screen_ = touch_screen; }
@@ -78,6 +93,8 @@ public:
     int focus() const { return focus_; }
     static constexpr int kRightStickRow = static_cast<int>(kPadControls);
     static constexpr int kRows = kRightStickRow + 1;
+    // How many rows this page has: a Wii U controller's has no right stick's.
+    int row_count() const { return wii_u_ ? kRightStickRow : kRows; }
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
@@ -167,6 +184,12 @@ private:
     void toggle_turbo(ButtonMappingScreenResult& result);
     bool can_toggle_turbo() const;
     bool is_turbo_button(PadAction action) const;
+    bool is_wii_u_turbo_button(WiiUAction action) const;
+    // The Wii U controller's halves of the above.
+    void open_wii_u_choice(const PixelRect& row);
+    void choose_wii_u(int index, ButtonMappingScreenResult& result);
+    void toggle_wii_u_turbo(ButtonMappingScreenResult& result);
+    std::string wii_u_caption() const;
     // Touch Point's page, the spot where the button touches now.
     void start_placing();
     void finish_placing(ButtonMappingScreenResult& result);
@@ -186,7 +209,7 @@ private:
     std::vector<PopupButton> confirm_buttons() const;
     void handle_tap(int entry, ButtonMappingScreenResult& result, float output_width,
                     float output_height);
-    bool on_right_stick() const { return focus_ == kRightStickRow; }
+    bool on_right_stick() const { return !wii_u_ && focus_ == kRightStickRow; }
     // The control the cursor is on; meaningless on the right stick's row.
     PadControl focused_control() const {
         return kPadControlRows[static_cast<std::size_t>(std::min(focus_, kRightStickRow - 1))];
@@ -206,6 +229,12 @@ private:
     bool open_ = false;
     bool over_game_ = false;
     ButtonMapping mapping_;
+    // A Wii U controller's page instead.
+    bool wii_u_ = false;
+    WiiUMapping wii_u_mapping_;
+    WiiUController wii_u_controller_ = WiiUController::Pro;
+    std::string detail_;
+    std::vector<WiiUAction> choice_wii_u_;
     SystemId system_ = SystemId::Ds;
     PadConsole console_;
     int focus_ = 0;

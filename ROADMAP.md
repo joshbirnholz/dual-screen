@@ -17,16 +17,11 @@ numbers can change freely.
   into Mic or Disabled, kept with the game; Y toggles turbo on a button
   pressing one of the console's or a Touch Point, X is Reset to Default, one
   page on both devices, and the right stick's row last (C-Stick, Circle Pad,
-  D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Still to
+  D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Wii U
+  games have the same page per player and the GamePad, as Edit Button
+  Mapping on the player's page. Still to
   do, in this order, from the mockups
   (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - Wii U: each player's Edit Button Mapping, and the GamePad's, on its
-    page: the same model as Change Controls (Y turbo, X Reset to Default,
-    kept with the game per player and per controller type). The link half
-    is in: Dualscreen maps each player's buttons itself and Cemu reads a
-    Wii Remote's, a Nunchuk's, a Classic Controller's (with the remote's
-    own beside it) and a Pro Controller's, HOME included, straight across.
-    Still to build: the page itself, on both devices.
   - Wii U: Motion and Rumble rows on the player's page.
   - Mapping profiles for DS, 3DS and each Wii U controller type, saved and
     loaded from the mapping page on the − button (Y is turbo); loading one

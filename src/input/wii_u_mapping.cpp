@@ -36,6 +36,17 @@ const char* wii_u_controller_key(WiiUController controller) {
     return "pro";
 }
 
+const char* wii_u_controller_name(WiiUController controller) {
+    switch (controller) {
+        case WiiUController::GamePad: return "Wii U GamePad";
+        case WiiUController::Pro: return "Wii U Pro Controller";
+        case WiiUController::Remote: return "Wii Remote";
+        case WiiUController::RemoteNunchuk: return "Wii Remote + Nunchuk";
+        case WiiUController::RemoteClassic: return "Wii Classic Controller";
+    }
+    return "Wii U Pro Controller";
+}
+
 bool wii_u_action_button(WiiUAction action, unsigned& button) {
     if (action == WiiUAction::Standard || action >= WiiUAction::Nothing) return false;
     button = static_cast<unsigned>(action) - 1;

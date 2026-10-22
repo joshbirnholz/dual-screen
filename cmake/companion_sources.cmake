@@ -61,6 +61,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/controllers_screen.cpp
     src/ui/graphic_packs_screen.cpp
     src/ui/button_mapping_screen.cpp
+    src/ui/wii_u_controller_drawing.cpp
     src/ui/wii_u_player_screen.cpp
     src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp

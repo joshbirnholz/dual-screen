@@ -903,6 +903,14 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     put_u16(out, touch_spot_u16(message.spot_u));
     put_u16(out, touch_spot_u16(message.spot_v));
     put_u16(out, touch_spot_u16(message.stick_radius));
+    // And a Wii U controller's page, after everything a DS game's has.
+    put_u8(out, message.wii_u ? 1u : 0u);
+    if (message.wii_u) {
+        put_u8(out, message.wii_u_controller);
+        put_string(out, message.wii_u_detail);
+        for (const WiiUAction action : message.wii_u_mapping.actions) put_u8(out, static_cast<uint8_t>(action));
+        for (const WiiUAction action : message.wii_u_mapping.turbo_of) put_u8(out, static_cast<uint8_t>(action));
+    }
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -935,6 +943,30 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
             uint16_t radius = 0;
             reader.u16(radius);
             view.stick_radius = clamp_stick_radius(radius / 65536.0f);
+        }
+        // From a host new enough to have a Wii U controller's page.
+        uint8_t wii_u = 0;
+        if (reader.remaining() >= 1 && reader.u8(wii_u) && wii_u != 0) {
+            const auto action_of = [](uint8_t value) {
+                return value < static_cast<uint8_t>(WiiUAction::Count) ? static_cast<WiiUAction>(value)
+                                                                        : WiiUAction::Standard;
+            };
+            reader.u8(view.wii_u_controller);
+            reader.string(view.wii_u_detail);
+            for (WiiUAction& action : view.wii_u_mapping.actions) {
+                uint8_t value = 0;
+                reader.u8(value);
+                action = action_of(value);
+            }
+            for (WiiUAction& action : view.wii_u_mapping.turbo_of) {
+                uint8_t value = 0;
+                reader.u8(value);
+                action = action_of(value);
+            }
+            if (!reader.ok() || view.wii_u_controller > static_cast<uint8_t>(WiiUController::RemoteClassic)) {
+                return false;
+            }
+            view.wii_u = true;
         }
     }
     out = view;

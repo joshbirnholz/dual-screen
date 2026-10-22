@@ -184,6 +184,7 @@ add_library(dualscreen_core STATIC
     src/ui/controllers_screen.cpp
     src/ui/graphic_packs_screen.cpp
     src/ui/button_mapping_screen.cpp
+    src/ui/wii_u_controller_drawing.cpp
     src/ui/wii_u_player_screen.cpp
     src/ui/choice_popup.cpp
     src/ui/text_entry.cpp

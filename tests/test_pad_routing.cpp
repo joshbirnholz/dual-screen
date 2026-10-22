@@ -430,7 +430,7 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.set_controllers(controller_rows(), types, 0);
     CHECK(page.title() == "Player 1");
     const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
-                                                   WiiUPlayerScreen::Row::Remove};
+                                                   WiiUPlayerScreen::Row::Mapping, WiiUPlayerScreen::Row::Remove};
     CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
@@ -470,6 +470,11 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.update({UiAction::Cancel}, {}, kWidth, kHeight);
     CHECK(!page.detecting() && page.is_open());
 
+    // Edit Button Mapping: its page, asked for.
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.edit_mapping && page.is_open() && !page.choosing());
+
     // Remove Player: out of play, and the page with it.
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
@@ -479,7 +484,8 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     gamepad.open(PadSlot::gamepad());
     gamepad.set_controllers(controller_rows(), types, 0);
     CHECK(gamepad.title() == "GamePad");
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(2));
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(3));
+    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
     gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
     result = gamepad.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && !result.close_requested && gamepad.is_open());
@@ -487,7 +493,7 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     std::vector<ds::ControllerRowView> empty = controller_rows();
     empty[0].pad.clear();
     gamepad.set_controllers(empty, types, 0);
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(1));
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(2));
 }
 
 // Add Controller's page: the new player's type, what the game had it as

@@ -38,6 +38,8 @@ WiiUController wii_u_controller_for(const std::string& type);
 // As a game config keeps it: "gamepad", "pro", "remote", "nunchuk",
 // "classic".
 const char* wii_u_controller_key(WiiUController controller);
+// As the menus name it: "Wii U Pro Controller", "Wii Remote + Nunchuk".
+const char* wii_u_controller_name(WiiUController controller);
 
 // What one of a pad's buttons presses. The console's buttons are numbered as
 // ExternalButton is, one on; saved by key, so the numbers are free to change

@@ -1025,10 +1025,17 @@ struct App::Impl {
     // see ButtonMappingScreen.
     bool button_mapping_available() const;
     void open_button_mapping();
+    void update_wii_u_mapping_screen(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
     void update_button_mapping_screen(const std::vector<UiAction>& actions,
                                       const std::vector<PointerEvent>& pointers);
     // What the page shows, for the game as it is now.
     void show_button_mapping(ButtonMappingScreen& screen) const;
+    // A Wii U game's: Button Mapping for the player whose page is up, or the
+    // GamePad, as the controller the game has it as. Over that page, and
+    // back to it.
+    void open_wii_u_mapping();
+    void show_wii_u_mapping(ButtonMappingScreen& screen) const;
+    bool wii_u_mapping_available() const;
     // A Wii U game's player's page -- see WiiUPlayerScreen. `screen` is
     // handed the controllers and the player's types; a companion's, the
     // host's, through show_host_wii_u_player(). `adding`: Add Controller's,
@@ -2294,8 +2301,33 @@ void App::Impl::open_button_mapping() {
     log_info("the button mapping page is up");
 }
 
+void App::Impl::open_wii_u_mapping() {
+    // Over the player's page, which stays where it came from.
+    state = State::ButtonMapping;
+    show_wii_u_mapping(button_mapping_screen);
+    button_mapping_screen.open();
+    log_info("the button mapping page for " + pad_slot_name(wii_u_player_screen.slot()) + " is up");
+}
+
+bool App::Impl::wii_u_mapping_available() const {
+    return system == SystemId::WiiU && local_game() && wii_u_player_screen.is_open();
+}
+
+void App::Impl::show_wii_u_mapping(ButtonMappingScreen& screen) const {
+    const PadSlot slot = wii_u_player_screen.slot();
+    const int player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
+    const WiiUController controller = wii_u_controller_of(player);
+    screen.set_wii_u_mapping(wii_u_mapping_of(player), controller,
+                             player < 0 ? std::string(wii_u_controller_name(controller))
+                                        : pad_slot_name(slot) + " \u00b7 " + wii_u_controller_name(controller));
+}
+
 void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& actions,
                                              const std::vector<PointerEvent>& pointers) {
+    if (button_mapping_screen.wii_u()) {
+        update_wii_u_mapping_screen(actions, pointers);
+        return;
+    }
     // The game went while the page was up: nothing left to map.
     if (!button_mapping_available()) {
         close_cemu_page();
@@ -2314,6 +2346,43 @@ void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& action
     }
     if (result.right_stick) request_right_stick_mode(*result.right_stick);
     if (result.close_everything) {
+        close_cemu_page();
+        if (state == State::Menu) set_menu_open(false);
+    } else if (result.close_requested) {
+        close_cemu_page();
+    }
+}
+
+void App::Impl::update_wii_u_mapping_screen(const std::vector<UiAction>& actions,
+                                            const std::vector<PointerEvent>& pointers) {
+    // The game, or the player, went while the page was up.
+    if (!wii_u_mapping_available()) {
+        close_cemu_page();
+        return;
+    }
+    show_wii_u_mapping(button_mapping_screen);
+    const ButtonMappingScreenResult result = button_mapping_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    if (result.wii_u_changed && have_game_config) {
+        const PadSlot slot = wii_u_player_screen.slot();
+        const int player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
+        const WiiUController controller = wii_u_controller_of(player);
+        const std::string key = wii_u_mapping_key(player, controller);
+        // One put back to standard is not kept at all.
+        const bool back_to_standard = result.wii_u_changed->is_standard(controller);
+        if (back_to_standard) {
+            game_config.wii_u_mappings.erase(key);
+        } else {
+            game_config.wii_u_mappings[key] = *result.wii_u_changed;
+        }
+        if (!game_config.save(paths)) log_warn("could not save this game's button mapping");
+        const std::string whose = pad_slot_name(slot) + "'s " + wii_u_controller_name(controller);
+        log_info(back_to_standard ? "button mapping: every button on " + whose + " is back to standard"
+                                  : "button mapping: a button on " + whose + " was given another job");
+    }
+    if (result.close_everything) {
+        // Out of this page, then the player's under it.
+        close_cemu_page();
         close_cemu_page();
         if (state == State::Menu) set_menu_open(false);
     } else if (result.close_requested) {
@@ -2388,6 +2457,10 @@ void App::Impl::update_wii_u_player_screen(const std::vector<UiAction>& actions,
     const WiiUPlayerScreenResult result = wii_u_player_screen.update(
         actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
     const PadSlot slot = wii_u_player_screen.slot();
+    if (result.edit_mapping) {
+        open_wii_u_mapping();
+        return;
+    }
     if (result.added && result.controller_chosen) {
         add_pad_as_player(*result.controller_chosen, result.type_chosen);
     } else if (result.type_chosen >= 0 && slot.kind == PadSlot::Kind::Player) {
@@ -2981,8 +3054,14 @@ void App::Impl::close_cemu_page() {
         amiibo_browser.close();
         log_info("the amiibo browser is down");
     } else if (state == State::ButtonMapping) {
+        const bool to_player = button_mapping_screen.wii_u() && wii_u_player_screen.is_open();
         button_mapping_screen.close();
         log_info("the button mapping page is down");
+        // Back to the page of the player it was for.
+        if (to_player) {
+            state = State::WiiUPlayer;
+            return;
+        }
     } else if (state == State::WiiUPlayer) {
         wii_u_player_screen.close();
         detect_pressing.clear();
@@ -3309,7 +3388,8 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (state == State::GraphicPacks) graphic_packs_screen.close();
     if (state == State::Amiibo) amiibo_browser.close();
     if (state == State::ButtonMapping) button_mapping_screen.close();
-    if (state == State::WiiUPlayer) wii_u_player_screen.close();
+    // A Wii U controller's mapping is over its player's page, which goes too.
+    if (state == State::WiiUPlayer || state == State::ButtonMapping) wii_u_player_screen.close();
     if (state == State::DataManagement && data_screen) data_screen->close();
     data_from_settings = false;
     log_info("the menu button: every page put away, back to the game");
@@ -6495,8 +6575,15 @@ void App::Impl::render() {
                     quads.begin_frame(output_width, output_height);
                     quads.clear(ui_theme().background);
                 }
-                // The host's mapping, which this device's pad follows too.
-                show_button_mapping(mirrored_button_mapping);
+                // The host's mapping, which this device's pad follows too --
+                // or a Wii U controller's, which the page carries.
+                if (mapping.wii_u) {
+                    mirrored_button_mapping.set_wii_u_mapping(mapping.wii_u_mapping,
+                                                              static_cast<WiiUController>(mapping.wii_u_controller),
+                                                              mapping.wii_u_detail);
+                } else {
+                    show_button_mapping(mirrored_button_mapping);
+                }
                 ScreenSource* const drawing = active_source();
                 mirrored_button_mapping.set_touch_screen(drawing != nullptr ? drawing->screens().bottom : nullptr);
                 mirrored_button_mapping.show_mirrored(mapping, width, height);

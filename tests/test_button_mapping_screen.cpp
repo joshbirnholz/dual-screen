@@ -7,6 +7,7 @@
 
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -557,6 +558,96 @@ void test_the_touch_analog_stick_touches_where_it_is_pushed() {
     CHECK(std::fabs(at.u - (0.5f + 0.25f * 3.0f / 4.0f)) < 0.001f && std::fabs(at.v - 0.5f) < 0.001f);
 }
 
+
+// A Wii U controller's page: its rows are the pad's buttons alone, what each
+// presses is that controller's -- a Wii Remote's held upright -- and the
+// picker offers its buttons, HOME and Disabled.
+ButtonMappingScreen open_wii_u(WiiUController controller, const WiiUMapping& mapping = WiiUMapping()) {
+    ButtonMappingScreen screen;
+    screen.set_wii_u_mapping(mapping, controller, "Player 2 \u00b7 Wii Remote");
+    screen.open();
+    return screen;
+}
+
+int wii_u_choice(WiiUController controller, WiiUAction action) {
+    const std::vector<WiiUAction> choices = wii_u_action_choices(controller);
+    for (std::size_t index = 0; index < choices.size(); ++index) {
+        if (choices[index] == action) return static_cast<int>(index);
+    }
+    return -1;
+}
+
+void test_a_wii_u_controller_is_mapped_on_the_same_page() {
+    ButtonMappingScreen screen = open_wii_u(WiiUController::Remote);
+    CHECK(screen.wii_u());
+    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls));
+    for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
+    CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) - 1);
+    CHECK(screen.action_label(PadControl::X) == "1 Button");
+    CHECK(screen.action_label(PadControl::A) == "A Button");
+    CHECK(screen.action_label(PadControl::Zr) == "Disabled");
+
+    // X made HOME, which the pad's own HOME cannot be.
+    move_to(screen, PadControl::X);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing());
+    CHECK_EQ(screen.choice_focus(), wii_u_choice(WiiUController::Remote, WiiUAction::One));
+    CHECK(wii_u_choice(WiiUController::Remote, WiiUAction::Turbo) < 0);
+    const ButtonMappingScreenResult home = tap_entry(
+        screen, ButtonMappingScreen::kChoiceEntryBase + wii_u_choice(WiiUController::Remote, WiiUAction::RemoteHome));
+    CHECK(home.wii_u_changed.has_value() && !home.changed.has_value());
+    if (home.wii_u_changed) CHECK((*home.wii_u_changed)[PadControl::X] == WiiUAction::RemoteHome);
+    CHECK(screen.action_label(PadControl::X) == "HOME Button");
+
+    // Back to 1, its standard, kept as Standard.
+    press(screen, UiAction::Confirm);
+    const ButtonMappingScreenResult back = tap_entry(
+        screen, ButtonMappingScreen::kChoiceEntryBase + wii_u_choice(WiiUController::Remote, WiiUAction::One));
+    CHECK(back.wii_u_changed.has_value() && back.wii_u_changed->is_standard(WiiUController::Remote));
+
+    // Y: turbo on the 1 Button, and off.
+    const ButtonMappingScreenResult on = press(screen, UiAction::MenuReset);
+    CHECK(on.wii_u_changed.has_value() && (*on.wii_u_changed)[PadControl::X] == WiiUAction::Turbo &&
+          on.wii_u_changed->turbo(PadControl::X) == WiiUAction::One);
+    CHECK(screen.action_label(PadControl::X) == "1 Button (turbo)");
+    const ButtonMappingScreenResult off = press(screen, UiAction::MenuReset);
+    CHECK(off.wii_u_changed.has_value() && off.wii_u_changed->is_standard(WiiUController::Remote));
+
+    // X: every button back, after asking.
+    WiiUMapping changed;
+    changed[PadControl::A] = WiiUAction::Nothing;
+    ButtonMappingScreen reset = open_wii_u(WiiUController::Pro, changed);
+    press(reset, UiAction::MenuQuit);
+    CHECK(reset.confirming());
+    press(reset, UiAction::Right);
+    const ButtonMappingScreenResult reverted = press(reset, UiAction::Confirm);
+    CHECK(reverted.wii_u_changed.has_value() && reverted.wii_u_changed->is_standard(WiiUController::Pro));
+
+    // A Classic Controller's page has the remote's own buttons too, named so.
+    const std::vector<WiiUAction> classic = wii_u_action_choices(WiiUController::RemoteClassic);
+    CHECK(std::find(classic.begin(), classic.end(), WiiUAction::RemoteA) != classic.end());
+    CHECK(wii_u_action_name(WiiUAction::RemoteA, WiiUController::RemoteClassic) == "Wii Remote A Button");
+}
+
+// The other device's page is drawn from the view alone: the mapping, the
+// controller and the words at the heading's right all go with it.
+void test_the_other_device_shows_a_wii_u_controllers_page() {
+    WiiUMapping changed;
+    changed[PadControl::B] = WiiUAction::NunchukZ;
+    ButtonMappingScreen host = open_wii_u(WiiUController::RemoteNunchuk, changed);
+    press(host, UiAction::Down);
+    const net::ButtonMappingViewMessage view = button_mapping_view_of(host);
+    CHECK(view.wii_u && view.wii_u_mapping == changed);
+    CHECK(view.wii_u_controller == static_cast<uint8_t>(WiiUController::RemoteNunchuk));
+    ButtonMappingScreen mirrored;
+    mirrored.set_wii_u_mapping(view.wii_u_mapping, static_cast<WiiUController>(view.wii_u_controller),
+                               view.wii_u_detail);
+    mirrored.show_mirrored(view, kWidth, kHeight);
+    CHECK_EQ(mirrored.focus(), 1);
+    CHECK(mirrored.action_label(PadControl::B) == "Z Button");
+    CHECK(mirrored.detail() == host.detail());
+}
+
 }  // namespace
 
 int main() {
@@ -575,5 +666,7 @@ int main() {
     test_a_touch_point_is_placed();
     test_a_touch_point_is_dragged_and_kept_with_ok();
     test_the_other_device_places_a_touch_point();
+    test_a_wii_u_controller_is_mapped_on_the_same_page();
+    test_the_other_device_shows_a_wii_u_controllers_page();
     return test::finish("button-mapping-screen");
 }

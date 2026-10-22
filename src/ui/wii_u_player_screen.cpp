@@ -86,9 +86,10 @@ std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
     rows.push_back(Row::Controller);
     if (adding_) {
         rows.push_back(Row::Add);
-    } else if (removable()) {
-        rows.push_back(Row::Remove);
+        return rows;
     }
+    rows.push_back(Row::Mapping);
+    if (removable()) rows.push_back(Row::Remove);
     return rows;
 }
 
@@ -241,6 +242,8 @@ void WiiUPlayerScreen::start_detecting(WiiUPlayerScreenResult& result) {
 void WiiUPlayerScreen::act(WiiUPlayerScreenResult& result, float output_width, float output_height) {
     if (focused_row() == Row::Remove) {
         remove(result);
+    } else if (focused_row() == Row::Mapping) {
+        result.edit_mapping = true;
     } else if (focused_row() == Row::Add) {
         // Nothing to add until there is a controller to be it.
         if (pending_pad_.empty()) return;
@@ -408,6 +411,10 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             text.draw(quads, remove_label(), row.x + pad, baseline, row_scale, menu_row_text(focused));
             continue;
         }
+        if (all[index] == Row::Mapping) {
+            text.draw(quads, "Edit Button Mapping", row.x + pad, baseline, row_scale, menu_row_text(focused));
+            continue;
+        }
         if (all[index] == Row::Add) {
             Color color = menu_row_text(focused);
             if (pending_pad_.empty()) color.a *= 0.45f;
@@ -458,7 +465,10 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
         const Row focused = focused_row();
         if (focused != Row::Add || !pending_pad_.empty()) {
             guide.push_back({ButtonGlyph::A,
-                             focused == Row::Remove ? "Disconnect" : focused == Row::Add ? "Add" : "Change",
+                             focused == Row::Remove    ? "Disconnect"
+                             : focused == Row::Add     ? "Add"
+                             : focused == Row::Mapping ? "Open"
+                                                       : "Change",
                              PromptRole::ActsOnSelection});
         }
     }

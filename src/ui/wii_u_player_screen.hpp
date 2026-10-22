@@ -37,13 +37,17 @@ struct WiiUPlayerScreenResult {
     // Add Controller's page, added: controller_chosen made the new player,
     // as type_chosen.
     bool added = false;
+    // Edit Button Mapping: its page, for what the game has this one as.
+    bool edit_mapping = false;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
 // menu: what the game has the player as -- Controller Type, Cemu's -- and
 // which controller is the one -- Controller, any of them on either device, a
 // controller another player has trading places -- and Disconnect, which
-// takes the player's controller out of play. Detect Controller, Y, takes
+// takes the player's controller out of play; Edit Button Mapping opens what
+// each of its buttons presses, for the controller the game has it as -- see
+// ButtonMappingScreen. Detect Controller, Y, takes
 // whichever controller a button is pressed on next, for ten seconds. B goes
 // back to the menu.
 //
@@ -102,10 +106,10 @@ public:
     void detected(const std::string& pad = std::string());
 
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Controller, then Disconnect where there is a controller to take out of
-    // play. A new player's has
-    // Add instead.
-    enum class Row { Type, Controller, Remove, Add };
+    // Controller, Edit Button Mapping, then Disconnect where there is a
+    // controller to take out of play. A new player's has Add instead of the
+    // last two.
+    enum class Row { Type, Controller, Remove, Add, Mapping };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }

@@ -8,6 +8,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "input/pad_routing.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "core/save_points.hpp"
 #include "core/system.hpp"
 #include "layout/layout.hpp"
@@ -789,12 +790,21 @@ struct ButtonMappingViewMessage {
     // Or the Touch Analog Stick, its centre the spot above and this its size.
     bool placing_stick = false;
     float stick_radius = kDefaultStickRadius;
+    // A Wii U controller's page instead: which, the words at the right of its
+    // heading, and its mapping as it is -- a Wii U game's mappings are the
+    // host's alone, so the page carries the one it shows.
+    bool wii_u = false;
+    uint8_t wii_u_controller = 0;
+    std::string wii_u_detail;
+    WiiUMapping wii_u_mapping;
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
                confirm_focus == other.confirm_focus &&
                placing == other.placing && spot_u == other.spot_u && spot_v == other.spot_v &&
-               placing_stick == other.placing_stick && stick_radius == other.stick_radius;
+               placing_stick == other.placing_stick && stick_radius == other.stick_radius &&
+               wii_u == other.wii_u && wii_u_controller == other.wii_u_controller &&
+               wii_u_detail == other.wii_u_detail && wii_u_mapping == other.wii_u_mapping;
     }
 };
 
