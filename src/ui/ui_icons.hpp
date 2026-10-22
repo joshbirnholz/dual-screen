@@ -42,7 +42,9 @@ inline UiIcon wii_u_type_icon(const std::string& type) {
     if (type == "Classic Controller") return UiIcon::ClassicPro;
     if (type == "Wii Remote") return UiIcon::WiiRemote;
     if (type == "Wii Remote + Nunchuk") return UiIcon::WiiRemoteNunchuk;
-    if (type == "Wii Remote + Classic Controller") return UiIcon::WiiRemoteClassic;
+    if (type == "Wii Remote + Classic Controller" || type == "Wii Classic Controller") {
+        return UiIcon::WiiRemoteClassic;
+    }
     if (type == "Wii U GamePad") return UiIcon::WiiUGamePad;
     return UiIcon::Count;
 }

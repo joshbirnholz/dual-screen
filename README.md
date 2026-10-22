@@ -410,8 +410,8 @@ Three things are different about a Wii U session:
 
 - **Controller Type**, on Player 1 to Player 4's pages in Controls, is
   what each player's controller is to the game -- **Wii U Pro Controller**,
-  **Classic Controller**, **Wii Remote**, **Wii Remote + Nunchuk** or **Wii
-  Remote + Classic Controller** -- kept for each game and set as it starts, so a game that wants Wii Remotes and one that wants Pro
+  **Wii Remote**, **Wii Remote + Nunchuk** or **Wii Classic Controller** --
+  kept for each game and set as it starts, so a game that wants Wii Remotes and one that wants Pro
   Controllers each get theirs without a trip to Cemu's input settings. A
   change happens at once, as if the controller had been swapped. Cemu's own
   saved controller profiles are left as they were: a game with nothing chosen
@@ -552,7 +552,9 @@ connect, and each player is what this game had it as last -- a player with a
 controller is never **None**; one the game has never had starts as a Wii U
 Pro Controller. Nor is one a Classic Controller alone, which a Wii U never
 sees -- it is always plugged into a Wii Remote, whose buttons a game can read
-too -- so it is **Wii Remote + Classic Controller**. **A** opens
+too -- so it is a **Wii Classic Controller**, a Wii Remote with one plugged
+in: the remote's buttons can be mapped as well, though few games want them.
+**A** (Edit) opens
 the GamePad's or a player's page: **Controller Type**, above, and
 **Controller**, which is any controller on either device, this device's
 listed first -- picking one another player has swaps the two -- and **Remove
@@ -568,8 +570,8 @@ a player, drawn as four small squares the way a Wii Remote's lights show it
 -- the second square alone filled for Player 2, as a Wii U lights them,
 rather than the first two a Switch would. A Wii U stops at four; Players 5 to
 8 take a Switch's patterns. Over a player's lights is what the game has it
-as, drawn as that controller -- a Wii U Pro Controller, or a Wii Remote
-alone or with a Nunchuk or a Classic Controller -- the way
+as, drawn as that controller -- a Wii U Pro Controller, a Wii Remote alone
+or with a Nunchuk to its left, or a Classic Controller Pro -- the way
 the back of a Wii U game's box shows them, and the same pictures are beside
 each choice of Controller Type. A Switch Lite has no rumble motor, so its own controls cannot buzz. It all
 works mid-game and from either device's buttons, and lasts until the app

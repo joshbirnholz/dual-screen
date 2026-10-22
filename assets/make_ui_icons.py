@@ -29,7 +29,9 @@ The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
     wiiu-pro, classic-pro,         what a Wii U game has a player as, drawn
     wii-remote, wii-remote-nunchuk here as solid shapes with their sticks
     wii-remote-classic             and buttons cut out, after the outlines
-                                   on the back of a Wii U game's box
+                                   on the back of a Wii U game's box; a
+                                   Wii Remote + Classic Controller is drawn
+                                   as the Classic Controller Pro alone
 
 A Switch and a Switch Lite are drawn alike. New cells go on the end, so the
 ones before them keep their places.
@@ -253,15 +255,15 @@ def in_controller(name, x, y):
     if name == "wii-remote":
         return in_remote(x, y, 18, 9)
     if name == "wii-remote-nunchuk":
-        # The remote on the left, the Nunchuk beside it: a round head with
+        # The Nunchuk on the left, the remote beside it: a round head with
         # its stick cut out, tapering to a narrower foot.
-        nunchuk = in_taper(x, y, 26, 11.5, 6.6, 26, 29.5, 4.2)
-        stick = in_circle(x, y, 26, 11.5, 2.6)
-        return in_remote(x, y, 9.5, 8) or (nunchuk and not stick)
+        nunchuk = in_taper(x, y, 10, 11.5, 6.6, 10, 29.5, 4.2)
+        stick = in_circle(x, y, 10, 11.5, 2.6)
+        return in_remote(x, y, 26.5, 8) or (nunchuk and not stick)
     if name == "wii-remote-classic":
-        # The remote on the left, a Classic Controller Pro beside it, smaller.
-        scale = 0.68
-        return in_remote(x, y, 6.5, 7) or in_pad((x - 12.0) / scale, (y - 3.7) / scale, True)
+        # The Classic Controller Pro alone: the remote it is plugged into is
+        # there, but not what the player holds.
+        return in_pad(x, y, True)
     sys.exit("unknown controller " + name)
 
 

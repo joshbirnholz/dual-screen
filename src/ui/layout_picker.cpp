@@ -1927,7 +1927,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         if (moving_controller()) {
             // B and Y put it down too, so A alone says so.
             guide.push_back({ButtonGlyph::Dpad, "Change Order"});
-            guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
+            guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         } else {
             if (controller != nullptr && !controller->pad.empty()) {
                 guide.push_back({ButtonGlyph::X, "Identify"});
@@ -1947,18 +1947,17 @@ void LayoutPicker::render(QuadRenderer& quads,
                 guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             }
             // A tile is tapped directly, so this names a button nobody has.
-            // A Wii U's player or GamePad opens its page, which says so; a
-            // controller not used has none.
+            // A Wii U's player or GamePad opens its page; a controller not
+            // used has none.
             const char* confirm = "OK";
             if (system_ == SystemId::WiiU && section_ == MenuSection::ControllerOrder && on_content_ &&
                 item_ >= 0 && item_ < static_cast<int>(controls_.size()) &&
                 controls_[static_cast<std::size_t>(item_)].option == Option::AddController) {
                 confirm = "Add";
             } else if (controller != nullptr) {
-                if (controller->slot.kind == PadSlot::Kind::GamePad) {
-                    confirm = "Edit GamePad";
-                } else if (controller->slot.kind == PadSlot::Kind::Player) {
-                    confirm = "Edit Player";
+                if (controller->slot.kind == PadSlot::Kind::GamePad ||
+                    controller->slot.kind == PadSlot::Kind::Player) {
+                    confirm = "Edit";
                 } else {
                     confirm = nullptr;
                 }

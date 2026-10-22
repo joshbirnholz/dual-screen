@@ -81,10 +81,14 @@ struct ControllerRowView {
 };
 
 // What a Wii U game is handed for a player, from Cemu's name for it, as the
-// menus say it: Cemu's "Pro Controller" is a "Wii U Pro Controller", and the
-// rest are as Cemu has them.
+// menus say it: Cemu's "Pro Controller" is a "Wii U Pro Controller", its
+// "Wii Remote + Classic Controller" a "Wii Classic Controller" -- the remote
+// it is plugged into can be mapped too, but few need it -- and the rest are
+// as Cemu has them.
 inline std::string wii_u_type_name(const std::string& cemu) {
-    return cemu == "Pro Controller" ? std::string("Wii U Pro Controller") : cemu;
+    if (cemu == "Pro Controller") return "Wii U Pro Controller";
+    if (cemu == "Wii Remote + Classic Controller") return "Wii Classic Controller";
+    return cemu;
 }
 
 // Whether a player can be Cemu's type `cemu`: not None, which is no player
