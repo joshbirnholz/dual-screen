@@ -87,6 +87,11 @@ class GpuPicture {
 public:
     virtual ~GpuPicture() = default;
     virtual bool draw_into(unsigned texture, int width, int height) = 0;
+    // Whether there is anything to draw yet. A picture an Android decoder
+    // releases to its Surface reaches it a moment later, not at once; asked
+    // before then, the caller waits and asks again on its next frame rather
+    // than drawing nothing and taking that for the picture.
+    virtual bool ready() { return true; }
 };
 
 enum class DecodedLayout {
