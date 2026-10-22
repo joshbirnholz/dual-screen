@@ -420,6 +420,72 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(1));
 }
 
+// Add Controller's page: the new player's type, what the game had it as
+// last but never None, and its controller, the first not used -- and Add,
+// which says both. Detect Controller only chooses one here.
+void test_a_new_players_page_says_what_it_will_be_first() {
+    using ds::UiAction;
+    using ds::WiiUPlayerScreen;
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    const std::vector<std::string> types{"Pro Controller", "Classic Controller", "Wii Remote",
+                                         "Wii Remote + Nunchuk", "Wii Remote + Classic Controller", "None"};
+    WiiUPlayerScreen page;
+    page.open_adding(PadSlot::player_number(1));
+    page.set_controllers(controller_rows(), types, 5);
+    CHECK(page.adding());
+    CHECK(page.title() == "Player 2");
+    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
+                                                   WiiUPlayerScreen::Row::Add};
+    CHECK(page.rows() == rows);
+    CHECK_EQ(page.pending_type(), 0);
+    CHECK(page.pending_pad() == "companion#3");
+
+    // Chosen, but nothing done until Add.
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.type_chosen == -1 && page.pending_type() == 1);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    for (int step = 0; step < 8; ++step) page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!result.controller_chosen && page.pending_pad() == "this#1");
+    page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    page.detected("companion#2");
+    CHECK(!page.detecting() && page.pending_pad() == "companion#2");
+    page.set_controllers(controller_rows(), types, 5);
+    CHECK(page.pending_pad() == "companion#2");
+
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.added && result.close_requested && result.type_chosen == 1);
+    CHECK(result.controller_chosen && *result.controller_chosen == "companion#2");
+
+    // Nothing to add with no controller.
+    std::vector<ds::ControllerRowView> none = controller_rows();
+    none.pop_back();
+    page.open_adding(PadSlot::player_number(1));
+    page.set_controllers(none, types, 2);
+    CHECK(page.pending_pad().empty() && page.pending_type() == 2);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!result.added && page.is_open());
+
+    // A pad made a player after the last, from wherever it was.
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};
+    PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
+    ds::take_out_of_play(lineup, 2);
+    CHECK(ds::add_player(lineup, 2));
+    CHECK_EQ(lineup.players.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(lineup.players[1], 2);
+    CHECK(lineup.unused.empty());
+    CHECK(ds::add_player(lineup, 0));
+    CHECK_EQ(lineup.gamepad, -1);
+    CHECK_EQ(lineup.players[2], 0);
+}
+
 int main() {
     test_slots_and_pads_are_named_as_people_read_them();
     test_defaults_come_straight_from_the_order();
@@ -435,5 +501,6 @@ int main() {
     test_the_controllers_screen_moves_a_pad_like_steam_does();
     test_a_controller_chosen_for_a_place_trades_with_the_one_there();
     test_a_players_page_chooses_a_type_and_a_controller();
+    test_a_new_players_page_says_what_it_will_be_first();
     return test::finish("pad-routing");
 }

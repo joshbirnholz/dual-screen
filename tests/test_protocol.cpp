@@ -2088,6 +2088,9 @@ void test_wii_u_player_view_round_trip() {
     sent.choice_focus = 4;
     sent.detecting = true;
     sent.detect_seconds = 7;
+    sent.adding = true;
+    sent.pending_type = 4;
+    sent.pending_pad = "companion#3";
     std::vector<uint8_t> buffer;
     encode_wii_u_player_view(sent, buffer);
     MessageType type = MessageType::Ping;

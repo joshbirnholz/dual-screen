@@ -543,8 +543,14 @@ when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
 The quick menu's **Controls** lists the line: the GamePad, then each player,
-then any controller not used, each with its name, what the game has it as
-(**Wii U GamePad**, **Wii Remote + Nunchuk**) and where it is. **A** opens
+each with its name, what the game has it as (**Wii U GamePad**, **Wii Remote
++ Nunchuk**) and where it is. A controller not used is not listed: **+ Add
+Controller**, under the players until there are four, opens the next
+player's page to choose its type and controller first, and **Add Controller**
+there makes it a player. Controllers join as players in the order they
+connect, and each player is what this game had it as last -- a player with a
+controller is never **None**; one the game has never had starts as a Wii U
+Pro Controller. **A** opens
 the GamePad's or a player's page: **Controller Type**, above, and
 **Controller**, which is any controller on either device, this device's
 listed first -- picking one another player has swaps the two -- and **Remove

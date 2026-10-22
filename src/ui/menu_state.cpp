@@ -52,7 +52,13 @@ void show_host_wii_u_player(WiiUPlayerScreen& screen, const net::CompanionSessio
     const net::WiiUPlayerViewMessage& view = session.host_wii_u_player_view();
     // Whose page it is, then what it shows, then where the host has its
     // cursor on it.
-    if (!screen.is_open() || !(screen.slot() == view.slot)) screen.open(view.slot);
+    if (!screen.is_open() || !(screen.slot() == view.slot) || screen.adding() != view.adding) {
+        if (view.adding) {
+            screen.open_adding(view.slot);
+        } else {
+            screen.open(view.slot);
+        }
+    }
     std::vector<std::string> types;
     int current = -1;
     if (view.slot.kind == PadSlot::Kind::Player) {

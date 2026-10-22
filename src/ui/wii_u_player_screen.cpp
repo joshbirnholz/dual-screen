@@ -24,6 +24,23 @@ void WiiUPlayerScreen::open(PadSlot slot) {
     focus_ = 0;
     choice_.close();
     detecting_ = false;
+    adding_ = false;
+    pending_type_ = -1;
+    pending_pad_.clear();
+    pending_chosen_ = false;
+}
+
+void WiiUPlayerScreen::open_adding(PadSlot slot) {
+    open(slot);
+    adding_ = true;
+}
+
+void WiiUPlayerScreen::detected(const std::string& pad) {
+    detecting_ = false;
+    if (adding_ && !pad.empty()) {
+        pending_pad_ = pad;
+        pending_chosen_ = true;
+    }
 }
 
 void WiiUPlayerScreen::set_controllers(const std::vector<ControllerRowView>& controllers,
@@ -31,6 +48,33 @@ void WiiUPlayerScreen::set_controllers(const std::vector<ControllerRowView>& con
     controllers_ = controllers;
     types_ = slot_.kind == PadSlot::Kind::Player ? std::move(types) : std::vector<std::string>();
     type_current_ = type_current;
+    if (adding_) {
+        // What this game had the player as last, or the first there is --
+        // never None.
+        const auto none = [&](int type) {
+            return type < 0 || type >= static_cast<int>(types_.size()) ||
+                   types_[static_cast<std::size_t>(type)] == "None";
+        };
+        if (none(pending_type_)) pending_type_ = none(type_current_) ? (types_.empty() ? -1 : 0) : type_current_;
+        // The controller chosen, while it is still here; otherwise the
+        // first not used, if there is one.
+        const auto here = [&](const std::string& pad) {
+            return std::any_of(controllers_.begin(), controllers_.end(),
+                               [&](const ControllerRowView& row) { return !pad.empty() && row.pad == pad; });
+        };
+        if (!here(pending_pad_)) {
+            pending_pad_.clear();
+            pending_chosen_ = false;
+        }
+        if (!pending_chosen_) {
+            const ControllerRowView* first = nullptr;
+            for (const ControllerRowView& row : controllers_) {
+                if (row.pad.empty() || row.slot.kind != PadSlot::Kind::NotUsed) continue;
+                if (first == nullptr || row.listed < first->listed) first = &row;
+            }
+            pending_pad_ = first != nullptr ? first->pad : std::string();
+        }
+    }
     focus_ = std::clamp(focus_, 0, static_cast<int>(rows().size()) - 1);
 }
 
@@ -38,7 +82,11 @@ std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
     std::vector<Row> rows;
     if (!types_.empty()) rows.push_back(Row::Type);
     rows.push_back(Row::Controller);
-    if (removable()) rows.push_back(Row::Remove);
+    if (adding_) {
+        rows.push_back(Row::Add);
+    } else if (removable()) {
+        rows.push_back(Row::Remove);
+    }
     return rows;
 }
 
@@ -50,6 +98,13 @@ WiiUPlayerScreen::Row WiiUPlayerScreen::focused_row() const {
 std::string WiiUPlayerScreen::title() const { return pad_slot_name(slot_); }
 
 const ControllerRowView* WiiUPlayerScreen::own_row() const {
+    // A new player's is the one Add will make it.
+    if (adding_) {
+        for (const ControllerRowView& row : controllers_) {
+            if (!pending_pad_.empty() && row.pad == pending_pad_) return &row;
+        }
+        return nullptr;
+    }
     for (const ControllerRowView& row : controllers_) {
         if (row.slot == slot_ && row.slot.kind != PadSlot::Kind::NotUsed) return &row;
     }
@@ -92,9 +147,10 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
         // Cemu's, but for None: a player with no controller is one taken out
         // of play, which is Remove Player's.
         int current = 0;
+        const int now = adding_ ? pending_type_ : type_current_;
         for (std::size_t index = 0; index < types_.size(); ++index) {
             if (types_[index] == "None") continue;
-            if (static_cast<int>(index) == type_current_) current = static_cast<int>(labels.size());
+            if (static_cast<int>(index) == now) current = static_cast<int>(labels.size());
             labels.push_back(wii_u_type_name(types_[index]));
             choice_types_.push_back(static_cast<int>(index));
         }
@@ -146,11 +202,22 @@ void WiiUPlayerScreen::choose(int index, WiiUPlayerScreenResult& result) {
     if (focused_row() == Row::Type) {
         if (index < 0 || index >= static_cast<int>(choice_types_.size())) return;
         const int type = choice_types_[static_cast<std::size_t>(index)];
-        if (type != type_current_) result.type_chosen = type;
+        if (adding_) {
+            pending_type_ = type;
+        } else if (type != type_current_) {
+            result.type_chosen = type;
+        }
         return;
     }
     if (index < 0 || index >= static_cast<int>(choice_pads_.size()) || choice_.heading(index)) return;
     const std::string& pad = choice_pads_[static_cast<std::size_t>(index)];
+    if (adding_) {
+        if (!pad.empty()) {
+            pending_pad_ = pad;
+            pending_chosen_ = true;
+        }
+        return;
+    }
     const ControllerRowView* own = own_row();
     if (pad.empty() || (own != nullptr && own->pad == pad)) return;
     result.controller_chosen = pad;
@@ -165,12 +232,20 @@ void WiiUPlayerScreen::start_detecting(WiiUPlayerScreenResult& result) {
 void WiiUPlayerScreen::act(WiiUPlayerScreenResult& result, float output_width, float output_height) {
     if (focused_row() == Row::Remove) {
         remove(result);
+    } else if (focused_row() == Row::Add) {
+        // Nothing to add until there is a controller to be it.
+        if (pending_pad_.empty()) return;
+        result.added = true;
+        result.controller_chosen = pending_pad_;
+        result.type_chosen = pending_type_;
+        result.close_requested = true;
     } else {
         open_choice(output_width, output_height);
     }
 }
 
 bool WiiUPlayerScreen::removable() const {
+    if (adding_) return false;
     const ControllerRowView* own = own_row();
     return own != nullptr && !own->pad.empty();
 }
@@ -324,10 +399,17 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             text.draw(quads, remove_label(), row.x + pad, baseline, row_scale, menu_row_text(focused));
             continue;
         }
+        if (all[index] == Row::Add) {
+            Color color = menu_row_text(focused);
+            if (pending_pad_.empty()) color.a *= 0.45f;
+            text.draw(quads, "Add Controller", row.x + pad, baseline, row_scale, color);
+            continue;
+        }
         if (all[index] == Row::Type) {
             text.draw(quads, "Controller Type", row.x + pad, baseline, row_scale, menu_row_text(focused));
-            const std::string value = type_current_ >= 0 && type_current_ < static_cast<int>(types_.size())
-                                          ? wii_u_type_name(types_[static_cast<std::size_t>(type_current_)])
+            const int type = adding_ ? pending_type_ : type_current_;
+            const std::string value = type >= 0 && type < static_cast<int>(types_.size())
+                                          ? wii_u_type_name(types_[static_cast<std::size_t>(type)])
                                           : std::string();
             text.draw(quads, value, right, baseline, row_scale, theme.text_dim, TextAlign::Right);
             continue;
@@ -355,8 +437,12 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
     } else {
         guide.push_back({ButtonGlyph::Y, "Detect Controller"});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-        guide.push_back({ButtonGlyph::A, focused_row() == Row::Remove ? "Remove" : "Change",
-                         PromptRole::ActsOnSelection});
+        const Row focused = focused_row();
+        if (focused != Row::Add || !pending_pad_.empty()) {
+            guide.push_back({ButtonGlyph::A,
+                             focused == Row::Remove ? "Remove" : focused == Row::Add ? "Add" : "Change",
+                             PromptRole::ActsOnSelection});
+        }
     }
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
@@ -387,7 +473,18 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
 
 void WiiUPlayerScreen::show_mirrored(const net::WiiUPlayerViewMessage& view, float output_width,
                                      float output_height) {
-    if (!open_ || !(slot_ == view.slot)) open(view.slot);
+    if (!open_ || !(slot_ == view.slot) || adding_ != view.adding) {
+        if (view.adding) {
+            open_adding(view.slot);
+        } else {
+            open(view.slot);
+        }
+    }
+    if (adding_) {
+        pending_type_ = view.pending_type - 1;
+        pending_pad_ = view.pending_pad;
+        pending_chosen_ = true;
+    }
     focus_ = std::clamp(static_cast<int>(view.focus), 0, static_cast<int>(rows().size()) - 1);
     if (view.choice_focus == 0) {
         choice_.close();
@@ -437,6 +534,8 @@ void WiiUPlayerScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, detecting_ ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(type_current_));
+    mix_sound_state(view.rest, static_cast<uint64_t>(pending_type_ + 1));
+    mix_sound_state(view.rest, pending_pad_);
     if (const ControllerRowView* own = own_row()) mix_sound_state(view.rest, own->pad);
 }
 
@@ -449,6 +548,11 @@ net::WiiUPlayerViewMessage wii_u_player_view_of(const WiiUPlayerScreen& screen) 
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.detecting = screen.detecting();
     view.detect_seconds = static_cast<uint8_t>(screen.detect_seconds());
+    view.adding = screen.adding();
+    if (view.adding) {
+        view.pending_type = static_cast<uint8_t>(std::clamp(screen.pending_type() + 1, 0, 255));
+        view.pending_pad = screen.pending_pad();
+    }
     return view;
 }
 

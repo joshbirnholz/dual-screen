@@ -35,6 +35,9 @@ struct WiiUPlayerScreenResult {
     // Detect Controller, Y, put up: the caller watches every controller for
     // a press until it is put away -- see detected().
     bool detect_started = false;
+    // Add Controller's page, added: controller_chosen made the new player,
+    // as type_chosen.
+    bool added = false;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
@@ -45,6 +48,10 @@ struct WiiUPlayerScreenResult {
 // whichever controller a button is pressed on next, for ten seconds. B goes
 // back to the menu.
 //
+// Add Controller's is the page of the player after the last, yet to be:
+// its type and controller are chosen first, and Add makes it one -- so a
+// player is never there with nothing said about it.
+//
 // Everything on it is the host's, which sees every controller: the page shows
 // what it is handed and says what was chosen. With two devices it is one
 // page on both.
@@ -53,6 +60,13 @@ public:
     static constexpr float kDetectSeconds = 10.0f;
 
     void open(PadSlot slot);
+    // A new player's page, for Add Controller.
+    void open_adding(PadSlot slot);
+    bool adding() const { return adding_; }
+    // On a new player's page, what Add will make it: an index into Cemu's
+    // types, -1 for none, and a controller by pad_identity().
+    int pending_type() const { return pending_type_; }
+    const std::string& pending_pad() const { return pending_pad_; }
     // Lets go of its icons before the GL context they live in does.
     void release_textures() {
         icons_.destroy();
@@ -83,12 +97,15 @@ public:
     bool detecting() const { return detecting_; }
     int detect_seconds() const;
     void tick(float seconds);
-    void detected() { detecting_ = false; }
+    // Found on a controller, `pad`: chosen for a new player here, and put
+    // away. On any other page the caller puts it in the slot.
+    void detected(const std::string& pad = std::string());
 
     // The rows: Controller Type, for a player Cemu has a type for, then
     // Controller, then Remove Player -- Remove Controller, on the GamePad --
-    // where there is a controller to take out of play.
-    enum class Row { Type, Controller, Remove };
+    // where there is a controller to take out of play. A new player's has
+    // Add instead.
+    enum class Row { Type, Controller, Remove, Add };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -135,6 +152,12 @@ private:
 
     bool open_ = false;
     bool over_game_ = false;
+    bool adding_ = false;
+    int pending_type_ = -1;
+    std::string pending_pad_;
+    // Whether a controller was chosen for the new player, rather than the
+    // first not used being taken for it.
+    bool pending_chosen_ = false;
     PadSlot slot_ = PadSlot::gamepad();
     std::vector<ControllerRowView> controllers_;
     std::vector<std::string> types_;

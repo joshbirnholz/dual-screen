@@ -811,11 +811,17 @@ struct WiiUPlayerViewMessage {
     // Detect Controller up, and how many seconds it has left.
     bool detecting = false;
     uint8_t detect_seconds = 0;
+    // Add Controller's new player, and what Add will make it: Cemu's type
+    // plus one, 0 for none, and the controller by pad_identity().
+    bool adding = false;
+    uint8_t pending_type = 0;
+    std::string pending_pad;
 
     bool operator==(const WiiUPlayerViewMessage& other) const {
         return open == other.open && slot == other.slot && focus == other.focus &&
                choice_focus == other.choice_focus && detecting == other.detecting &&
-               detect_seconds == other.detect_seconds;
+               detect_seconds == other.detect_seconds && adding == other.adding &&
+               pending_type == other.pending_type && pending_pad == other.pending_pad;
     }
 };
 

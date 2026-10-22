@@ -1247,11 +1247,11 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
     CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and plus");
 }
 
-// A Wii U's Controls: every controller, the GamePad first, rather than
-// Controller Order and Cemu's types. A opens a player's page, X buzzes a
-// controller, Y picks a player's up to move it -- Up and Down along the
-// players, A, B or Y putting it down -- and the GamePad's and a controller
-// not used are not picked up.
+// A Wii U's Controls: the GamePad, then each player, then Add Controller --
+// a controller not used has no row -- rather than Controller Order and
+// Cemu's types. A opens a player's page, X buzzes a controller, Y picks a
+// player's up to move it -- Up and Down along the players, A, B or Y
+// putting it down -- and the GamePad's is not picked up.
 void test_wii_u_controls_list_every_controller() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -1267,15 +1267,20 @@ void test_wii_u_controls_list_every_controller() {
     first.pad = "this#4";
     first.name = "Xbox Wireless Controller";
     first.type = "Wii U Pro Controller";
+    ControllerRowView second;
+    second.slot = PadSlot::player_number(1);
+    second.pad = "this#5";
+    second.name = "8BitDo Pro 2";
+    second.type = "Wii Remote";
     ControllerRowView spare;
-    spare.pad = "this#5";
-    spare.name = "8BitDo Pro 2";
-    state.wii_u_controllers = {gamepad, first, spare};
+    spare.pad = "this#7";
+    spare.name = "DualSense Wireless Controller";
+    state.wii_u_controllers = {gamepad, first, second, spare};
 
     LayoutPicker picker(registry);
     picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
     open_on(picker, state, MenuSection::ControllerOrder);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
     // Cemu's type is on the player's page, not in Game Options: there are
     // only its graphics and Hide Cursor.
     CHECK_EQ(picker.items_in(MenuSection::Options), 2);
@@ -1317,12 +1322,12 @@ void test_wii_u_controls_list_every_controller() {
         CHECK(picker.is_open());
     }
 
-    // Not used: neither A nor Y does anything.
-    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
-    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller() && result.controller_opened == -1);
+    // Add Controller: a new player's page, and nothing to pick up.
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.controller_adding && result.controller_opened == -1);
     // Nor is the GamePad's controller picked up, when it has one.
     std::vector<ControllerRowView> held = state.wii_u_controllers;
     held[0].pad = "this#6";
@@ -1331,7 +1336,18 @@ void test_wii_u_controls_list_every_controller() {
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    // Four players, as many as a Wii U pairs: no Add Controller.
+    std::vector<ControllerRowView> full = state.wii_u_controllers;
+    for (int player = 2; player < 4; ++player) {
+        ControllerRowView more = second;
+        more.slot = PadSlot::player_number(player);
+        more.pad = "this#" + std::to_string(10 + player);
+        full.push_back(more);
+    }
+    picker.set_wii_u_controllers(full);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 5);
     picker.set_wii_u_controllers(state.wii_u_controllers);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK_EQ(result.controller_picked_up, 1);
@@ -1343,7 +1359,7 @@ void test_wii_u_controls_list_every_controller() {
     other.open(state);
     other.show(state, picker.focus(), picker.confirmation(), picker.confirm_focus_wire());
     CHECK(other.moving_controller());
-    CHECK_EQ(other.items_in(MenuSection::ControllerOrder), 3);
+    CHECK_EQ(other.items_in(MenuSection::ControllerOrder), 4);
 
     // From a host that lists no controllers: Controller Order and Cemu's rows.
     LayoutPickerState older = state;

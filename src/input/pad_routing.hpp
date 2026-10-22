@@ -28,6 +28,9 @@ namespace ds {
 // to Cemu carries -- see kExternalPlayers -- restated here so this file needs
 // nothing from that one.
 inline constexpr int kPadPlayers = 8;
+// How many players a Wii U's Controls adds, besides the GamePad: as many
+// controllers as a Wii U pairs.
+inline constexpr int kWiiUPlayers = 4;
 
 // Where one pad's presses go.
 struct PadSlot {
@@ -189,6 +192,10 @@ bool move_in_lineup(PadLineup& lineup, int pad, int direction);
 // than Player 1 or the last player. The GamePad and Not used stay as they
 // are. Returns whether anything moved.
 bool move_among_players(PadLineup& lineup, int pad, int direction);
+// Pad `pad` made a new player after the last, from wherever it was -- the
+// GamePad's left with none, a player's place closed up. Returns whether it
+// was added: not past kPadPlayers.
+bool add_player(PadLineup& lineup, int pad);
 
 // Pad `pad` put in `slot` -- the GamePad, or a player there already is --
 // trading places with the pad there, if any. Returns whether anything moved.

@@ -139,6 +139,18 @@ bool move_among_players(PadLineup& lineup, int pad, int direction) {
     return true;
 }
 
+bool add_player(PadLineup& lineup, int pad) {
+    if (pad < 0) return false;
+    std::vector<int>& players = lineup.players;
+    const auto in_players = std::find(players.begin(), players.end(), pad);
+    if (in_players == players.end() && static_cast<int>(players.size()) >= kPadPlayers) return false;
+    if (lineup.gamepad == pad) lineup.gamepad = -1;
+    if (in_players != players.end()) players.erase(in_players);
+    lineup.unused.erase(std::remove(lineup.unused.begin(), lineup.unused.end(), pad), lineup.unused.end());
+    players.push_back(pad);
+    return true;
+}
+
 bool move_in_lineup(PadLineup& lineup, int pad, int direction) {
     if (direction == 0) return false;
     std::vector<int>& players = lineup.players;

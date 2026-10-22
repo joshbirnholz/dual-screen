@@ -851,6 +851,9 @@ void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<
     put_u8(out, message.choice_focus);
     put_u8(out, message.detecting ? 1u : 0u);
     put_u8(out, message.detect_seconds);
+    put_u8(out, message.adding ? 1u : 0u);
+    put_u8(out, message.pending_type);
+    put_string(out, message.pending_pad.substr(0, 255));
     finish_message(out, start, MessageType::WiiUPlayerView);
 }
 
@@ -868,7 +871,12 @@ bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerV
     reader.u8(view.choice_focus);
     reader.u8(detecting);
     reader.u8(view.detect_seconds);
+    uint8_t adding = 0;
+    reader.u8(adding);
+    reader.u8(view.pending_type);
+    reader.string(view.pending_pad);
     if (!reader.ok() || kind > 2) return false;
+    view.adding = adding != 0;
     view.open = open != 0;
     view.slot.kind = static_cast<PadSlot::Kind>(kind);
     view.slot.player = player;
