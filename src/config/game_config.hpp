@@ -6,6 +6,7 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "input/button_mapping.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "layout/screen_id.hpp"
 
 namespace ds {
@@ -65,6 +66,9 @@ struct GameConfig {
     // every game alike -- see ExternalOption::default_choice -- by the
     // option's id: set again each time this game starts.
     std::map<std::string, int> wii_u_options;
+    // A Wii U game's mapping for the GamePad and for each player as each
+    // controller, by wii_u_mapping_key(). One never changed is not kept.
+    std::map<std::string, WiiUMapping> wii_u_mappings;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

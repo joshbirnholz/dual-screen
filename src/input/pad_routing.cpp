@@ -371,11 +371,13 @@ RoutedPads route_pads(const std::vector<KnownPad>& pads, const std::vector<PadSl
         switch (slot.kind) {
             case PadSlot::Kind::GamePad:
                 merge_into(routed.gamepad, pads[index].held);
+                routed.gamepad_controls |= pads[index].controls;
                 routed.gamepad_fed = true;
                 break;
             case PadSlot::Kind::Player:
                 if (slot.player >= 0 && slot.player < kPadPlayers) {
                     merge_into(routed.players[slot.player], pads[index].held);
+                    routed.player_controls[slot.player] |= pads[index].controls;
                     routed.player_fed[slot.player] = true;
                 }
                 break;

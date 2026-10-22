@@ -139,6 +139,7 @@ add_library(dualscreen_core STATIC
     src/core/core_input_sink.cpp
     src/core/system.cpp
     src/input/button_mapping.cpp
+    src/input/wii_u_mapping.cpp
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp

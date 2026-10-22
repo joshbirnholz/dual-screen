@@ -226,6 +226,21 @@ void ExternalScreenSource::submit_player_input(int player, bool fed, const DsInp
     link_.send_player_input(player, fed, fed ? to_external_input(state) : ExternalInput());
 }
 
+void ExternalScreenSource::submit_input(const DsInputState& state, uint32_t buttons) {
+    ExternalInput input = to_external_input(state);
+    input.buttons = buttons;
+    link_.send_input(input);
+}
+
+void ExternalScreenSource::submit_player_input(int player, bool fed, const DsInputState& state, uint32_t buttons) {
+    ExternalInput input;
+    if (fed) {
+        input = to_external_input(state);
+        input.buttons = buttons;
+    }
+    link_.send_player_input(player, fed, input);
+}
+
 double ExternalScreenSource::audio_sample_rate() const {
     const int rate = link_.info().audio_sample_rate;
     return rate > 0 ? static_cast<double>(rate) : 48000.0;

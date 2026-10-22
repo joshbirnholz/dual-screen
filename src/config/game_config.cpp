@@ -148,6 +148,26 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
             if (choice.is_number_integer()) config.wii_u_options[id] = choice.get<int>();
         }
     }
+    config.wii_u_mappings.clear();
+    if (const auto found = document.find("wii_u_mappings");
+        found != document.end() && found->is_object()) {
+        for (const auto& [key, kept] : found->items()) {
+            if (!kept.is_object()) continue;
+            WiiUMapping mapping;
+            for (const char* part : {"actions", "turbo"}) {
+                const auto actions = kept.find(part);
+                if (actions == kept.end() || !actions->is_object()) continue;
+                for (const auto& [control_key, action] : actions->items()) {
+                    PadControl control = PadControl::A;
+                    if (!action.is_string() || !pad_control_from_key(control_key, control)) continue;
+                    const WiiUAction read = wii_u_action_from_key(action.get<std::string>());
+                    if (std::string(part) == "actions") mapping[control] = read;
+                    else mapping.turbo(control) = read;
+                }
+            }
+            config.wii_u_mappings[key] = mapping;
+        }
+    }
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -218,6 +238,20 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["screens_swapped"] = screens_swapped;
     document["wii_u_options"] = json::object();
     for (const auto& [id, choice] : wii_u_options) document["wii_u_options"][id] = choice;
+    document["wii_u_mappings"] = json::object();
+    for (const auto& [key, mapping] : wii_u_mappings) {
+        json kept = {{"actions", json::object()}, {"turbo", json::object()}};
+        for (std::size_t index = 0; index < kPadControls; ++index) {
+            const PadControl control = static_cast<PadControl>(index);
+            if (mapping[control] != WiiUAction::Standard) {
+                kept["actions"][pad_control_key(control)] = wii_u_action_key(mapping[control]);
+            }
+            if (mapping.turbo(control) != WiiUAction::Standard) {
+                kept["turbo"][pad_control_key(control)] = wii_u_action_key(mapping.turbo(control));
+            }
+        }
+        document["wii_u_mappings"][key] = kept;
+    }
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

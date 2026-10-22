@@ -1,4 +1,5 @@
 #include "input/input_manager.hpp"
+#include "input/wii_u_mapping.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -676,6 +677,17 @@ std::vector<PadReading> InputManager::pad_readings() const {
 #else
             reading.held = gated(held_state_of(controller));
 #endif
+            // The same buttons unmapped, through the same gate: one held
+            // over from the menu is held back until it is let go.
+#ifdef __SWITCH__
+            const RawPadState raw = (id == 0 || id == kSwitchHandheldId)
+                                        ? split_raw_state(id == 0 ? split_pads().player_one : split_pads().handheld,
+                                                          controller)
+                                        : raw_state_of(controller);
+#else
+            const RawPadState raw = raw_state_of(controller);
+#endif
+            reading.controls = controls_held_in(raw) & pad_controls_from_ds_buttons(held_input_gate_.buttons());
             // Its own motion, where it has its own sensors switched on. Both
             // or neither, for the reason MotionReader gives.
             float gyro[3] = {0.0f, 0.0f, 0.0f};

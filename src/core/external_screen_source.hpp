@@ -160,6 +160,11 @@ public:
     // it, merged, and whether any are -- see route_pads(). Sent every frame
     // like submit_input(); the link only puts changes on the wire.
     void submit_player_input(int player, bool fed, const DsInputState& state);
+    // The same, its buttons `buttons` -- ExternalButton bits, already the
+    // controller's own, as a Wii U game's mapping makes them -- rather than
+    // the state's.
+    void submit_input(const DsInputState& state, uint32_t buttons);
+    void submit_player_input(int player, bool fed, const DsInputState& state, uint32_t buttons);
 
 private:
     struct Screen {

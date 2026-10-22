@@ -149,6 +149,9 @@ struct KnownPad {
     DsInputState held;
     // Its buttons, heard by the game or not -- see PadReading::pressing.
     uint32_t pressing = 0;
+    // Its own buttons, unmapped, as PadControl bits -- see
+    // PadReading::controls.
+    uint32_t controls = 0;
 };
 
 // Which pad this is, for as long as it stays connected: "this#12",
@@ -271,6 +274,9 @@ struct RoutedPads {
     bool gamepad_fed = false;
     DsInputState players[kPadPlayers];
     bool player_fed[kPadPlayers] = {};
+    // The pads' own buttons, unmapped -- any held on any of them.
+    uint32_t gamepad_controls = 0;
+    uint32_t player_controls[kPadPlayers] = {};
 };
 RoutedPads route_pads(const std::vector<KnownPad>& pads, const std::vector<PadSlot>& slots);
 

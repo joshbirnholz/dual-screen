@@ -20,16 +20,17 @@ numbers can change freely.
   D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Still to
   do, in this order, from the mockups
   (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - Wii U: each player's Edit Button Mapping, Motion and Rumble rows, on
-    the player's page (Controls lists the GamePad and the players, with
-    + Add Controller; A opens a page with Controller Type, Controller and
-    Remove, Y detects; in Controls X identifies, Y moves a player). Wii
-    Remote + Classic Controller maps the remote's buttons as well as the
-    Classic Controller's: most games ignore them, but some read them. Josh's
-    eleven Controls fixes of 2026-10-22 are in, untested on hardware.
-  - Mapping profiles (on hold, Josh 2026-10-21), saved and loaded from the
-    page; loading one copies it into the game. The mockups open them with Y,
-    which now toggles turbo: they need another button.
+  - Wii U: each player's Edit Button Mapping, and the GamePad's, on its
+    page: the same model as Change Controls (Y turbo, X Reset to Default,
+    kept with the game per player and per controller type). The link half
+    is in: Dualscreen maps each player's buttons itself and Cemu reads a
+    Wii Remote's, a Nunchuk's, a Classic Controller's (with the remote's
+    own beside it) and a Pro Controller's, HOME included, straight across.
+    Still to build: the page itself, on both devices.
+  - Wii U: Motion and Rumble rows on the player's page.
+  - Mapping profiles for DS, 3DS and each Wii U controller type, saved and
+    loaded from the mapping page on the − button (Y is turbo); loading one
+    copies it into the game.
 
 ### After remapping
 

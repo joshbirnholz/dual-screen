@@ -977,6 +977,7 @@ void test_an_input_carries_its_number_and_the_host_echoes_it() {
     pad.id = 3;
     pad.name = "Pro";
     pad.slot = 0;
+    pad.controls = 0x8001u;
     sent.pads = {pad};
 
     std::vector<uint8_t> buffer;
@@ -991,15 +992,23 @@ void test_an_input_carries_its_number_and_the_host_echoes_it() {
     CHECK(received.touching);
     CHECK(received.pads.size() == 1 && received.pads[0].name == "Pro" &&
           received.pads[0].slot == 0);
+    CHECK(received.pads[0].has_controls && received.pads[0].controls == 0x8001u);
+
+    // A companion from before it said which of its own buttons it held: the
+    // host reads them from what it held instead.
+    InputMessage no_controls;
+    CHECK(decode_input(payload.data(), payload.size() - 4, no_controls));
+    CHECK(no_controls.has_sequence && no_controls.pads.size() == 1 && !no_controls.pads[0].has_controls);
 
     // A companion from before inputs were numbered is read as not numbering
     // them, whatever the message being decoded into said before. The number
-    // is four bytes, and each pad's buttons four more after it.
+    // is four bytes, and each pad's buttons and own buttons four more each
+    // after it.
     InputMessage unnumbered;
-    CHECK(decode_input(payload.data(), payload.size() - 4 - 4, unnumbered));
+    CHECK(decode_input(payload.data(), payload.size() - 4 - 4 - 4, unnumbered));
     CHECK(!unnumbered.has_sequence);
     CHECK(unnumbered.pads.size() == 1 && unnumbered.pads[0].slot == 0);
-    CHECK(decode_input(payload.data(), payload.size() - 4 - 4, received));
+    CHECK(decode_input(payload.data(), payload.size() - 4 - 4 - 4, received));
     CHECK_MSG(!received.has_sequence, "a number from an earlier input was left standing");
 
     // The echo: which input, and the first picture made with it.
@@ -2090,7 +2099,7 @@ void test_a_companions_pads_say_what_is_pressed() {
     CHECK(received.has_sequence && received.sequence == 99u);
     CHECK(received.pads.size() == 2 && received.pads[0].pressing == 0x10u && received.pads[1].pressing == 0u);
     InputMessage older;
-    CHECK(decode_input(payload.data(), payload.size() - 8, older));
+    CHECK(decode_input(payload.data(), payload.size() - 8 - 8, older));
     CHECK(older.has_sequence && older.sequence == 99u);
     CHECK(older.pads.size() == 2 && older.pads[0].pressing == 0u);
 }

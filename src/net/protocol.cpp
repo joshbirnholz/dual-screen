@@ -445,6 +445,8 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
             put_u32(out, message.sequence);
             // And each one's buttons, heard by the game or not.
             for (std::size_t index = 0; index < count; ++index) put_u32(out, message.pads[index].pressing);
+            // And its own buttons, unmapped.
+            for (std::size_t index = 0; index < count; ++index) put_u32(out, message.pads[index].controls);
         }
     }
 }
@@ -1990,6 +1992,13 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
                     // And their buttons, from a companion that says.
                     if (reader.remaining() >= 4 * out.pads.size()) {
                         for (ReportedPad& pad : out.pads) reader.u32(pad.pressing);
+                        // And their own buttons, from a companion that says.
+                        if (reader.remaining() >= 4 * out.pads.size()) {
+                            for (ReportedPad& pad : out.pads) {
+                                reader.u32(pad.controls);
+                                pad.has_controls = true;
+                            }
+                        }
                     }
                 }
             }

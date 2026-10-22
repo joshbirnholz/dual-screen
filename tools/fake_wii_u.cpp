@@ -98,6 +98,20 @@ const char* button_name(ds::ExternalButton button) {
         case ds::ExternalButton::Right: return "Right";
         case ds::ExternalButton::LeftStick: return "L3";
         case ds::ExternalButton::RightStick: return "R3";
+        case ds::ExternalButton::Home: return "Home";
+        case ds::ExternalButton::One: return "1";
+        case ds::ExternalButton::Two: return "2";
+        case ds::ExternalButton::NunchukC: return "C";
+        case ds::ExternalButton::NunchukZ: return "Z";
+        case ds::ExternalButton::RemoteA: return "Remote A";
+        case ds::ExternalButton::RemoteB: return "Remote B";
+        case ds::ExternalButton::RemotePlus: return "Remote +";
+        case ds::ExternalButton::RemoteMinus: return "Remote -";
+        case ds::ExternalButton::RemoteHome: return "Remote Home";
+        case ds::ExternalButton::RemoteUp: return "Remote Up";
+        case ds::ExternalButton::RemoteDown: return "Remote Down";
+        case ds::ExternalButton::RemoteLeft: return "Remote Left";
+        case ds::ExternalButton::RemoteRight: return "Remote Right";
     }
     return "?";
 }
@@ -107,7 +121,7 @@ const char* button_name(ds::ExternalButton button) {
 // it is what lets a test assert that a press on one machine reached another.
 std::string describe(const ds::ExternalInput& input) {
     std::string text;
-    for (int index = 0; index <= static_cast<int>(ds::ExternalButton::RightStick); ++index) {
+    for (int index = 0; index <= static_cast<int>(ds::ExternalButton::RemoteRight); ++index) {
         const auto button = static_cast<ds::ExternalButton>(index);
         if (input.pressed(button)) {
             text += std::string(text.empty() ? "" : " ") + button_name(button);

@@ -75,6 +75,7 @@
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/button_mapping_screen.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "ui/graphic_packs_screen.hpp"
 #include "ui/wii_u_player_screen.hpp"
 #include "ui/data_management_screen.hpp"
@@ -1233,6 +1234,13 @@ struct App::Impl {
     // How hard a motor in `slot` runs, in percent: a Wii Remote's as Settings
     // has it, anything else's in full.
     int rumble_strength(PadSlot slot) const;
+    // What the game has the GamePad (`player` -1) or a player as, and this
+    // game's mapping for it -- the standard one where none is kept.
+    WiiUController wii_u_controller_of(int player) const;
+    const WiiUMapping& wii_u_mapping_of(int player) const;
+    // The GamePad's buttons this frame, through its mapping -- see
+    // route_wii_u_pads().
+    uint32_t wii_u_gamepad_buttons = 0;
     // Stops every motor this app turned on for a slot, as when the game ends.
     void stop_pad_rumble();
     // True while two devices are in a session, whichever end this is.
@@ -2054,6 +2062,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.slot = reading.slot;
         pad.held = reading.held;
         pad.pressing = reading.pressing;
+        pad.controls = reading.controls;
         pads.push_back(pad);
     }
     if (!companion_here) {
@@ -2067,6 +2076,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.id = net::RumbleMessage::kWholeDevice;
         pad.held = host_session->companion_input();
         pad.held.touching = false;
+        pad.controls = pad_controls_from_ds_buttons(pad.held.buttons);
         pads.push_back(pad);
         return pads;
     }
@@ -2082,6 +2092,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.slot = reported.slot;
         pad.held = reported.held;
         pad.pressing = reported.pressing;
+        pad.controls = reported.has_controls ? reported.controls : pad_controls_from_ds_buttons(reported.held.buttons);
         pads.push_back(pad);
     }
     return pads;
@@ -2109,10 +2120,17 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     }
 
     const RoutedPads routed = route_pads(known_pads, pad_slots);
+    // Each controller's buttons as the game has it, through this game's
+    // mapping for it -- see WiiUMapping.
+    const uint32_t now_ms = SDL_GetTicks();
+    wii_u_gamepad_buttons =
+        wii_u_buttons(routed.gamepad_controls, wii_u_mapping_of(-1), WiiUController::GamePad, now_ms);
     if (external_source) {
         for (int player = 0; player < kPadPlayers; ++player) {
-            external_source->submit_player_input(player, routed.player_fed[player],
-                                                 routed.players[player]);
+            const uint32_t buttons = wii_u_buttons(routed.player_controls[player], wii_u_mapping_of(player),
+                                                   wii_u_controller_of(player), now_ms);
+            external_source->submit_player_input(player, routed.player_fed[player], routed.players[player],
+                                                 buttons);
         }
     }
     // A player with a controller is never a Classic Controller alone -- see
@@ -2156,6 +2174,22 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
 
     apply_pad_rumble();
     return gamepad;
+}
+
+WiiUController App::Impl::wii_u_controller_of(int player) const {
+    if (player < 0) return WiiUController::GamePad;
+    const int option = cemu_player_type_option(player);
+    if (option < 0) return WiiUController::Pro;
+    const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+    if (type.active < 0 || type.active >= static_cast<int>(type.choices.size())) return WiiUController::Pro;
+    return wii_u_controller_for(type.choices[static_cast<std::size_t>(type.active)]);
+}
+
+const WiiUMapping& App::Impl::wii_u_mapping_of(int player) const {
+    static const WiiUMapping kStandard;
+    if (!have_game_config) return kStandard;
+    const auto found = game_config.wii_u_mappings.find(wii_u_mapping_key(player, wii_u_controller_of(player)));
+    return found != game_config.wii_u_mappings.end() ? found->second : kStandard;
 }
 
 int App::Impl::rumble_strength(PadSlot slot) const {
@@ -8181,7 +8215,9 @@ int App::run(const AppOptions& options) {
                 const DsInputState remote =
                     companion_here ? impl.host_session->companion_input() : DsInputState();
                 DsInputState combined;
-                if (system_profile(impl.system).pad_belongs_to_its_screen && impl.external_source) {
+                const bool wii_u_routed =
+                    system_profile(impl.system).pad_belongs_to_its_screen && impl.external_source;
+                if (wii_u_routed) {
                     combined = impl.route_wii_u_pads(impl.input.ds_state(), remote, companion_here);
                 } else {
                     const PadOwner owner = console_pad_owner(
@@ -8236,7 +8272,11 @@ int App::run(const AppOptions& options) {
                         impl.said_first_motion = true;
                         log_info("how this device is being held is reaching the game beside it too");
                     }
-                    impl.external_source->submit_input(combined);
+                    if (wii_u_routed) {
+                        impl.external_source->submit_input(combined, impl.wii_u_gamepad_buttons);
+                    } else {
+                        impl.external_source->submit_input(combined);
+                    }
                 }
             } else if (impl.external_source) {
                 // A menu is up over a game played by another program, paused

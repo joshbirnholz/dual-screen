@@ -292,6 +292,12 @@ void test_game_config_round_trip() {
     fresh.screen_gap = true;
     fresh.right_stick_mode = RightStickMode::TouchAnalog;
     fresh.wii_u_options["upscale_filter"] = 3;
+    WiiUMapping remote;
+    remote[PadControl::A] = WiiUAction::Home;
+    remote[PadControl::B] = WiiUAction::Nothing;
+    remote[PadControl::X] = WiiUAction::Turbo;
+    remote.turbo(PadControl::X) = WiiUAction::Two;
+    fresh.wii_u_mappings[wii_u_mapping_key(0, WiiUController::Remote)] = remote;
     fresh.lcd_filter = true;
     fresh.custom_textures = true;
     CHECK(fresh.button_mapping == ButtonMapping());
@@ -319,6 +325,7 @@ void test_game_config_round_trip() {
     CHECK(reloaded.button_mapping == fresh.button_mapping);
     const std::map<std::string, int> kept{{"upscale_filter", 3}};
     CHECK(reloaded.wii_u_options == kept);
+    CHECK(reloaded.wii_u_mappings == fresh.wii_u_mappings);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.

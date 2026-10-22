@@ -1,0 +1,259 @@
+#include "input/wii_u_mapping.hpp"
+
+#include "core/external_frame_link.hpp"
+#include "input/ds_input.hpp"
+
+namespace ds {
+
+static_assert(static_cast<unsigned>(WiiUAction::RemoteRight) - 1 ==
+                  static_cast<unsigned>(ExternalButton::RemoteRight),
+              "the console's buttons are ExternalButton's, one on");
+
+WiiUController wii_u_controller_for(const std::string& type) {
+    if (type == "Wii U GamePad") return WiiUController::GamePad;
+    if (type == "Wii Remote") return WiiUController::Remote;
+    if (type == "Wii Remote + Nunchuk") return WiiUController::RemoteNunchuk;
+    if (type == "Wii Remote + Classic Controller" || type == "Wii Classic Controller" ||
+        type == "Classic Controller") {
+        return WiiUController::RemoteClassic;
+    }
+    return WiiUController::Pro;
+}
+
+std::string wii_u_mapping_key(int player, WiiUController controller) {
+    if (player < 0 || controller == WiiUController::GamePad) return "gamepad";
+    return "player" + std::to_string(player + 1) + "." + wii_u_controller_key(controller);
+}
+
+const char* wii_u_controller_key(WiiUController controller) {
+    switch (controller) {
+        case WiiUController::GamePad: return "gamepad";
+        case WiiUController::Pro: return "pro";
+        case WiiUController::Remote: return "remote";
+        case WiiUController::RemoteNunchuk: return "nunchuk";
+        case WiiUController::RemoteClassic: return "classic";
+    }
+    return "pro";
+}
+
+bool wii_u_action_button(WiiUAction action, unsigned& button) {
+    if (action == WiiUAction::Standard || action >= WiiUAction::Nothing) return false;
+    button = static_cast<unsigned>(action) - 1;
+    return true;
+}
+
+namespace {
+
+bool is_remote(WiiUController controller) {
+    return controller == WiiUController::Remote || controller == WiiUController::RemoteNunchuk ||
+           controller == WiiUController::RemoteClassic;
+}
+
+}  // namespace
+
+WiiUAction standard_wii_u_action(PadControl control, WiiUController controller) {
+    if (controller == WiiUController::Remote || controller == WiiUController::RemoteNunchuk) {
+        const bool nunchuk = controller == WiiUController::RemoteNunchuk;
+        switch (control) {
+            case PadControl::A: return WiiUAction::RemoteA;
+            case PadControl::B: return WiiUAction::RemoteB;
+            case PadControl::X: return WiiUAction::One;
+            case PadControl::Y: return WiiUAction::Two;
+            case PadControl::Plus: return WiiUAction::RemotePlus;
+            case PadControl::Minus: return WiiUAction::RemoteMinus;
+            case PadControl::Up: return WiiUAction::RemoteUp;
+            case PadControl::Down: return WiiUAction::RemoteDown;
+            case PadControl::Left: return WiiUAction::RemoteLeft;
+            case PadControl::Right: return WiiUAction::RemoteRight;
+            case PadControl::L: return nunchuk ? WiiUAction::NunchukC : WiiUAction::Nothing;
+            case PadControl::Zl: return nunchuk ? WiiUAction::NunchukZ : WiiUAction::Nothing;
+            default: return WiiUAction::Nothing;
+        }
+    }
+    switch (control) {
+        case PadControl::A: return WiiUAction::A;
+        case PadControl::B: return WiiUAction::B;
+        case PadControl::X: return WiiUAction::X;
+        case PadControl::Y: return WiiUAction::Y;
+        case PadControl::L: return WiiUAction::L;
+        case PadControl::R: return WiiUAction::R;
+        case PadControl::Zl: return WiiUAction::Zl;
+        case PadControl::Zr: return WiiUAction::Zr;
+        case PadControl::Plus: return WiiUAction::Plus;
+        case PadControl::Minus: return WiiUAction::Minus;
+        case PadControl::Up: return WiiUAction::Up;
+        case PadControl::Down: return WiiUAction::Down;
+        case PadControl::Left: return WiiUAction::Left;
+        case PadControl::Right: return WiiUAction::Right;
+        case PadControl::LeftStick:
+            return controller == WiiUController::RemoteClassic ? WiiUAction::Nothing : WiiUAction::LeftStick;
+        case PadControl::RightStick:
+            return controller == WiiUController::RemoteClassic ? WiiUAction::Nothing : WiiUAction::RightStick;
+        case PadControl::Count: break;
+    }
+    return WiiUAction::Nothing;
+}
+
+WiiUAction WiiUMapping::resolved(PadControl control, WiiUController controller) const {
+    const WiiUAction action = (*this)[control];
+    return action == WiiUAction::Standard ? standard_wii_u_action(control, controller) : action;
+}
+
+bool WiiUMapping::is_standard(WiiUController controller) const {
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const PadControl control = static_cast<PadControl>(index);
+        if (resolved(control, controller) != standard_wii_u_action(control, controller)) return false;
+    }
+    return true;
+}
+
+uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUController controller, uint32_t ms) {
+    uint32_t buttons = 0;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        if ((controls & (1u << index)) == 0) continue;
+        const PadControl control = static_cast<PadControl>(index);
+        WiiUAction action = mapping.resolved(control, controller);
+        if (action == WiiUAction::Turbo) {
+            if (!turbo_down_at(ms)) continue;
+            action = mapping.turbo(control);
+        }
+        unsigned button = 0;
+        if (wii_u_action_button(action, button)) buttons |= 1u << button;
+    }
+    return buttons;
+}
+
+std::vector<WiiUAction> wii_u_turbo_choices(WiiUController controller) {
+    std::vector<WiiUAction> choices;
+    if (is_remote(controller)) {
+        choices = {WiiUAction::RemoteA,  WiiUAction::RemoteB,    WiiUAction::One,
+                   WiiUAction::Two,      WiiUAction::RemotePlus, WiiUAction::RemoteMinus,
+                   WiiUAction::RemoteUp, WiiUAction::RemoteDown, WiiUAction::RemoteLeft,
+                   WiiUAction::RemoteRight};
+        if (controller == WiiUController::RemoteNunchuk) {
+            choices.push_back(WiiUAction::NunchukC);
+            choices.push_back(WiiUAction::NunchukZ);
+        }
+        if (controller != WiiUController::RemoteClassic) return choices;
+        // A Classic Controller's first, the remote it is plugged into after.
+        std::vector<WiiUAction> classic = {WiiUAction::A,    WiiUAction::B,     WiiUAction::X,  WiiUAction::Y,
+                                           WiiUAction::Up,   WiiUAction::Down,  WiiUAction::Left,
+                                           WiiUAction::Right, WiiUAction::L,    WiiUAction::R,  WiiUAction::Zl,
+                                           WiiUAction::Zr,   WiiUAction::Plus,  WiiUAction::Minus};
+        classic.insert(classic.end(), choices.begin(), choices.end());
+        return classic;
+    }
+    return {WiiUAction::A,     WiiUAction::B,         WiiUAction::X,         WiiUAction::Y,
+            WiiUAction::Up,    WiiUAction::Down,      WiiUAction::Left,      WiiUAction::Right,
+            WiiUAction::L,     WiiUAction::R,         WiiUAction::Zl,        WiiUAction::Zr,
+            WiiUAction::Plus,  WiiUAction::Minus,     WiiUAction::LeftStick, WiiUAction::RightStick};
+}
+
+std::vector<WiiUAction> wii_u_action_choices(WiiUController controller) {
+    std::vector<WiiUAction> choices = wii_u_turbo_choices(controller);
+    // HOME, which a pad's own button cannot be -- that one is Steam's -- after
+    // the rest, as it sits apart on the controller: the remote's for a Wii
+    // Remote, the Classic Controller's and then the remote's beside one.
+    if (controller == WiiUController::RemoteClassic) {
+        choices.insert(choices.begin() + 14, WiiUAction::Home);
+        choices.push_back(WiiUAction::RemoteHome);
+    } else if (is_remote(controller)) {
+        choices.push_back(WiiUAction::RemoteHome);
+    } else {
+        choices.push_back(WiiUAction::Home);
+    }
+    choices.push_back(WiiUAction::Nothing);
+    return choices;
+}
+
+std::string wii_u_action_name(WiiUAction action, WiiUController controller) {
+    // A Wii Remote's own, named as the remote prints them -- and only called
+    // the Wii Remote's beside a Classic Controller's of the same name.
+    const bool beside_classic = controller == WiiUController::RemoteClassic;
+    const auto remote = [&](const char* name) {
+        return beside_classic ? std::string("Wii Remote ") + name : std::string(name);
+    };
+    switch (action) {
+        case WiiUAction::Standard: return "Standard";
+        case WiiUAction::A: return "A Button";
+        case WiiUAction::B: return "B Button";
+        case WiiUAction::X: return "X Button";
+        case WiiUAction::Y: return "Y Button";
+        case WiiUAction::L: return "L Button";
+        case WiiUAction::R: return "R Button";
+        case WiiUAction::Zl: return "ZL Button";
+        case WiiUAction::Zr: return "ZR Button";
+        case WiiUAction::Plus: return "Plus Button";
+        case WiiUAction::Minus: return "Minus Button";
+        case WiiUAction::Up: return "Up Button";
+        case WiiUAction::Down: return "Down Button";
+        case WiiUAction::Left: return "Left Button";
+        case WiiUAction::Right: return "Right Button";
+        case WiiUAction::LeftStick: return "Left Stick Button";
+        case WiiUAction::RightStick: return "Right Stick Button";
+        case WiiUAction::Home: return "HOME Button";
+        case WiiUAction::One: return "1 Button";
+        case WiiUAction::Two: return "2 Button";
+        case WiiUAction::NunchukC: return "C Button";
+        case WiiUAction::NunchukZ: return "Z Button";
+        case WiiUAction::RemoteA: return remote("A Button");
+        case WiiUAction::RemoteB: return remote("B Button");
+        case WiiUAction::RemotePlus: return remote("Plus Button");
+        case WiiUAction::RemoteMinus: return remote("Minus Button");
+        case WiiUAction::RemoteHome: return remote("HOME Button");
+        case WiiUAction::RemoteUp: return remote("Up Button");
+        case WiiUAction::RemoteDown: return remote("Down Button");
+        case WiiUAction::RemoteLeft: return remote("Left Button");
+        case WiiUAction::RemoteRight: return remote("Right Button");
+        case WiiUAction::Nothing: return "Disabled";
+        case WiiUAction::Turbo: return "Turbo";
+        case WiiUAction::Count: break;
+    }
+    return "?";
+}
+
+namespace {
+
+constexpr const char* kActionKeys[] = {
+    "standard", "a", "b", "x", "y", "l", "r", "zl", "zr", "plus", "minus", "up", "down", "left", "right",
+    "left_stick", "right_stick", "home", "one", "two", "c", "z", "remote_a", "remote_b", "remote_plus",
+    "remote_minus", "remote_home", "remote_up", "remote_down", "remote_left", "remote_right", "nothing", "turbo",
+};
+static_assert(sizeof(kActionKeys) / sizeof(kActionKeys[0]) == static_cast<std::size_t>(WiiUAction::Count),
+              "every action has a key");
+
+}  // namespace
+
+const char* wii_u_action_key(WiiUAction action) {
+    const auto index = static_cast<std::size_t>(action);
+    return index < static_cast<std::size_t>(WiiUAction::Count) ? kActionKeys[index] : "standard";
+}
+
+WiiUAction wii_u_action_from_key(const std::string& key) {
+    for (std::size_t index = 0; index < static_cast<std::size_t>(WiiUAction::Count); ++index) {
+        if (key == kActionKeys[index]) return static_cast<WiiUAction>(index);
+    }
+    return WiiUAction::Standard;
+}
+
+uint32_t pad_controls_from_ds_buttons(uint32_t buttons) {
+    static constexpr std::pair<DsButton, PadControl> kPairs[] = {
+        {DsButton::A, PadControl::A},          {DsButton::B, PadControl::B},
+        {DsButton::X, PadControl::X},          {DsButton::Y, PadControl::Y},
+        {DsButton::L, PadControl::L},          {DsButton::R, PadControl::R},
+        {DsButton::Zl, PadControl::Zl},        {DsButton::Zr, PadControl::Zr},
+        {DsButton::Start, PadControl::Plus},   {DsButton::Select, PadControl::Minus},
+        {DsButton::Up, PadControl::Up},        {DsButton::Down, PadControl::Down},
+        {DsButton::Left, PadControl::Left},    {DsButton::Right, PadControl::Right},
+        {DsButton::LeftStick, PadControl::LeftStick}, {DsButton::RightStick, PadControl::RightStick},
+    };
+    uint32_t controls = 0;
+    for (const auto& [button, control] : kPairs) {
+        if ((buttons & (1u << static_cast<unsigned>(button))) != 0) {
+            controls |= 1u << static_cast<unsigned>(control);
+        }
+    }
+    return controls;
+}
+
+}  // namespace ds

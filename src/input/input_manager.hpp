@@ -149,6 +149,10 @@ struct PadReading {
     // Its buttons as they are, heard by the game or not: what Detect
     // Controller watches, while a menu has the game hearing nothing.
     uint32_t pressing = 0;
+    // Which of its own buttons are held, PadControl bits, before any
+    // mapping: what a Wii U game's own mapping for the controller it is
+    // starts from -- see WiiUMapping. Heard by the game only, like `held`.
+    uint32_t controls = 0;
 };
 
 class InputManager {

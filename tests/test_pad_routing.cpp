@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
+#include "core/external_frame_link.hpp"
 #include "input/pad_routing.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/wii_u_player_screen.hpp"
 
@@ -564,6 +566,62 @@ void test_a_new_players_page_says_what_it_will_be_first() {
     CHECK_EQ(lineup.players[2], 0);
 }
 
+uint32_t bit(ds::PadControl control) { return 1u << static_cast<unsigned>(control); }
+uint32_t bit(ds::ExternalButton button) { return 1u << static_cast<unsigned>(button); }
+
+// Each controller a Wii U game has is mapped as itself: the GamePad's and a Pro
+// Controller's buttons straight across, a Wii Remote's held upright with 1 on X
+// and 2 on Y, a Nunchuk's C and Z on L and ZL, and a Classic Controller's
+// apart from the remote it is plugged into.
+void test_a_wii_u_controller_is_mapped_as_itself() {
+    using ds::PadControl;
+    using ds::ExternalButton;
+    using ds::WiiUAction;
+    using ds::WiiUController;
+    const ds::WiiUMapping standard;
+    const uint32_t pressed = bit(PadControl::A) | bit(PadControl::X) | bit(PadControl::L) | bit(PadControl::Zl);
+    CHECK_EQ(ds::wii_u_buttons(pressed, standard, WiiUController::Pro, 0),
+             bit(ExternalButton::A) | bit(ExternalButton::X) | bit(ExternalButton::L) | bit(ExternalButton::Zl));
+    CHECK_EQ(ds::wii_u_buttons(pressed, standard, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteA) | bit(ExternalButton::One));
+    CHECK_EQ(ds::wii_u_buttons(pressed, standard, WiiUController::RemoteNunchuk, 0),
+             bit(ExternalButton::RemoteA) | bit(ExternalButton::One) | bit(ExternalButton::NunchukC) |
+                 bit(ExternalButton::NunchukZ));
+    CHECK_EQ(ds::wii_u_buttons(pressed, standard, WiiUController::RemoteClassic, 0),
+             bit(ExternalButton::A) | bit(ExternalButton::X) | bit(ExternalButton::L) | bit(ExternalButton::Zl));
+
+    // Changed: B is the remote's HOME Button beside a Classic Controller, Y is
+    // turbo on its A, and R presses nothing.
+    ds::WiiUMapping changed;
+    changed[PadControl::B] = WiiUAction::RemoteHome;
+    changed[PadControl::Y] = WiiUAction::Turbo;
+    changed.turbo(PadControl::Y) = WiiUAction::A;
+    changed[PadControl::R] = WiiUAction::Nothing;
+    CHECK(!changed.is_standard(WiiUController::RemoteClassic));
+    const uint32_t held = bit(PadControl::B) | bit(PadControl::Y) | bit(PadControl::R);
+    uint32_t on = 0;
+    uint32_t off = 0;
+    for (uint32_t ms = 0; ms < 200; ms += 5) {
+        const uint32_t buttons = ds::wii_u_buttons(held, changed, WiiUController::RemoteClassic, ms);
+        CHECK(buttons & bit(ExternalButton::RemoteHome));
+        CHECK(!(buttons & bit(ExternalButton::R)));
+        (buttons & bit(ExternalButton::A) ? on : off) += 1;
+    }
+    CHECK_MSG(on > 0 && off > 0, "turbo's button never went up and down");
+
+    // The picker names the remote's own as the remote's only beside a
+    // Classic Controller's.
+    CHECK(ds::wii_u_action_name(WiiUAction::RemoteA, WiiUController::Remote) == "A Button");
+    CHECK(ds::wii_u_action_name(WiiUAction::RemoteA, WiiUController::RemoteClassic) == "Wii Remote A Button");
+    for (std::size_t index = 0; index < static_cast<std::size_t>(WiiUAction::Count); ++index) {
+        const WiiUAction action = static_cast<WiiUAction>(index);
+        CHECK(ds::wii_u_action_from_key(ds::wii_u_action_key(action)) == action);
+    }
+    CHECK(ds::wii_u_mapping_key(-1, WiiUController::GamePad) == "gamepad");
+    CHECK(ds::wii_u_mapping_key(1, WiiUController::RemoteNunchuk) == "player2.nunchuk");
+    CHECK(ds::wii_u_controller_for("Wii Remote + Classic Controller") == WiiUController::RemoteClassic);
+}
+
 int main() {
     test_slots_and_pads_are_named_as_people_read_them();
     test_defaults_come_straight_from_the_order();
@@ -581,5 +639,6 @@ int main() {
     test_a_controller_chosen_for_a_place_trades_with_the_one_there();
     test_a_players_page_chooses_a_type_and_a_controller();
     test_a_new_players_page_says_what_it_will_be_first();
+    test_a_wii_u_controller_is_mapped_as_itself();
     return test::finish("pad-routing");
 }

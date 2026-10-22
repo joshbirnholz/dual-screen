@@ -872,6 +872,10 @@ struct ReportedPad {
     // Its buttons, heard by the game or not -- see KnownPad::pressing. 0
     // from a companion that does not say.
     uint32_t pressing = 0;
+    // Its own buttons, unmapped -- see KnownPad::controls -- and whether the
+    // companion said: one too old to is read from `held` instead.
+    uint32_t controls = 0;
+    bool has_controls = false;
 };
 
 // This device's pads as a companion reports them -- see InputMessage::pads.
@@ -886,6 +890,8 @@ std::vector<ReportedPad> reported_pads(const Readings& readings) {
         pad.name = reading.name;
         pad.slot = reading.slot;
         pad.pressing = reading.pressing;
+        pad.controls = reading.controls;
+        pad.has_controls = true;
         pads.push_back(pad);
     }
     return pads;
