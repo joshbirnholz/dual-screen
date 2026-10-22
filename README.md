@@ -546,21 +546,20 @@ The quick menu's **Controls** lists the line: the GamePad, then each player,
 then any controller not used, each with its name, what the game has it as
 (**Wii U GamePad**, **Wii Remote + Nunchuk**) and where it is. **A** opens
 the GamePad's or a player's page: **Controller Type**, above, and
-**Controller**, which is any controller on either device -- picking one
-another player has swaps the two, and **Detect Controller...** takes
-whichever controller a button is pressed on in the next ten seconds. **X**
-there takes the player out of play. In Controls itself, **X** (Identify)
-buzzes the highlighted controller and **Y** (Change Order) picks it up: move
-it up or down the line, **A** puts it down and **B** puts it back. A
-controller not used is picked up with **A** too.
+**Controller**, which is any controller on either device, this device's
+listed first -- picking one another player has swaps the two -- and **Remove
+Player** (**Remove Controller** on the GamePad's), which takes it out of
+play. **Y** there, **Detect Controller**, takes whichever controller a button
+is pressed on in the next ten seconds. In Controls itself, **X** (Identify)
+buzzes the highlighted controller and **Y** (Change Order) picks a player's
+up: move it up or down among the players, and **A**, **B** or **Y** put it
+down where it is.
 
 Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it
 -- the second square alone filled for Player 2, as a Wii U lights them,
 rather than the first two a Switch would. A Wii U stops at four; Players 5 to
-8 take a Switch's patterns. Moving a controller up from Player 1 makes it the
-GamePad; moving one down past the last player puts it in **Not Used**. A
-Switch Lite has no rumble motor, so its own controls cannot buzz. It all
+8 take a Switch's patterns. A Lite has no rumble motor, so its own controls cannot buzz. It all
 works mid-game and from either device's buttons, and lasts until the app
 closes: a controller is recognised for as long as it stays connected, so one
 that is unplugged and plugged back in joins the end of the line.

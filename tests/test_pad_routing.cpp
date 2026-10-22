@@ -328,6 +328,7 @@ std::vector<ds::ControllerRowView> controller_rows() {
     gamepad.type = "Wii U GamePad";
     gamepad.device = "Steam Deck";
     gamepad.place = "Steam Deck  P1";
+    gamepad.listed = 2;
     ds::ControllerRowView first;
     first.slot = PadSlot::player_number(0);
     first.pad = "companion#2";
@@ -340,12 +341,14 @@ std::vector<ds::ControllerRowView> controller_rows() {
     spare.name = "8BitDo Pro 2";
     spare.device = "Living Room PC";
     spare.place = "Living Room PC  P2";
+    spare.listed = 1;
     return {gamepad, first, spare};
 }
 
-// A player's page: Controller Type, Cemu's but for None, and Controller --
-// Detect Controller, None and every controller under its device -- and X
-// taking the player out of play. The GamePad's has no type to choose.
+// A player's page: Controller Type, Cemu's but for None; Controller, every
+// controller under its device, in the order they are listed rather than the
+// order they play in; and Remove Player, taking the player out of play. Y
+// is Detect Controller. The GamePad's has no type to choose.
 void test_a_players_page_chooses_a_type_and_a_controller() {
     using ds::UiAction;
     using ds::WiiUPlayerScreen;
@@ -357,7 +360,9 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.open(PadSlot::player_number(0));
     page.set_controllers(controller_rows(), types, 0);
     CHECK(page.title() == "Player 1");
-    CHECK_EQ(page.rows().size(), static_cast<std::size_t>(2));
+    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
+                                                   WiiUPlayerScreen::Row::Remove};
+    CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
     // Controller Type: five of Cemu's six, on the one it is.
@@ -370,45 +375,49 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK_EQ(result.type_chosen, 3);
     CHECK(!page.choosing());
-    for (int step = 0; step < 8; ++step) page.update({UiAction::Down}, {}, kWidth, kHeight);
 
-    // Controller: on the one it is, past Detect, None and its device's name.
+    // Controller: on the one it is, past its device's name -- which is
+    // listed first, though the GamePad's plays first.
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
     page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(page.choosing());
-    CHECK_EQ(page.choice_focus(), 5);
+    CHECK_EQ(page.choice_focus(), 1);
     // The spare, under it.
     result = page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.controller_chosen && *result.controller_chosen == "companion#3");
 
-    // Detect Controller, which runs out.
-    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    for (int step = 0; step < 8; ++step) page.update({UiAction::Up}, {}, kWidth, kHeight);
-    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.detect_started && page.detecting());
+    // Detect Controller, on Y, which runs out.
+    result = page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK(result.detect_started && page.detecting() && !page.choosing());
     CHECK_EQ(page.detect_seconds(), 10);
     // Nothing but B, while it waits.
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(page.detecting() && !page.choosing());
     for (int step = 0; step < 50; ++step) page.tick(0.25f);
     CHECK(!page.detecting());
-    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    for (int step = 0; step < 8; ++step) page.update({UiAction::Up}, {}, kWidth, kHeight);
-    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     page.update({UiAction::Cancel}, {}, kWidth, kHeight);
     CHECK(!page.detecting() && page.is_open());
 
-    // X: out of play, and the page with it.
-    result = page.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    // Remove Player: out of play, and the page with it.
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && result.close_requested && !page.is_open());
 
     WiiUPlayerScreen gamepad;
     gamepad.open(PadSlot::gamepad());
     gamepad.set_controllers(controller_rows(), types, 0);
     CHECK(gamepad.title() == "GamePad");
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(1));
-    result = gamepad.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(2));
+    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = gamepad.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && !result.close_requested && gamepad.is_open());
+    // With none there, nothing to remove.
+    std::vector<ds::ControllerRowView> empty = controller_rows();
+    empty[0].pad.clear();
+    gamepad.set_controllers(empty, types, 0);
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(1));
 }
 
 int main() {

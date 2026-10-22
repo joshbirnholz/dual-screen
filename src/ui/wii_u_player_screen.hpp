@@ -29,19 +29,21 @@ struct WiiUPlayerScreenResult {
     // A controller chosen to be this one, by pad_identity(), trading places
     // with the one here -- or, empty, none here at all.
     std::optional<std::string> controller_chosen;
-    // Remove Player: the controller here out of play.
+    // Remove Player, or the GamePad's Remove Controller: the controller here
+    // out of play.
     bool removed = false;
-    // Detect Controller put up: the caller watches every controller for a
-    // press until it is put away -- see detected().
+    // Detect Controller, Y, put up: the caller watches every controller for
+    // a press until it is put away -- see detected().
     bool detect_started = false;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
 // menu: what the game has the player as -- Controller Type, Cemu's -- and
 // which controller is the one -- Controller, any of them on either device, a
-// controller another player has trading places. Detect Controller takes
-// whichever controller a button is pressed on next, for ten seconds. X takes
-// the player's controller out of play. B goes back to the menu.
+// controller another player has trading places -- and Remove Player, which
+// takes the player's controller out of play. Detect Controller, Y, takes
+// whichever controller a button is pressed on next, for ten seconds. B goes
+// back to the menu.
 //
 // Everything on it is the host's, which sees every controller: the page shows
 // what it is handed and says what was chosen. With two devices it is one
@@ -84,8 +86,9 @@ public:
     void detected() { detecting_ = false; }
 
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Controller.
-    enum class Row { Type, Controller };
+    // Controller, then Remove Player -- Remove Controller, on the GamePad --
+    // where there is a controller to take out of play.
+    enum class Row { Type, Controller, Remove };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -121,6 +124,10 @@ private:
     void choose(int index, WiiUPlayerScreenResult& result);
     void handle_tap(int entry, WiiUPlayerScreenResult& result, float output_width, float output_height);
     void remove(WiiUPlayerScreenResult& result);
+    void start_detecting(WiiUPlayerScreenResult& result);
+    // A on the row in focus: its popup, or Remove.
+    void act(WiiUPlayerScreenResult& result, float output_width, float output_height);
+    std::string remove_label() const;
     bool removable() const;
     PopupText detect_text() const;
     PopupGeometry detect_popup(float output_width, float output_height) const;
@@ -135,8 +142,7 @@ private:
     int focus_ = 0;
     ChoicePopup choice_;
     // What each of the popup's lines is: an index into Cemu's types, or for
-    // Controller a controller's identity -- with kDetectChoice and empty, for
-    // None, before them.
+    // Controller a controller's identity -- empty for a device's heading.
     std::vector<int> choice_types_;
     std::vector<std::string> choice_pads_;
     bool detecting_ = false;
