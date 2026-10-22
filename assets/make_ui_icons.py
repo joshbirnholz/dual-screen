@@ -223,7 +223,28 @@ def android_alpha():
 def device_alpha(name):
     if name == "android":
         return android_alpha()
-    return read_png_alpha(f"assets/ui_icons/{name}.png")
+    w, h, alpha = read_png_alpha(f"assets/ui_icons/{name}.png")
+    if name in REMOTE_BUTTONS:
+        # The 1 and 2 buttons, cut out where a Wii Remote has them: a game
+        # box leaves them off, for the number of players printed there.
+        cx, ys, r = REMOTE_BUTTONS[name]
+        for y in range(h):
+            for x in range(w):
+                d = min(math.hypot(x + 0.5 - cx, y + 0.5 - cy) for cy in ys)
+                if d <= r:
+                    alpha[y][x] = 0
+                elif d <= r + 1:
+                    alpha[y][x] = round(alpha[y][x] * (d - r))
+    return w, h, alpha
+
+
+# Where the 1 and 2 buttons go on flanx's Wii Remotes, in their own pixels:
+# down the remote's middle, about three quarters and five sixths of the way
+# down it, a little larger than the -, HOME and + dots above.
+REMOTE_BUTTONS = {
+    "wii_remote": (95.5, (500, 556), 18),
+    "wii_remote_nunchuk": (93.5, (500, 556), 18),
+}
 
 
 def render_device(name, band=0.48):
