@@ -171,6 +171,19 @@ PadOrder order_of(const std::vector<KnownPad>& pads, const PadLineup& lineup, bo
 bool move_among_players(PadLineup& lineup, int pad, int direction) {
     if (direction == 0) return false;
     std::vector<int>& players = lineup.players;
+    // The GamePad and Player 1 trade places, or one takes the other's empty
+    // place.
+    if (lineup.gamepad == pad) {
+        if (direction < 0 || players.empty()) return false;
+        std::swap(lineup.gamepad, players.front());
+        cap_players(lineup);
+        return true;
+    }
+    if (!players.empty() && players.front() == pad && direction < 0) {
+        std::swap(lineup.gamepad, players.front());
+        cap_players(lineup);
+        return true;
+    }
     const auto in_players = std::find(players.begin(), players.end(), pad);
     if (in_players == players.end()) return false;
     const std::ptrdiff_t at = in_players - players.begin();

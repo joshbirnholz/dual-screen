@@ -151,9 +151,9 @@ void test_an_empty_gamepad_is_taken_rather_than_traded() {
     CHECK_EQ(empty.players.size(), static_cast<std::size_t>(1));
 }
 
-// A Wii U's Controls changes only the players' order: Player 1 goes no
-// higher and the last player no lower, and the GamePad's and Not used's
-// controllers do not move at all.
+// A Wii U's Controls changes the GamePad's and the players' order: Player 1
+// trades places with the GamePad, the last player goes no lower, and Not
+// used's controllers do not move at all.
 void test_a_wii_u_moves_only_among_its_players() {
     const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2), pad(true, 3)};
     PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
@@ -161,15 +161,30 @@ void test_a_wii_u_moves_only_among_its_players() {
     CHECK_EQ(lineup.gamepad, 0);
     CHECK_EQ(lineup.players.size(), static_cast<std::size_t>(2));
 
-    CHECK(!ds::move_among_players(lineup, 1, -1));
     CHECK(!ds::move_among_players(lineup, 2, 1));
-    CHECK(!ds::move_among_players(lineup, 0, 1));
+    CHECK(!ds::move_among_players(lineup, 0, -1));
     CHECK(!ds::move_among_players(lineup, 3, -1));
     CHECK(ds::move_among_players(lineup, 1, 1));
     CHECK_EQ(lineup.players[0], 2);
     CHECK_EQ(lineup.players[1], 1);
     CHECK_EQ(lineup.gamepad, 0);
     CHECK_EQ(lineup.unused.size(), static_cast<std::size_t>(1));
+
+    // Up from Player 1 is the GamePad, and down from the GamePad Player 1.
+    CHECK(ds::move_among_players(lineup, 2, -1));
+    CHECK_EQ(lineup.gamepad, 2);
+    CHECK_EQ(lineup.players[0], 0);
+    CHECK(ds::move_among_players(lineup, 2, 1));
+    CHECK_EQ(lineup.gamepad, 0);
+    CHECK_EQ(lineup.players[0], 2);
+
+    // An empty GamePad is taken outright, Player 1's place left empty.
+    lineup.gamepad = -1;
+    CHECK(ds::move_among_players(lineup, 2, -1));
+    CHECK_EQ(lineup.gamepad, 2);
+    CHECK_EQ(lineup.players.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(lineup.players[0], -1);
+    CHECK_EQ(lineup.players[1], 1);
 }
 
 // A rearranged line holds by identity: pads keep their places while others

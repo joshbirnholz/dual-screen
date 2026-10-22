@@ -1329,14 +1329,17 @@ void test_wii_u_controls_list_every_controller() {
     CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.controller_adding == 3 && result.controller_opened == -1);
-    // Nor is the GamePad's controller picked up, when it has one.
+    // The GamePad's controller is picked up, when it has one, to trade
+    // places with Player 1.
     std::vector<ControllerRowView> held = state.wii_u_controllers;
     held[0].pad = "this#6";
     held[0].name = "Steam Deck";
     picker.set_wii_u_controllers(held);
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    CHECK(picker.moving_controller() && result.controller_picked_up == 0);
+    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(!picker.moving_controller());
     // Four players, as many as a Wii U pairs: nothing to add one as.
     std::vector<ControllerRowView> full = state.wii_u_controllers;
     for (int player = 2; player < 4; ++player) {

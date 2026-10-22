@@ -569,8 +569,10 @@ listed first -- picking one another player has swaps the two -- and
 **Disconnect**, which takes it out of play. **Y** there, **Detect Controller**, takes whichever controller a button
 is pressed on in the next ten seconds. In Controls itself, **X** (Identify)
 buzzes the highlighted controller and **Y** (Change Order) picks a player's
-up: move it up or down among the players, and **A**, **B** or **Y** put it
-down where it is.
+or the GamePad's up -- drawn white, its words in the accent colour, with
+arrows before its name: move it up or down the line, up from Player 1 to be
+the GamePad, and **A**, **B** or **Y** put it down where it is. Only a
+controller on the device showing the GamePad's screen can be the GamePad.
 
 Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it

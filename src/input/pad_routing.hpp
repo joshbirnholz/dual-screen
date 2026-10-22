@@ -225,10 +225,11 @@ PadOrder order_of(const std::vector<KnownPad>& pads, const PadLineup& lineup, bo
 // trading places when it is not -- and down from the last player is the top
 // of Not used. Returns whether anything moved.
 bool move_in_lineup(PadLineup& lineup, int pad, int direction);
-// The same for a Wii U's Controls, where the order is only the players': a
-// player trades places with the one above or below, and goes no further
-// than Player 1 or the last player. The GamePad and Not used stay as they
-// are. Returns whether anything moved.
+// The same for a Wii U's Controls, where the order is the GamePad's and the
+// players': a player trades places with the one above or below, Player 1
+// with the GamePad, taking it outright when it is empty; and nothing goes
+// past the last player. Not used stays as it is. Returns whether anything
+// moved.
 bool move_among_players(PadLineup& lineup, int pad, int direction);
 // Pad `pad` made a new player in the first empty place, from the GamePad or
 // Not used -- the GamePad left with none. Returns whether it was added: not
