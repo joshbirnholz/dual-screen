@@ -141,8 +141,16 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
         placed[static_cast<std::size_t>(index)] = true;
         if (lineup.gamepad < 0 && pads[static_cast<std::size_t>(index)].on_this_device == gamepad_here) {
             lineup.gamepad = index;
-        } else {
+            continue;
+        }
+        const int player = first_free_player(lineup);
+        const bool may = order.joinable.empty() ||
+                         (player < static_cast<int>(order.joinable.size()) &&
+                          order.joinable[static_cast<std::size_t>(player)]);
+        if (may) {
             join_players(lineup, index);
+        } else {
+            lineup.unused.push_back(index);
         }
     }
     cap_players(lineup);

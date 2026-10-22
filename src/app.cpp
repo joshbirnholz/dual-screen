@@ -1031,7 +1031,7 @@ struct App::Impl {
     // handed the controllers and the player's types; a companion's, the
     // host's, through show_host_wii_u_player(). `adding`: Add Controller's,
     // the player after the last, yet to be.
-    void open_wii_u_player(PadSlot slot, bool adding = false);
+    void open_wii_u_player(PadSlot slot, bool adding = false, const std::string& pad = std::string());
     void update_wii_u_player_screen(const std::vector<UiAction>& actions,
                                     const std::vector<PointerEvent>& pointers);
     void show_wii_u_player(WiiUPlayerScreen& screen) const;
@@ -1174,6 +1174,12 @@ struct App::Impl {
     // leaving leaves its place empty rather than the rest moving up -- and
     // one arriving takes the first empty place -- as on a Wii U.
     void keep_pad_order();
+    // A new line, with which players a controller arriving may become kept
+    // from the old -- see PadOrder::joinable.
+    PadOrder keeping_joinable(PadOrder order) const {
+        order.joinable = pad_order.joinable;
+        return order;
+    }
     // Whether the Wii U list is shown in place of "Playing on Cemu" -- see
     // LayoutPickerState::embedded.
     bool shows_embedded_menu() const;
@@ -2105,18 +2111,19 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
                                                  routed.players[player]);
         }
     }
-    // A player with a controller is never None to the game, nor a Classic
-    // Controller alone -- see offered_type(): one this game has never had
-    // is a Pro Controller, a Classic Controller is one plugged into a Wii
-    // Remote, and either is kept as that -- every other keeps what the game
-    // had it as last.
+    // A player with a controller is never a Classic Controller alone -- see
+    // offered_type() -- but one plugged into a Wii Remote, kept as that.
+    // Nor None: a controller only becomes a player with a type -- see
+    // keep_pad_order().
     for (int player = 0; player < kPadPlayers; ++player) {
         if (!routed.player_fed[player]) continue;
         const int option = cemu_player_type_option(player);
         if (option < 0) continue;
         const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
         if (type.active < 0 || type.active >= static_cast<int>(type.choices.size())) continue;
-        const int instead = offered_instead(type.choices[static_cast<std::size_t>(type.active)], type.choices);
+        const std::string& now = type.choices[static_cast<std::size_t>(type.active)];
+        if (now != "Classic Controller") continue;
+        const int instead = offered_instead(now, type.choices);
         if (instead >= 0) set_cemu_option(option, instead);
     }
 
@@ -2275,10 +2282,10 @@ void App::Impl::show_wii_u_player(WiiUPlayerScreen& screen) const {
     screen.set_controllers(wii_u_controller_rows(), std::move(types), current);
 }
 
-void App::Impl::open_wii_u_player(PadSlot slot, bool adding) {
+void App::Impl::open_wii_u_player(PadSlot slot, bool adding, const std::string& pad) {
     enter_cemu_page(State::WiiUPlayer);
     if (adding) {
-        wii_u_player_screen.open_adding(slot);
+        wii_u_player_screen.open_adding(slot, pad);
     } else {
         wii_u_player_screen.open(slot);
     }
@@ -2506,7 +2513,7 @@ void App::Impl::move_pad(const std::string& identity, int direction) {
     PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
     const int pad = pad_index(pads, identity);
     if (pad < 0 || !move_among_players(lineup, pad, direction)) return;
-    pad_order = order_of(pads, lineup, holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     log_info("controllers: the order was changed");
 }
 
@@ -2515,7 +2522,7 @@ void App::Impl::put_pad_in_slot(const std::string& identity, PadSlot slot) {
     PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
     const int pad = pad_index(pads, identity);
     if (pad < 0 || !put_in_slot(lineup, pad, slot)) return;
-    pad_order = order_of(pads, lineup, holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " is now " + pad_slot_name(slot));
 }
 
@@ -2524,7 +2531,7 @@ void App::Impl::take_pad_out_of_play(const std::string& identity) {
     PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
     const int pad = pad_index(pads, identity);
     if (pad < 0 || !take_out_of_play(lineup, pad)) return;
-    pad_order = order_of(pads, lineup, holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " is no longer used");
 }
 
@@ -2564,7 +2571,10 @@ void App::Impl::step_cemu_option(int index, int steps) {
     external_source->change_option(option.id, option.active);
     const std::string& value = option.choices[static_cast<std::size_t>(option.active)];
     log_info("Cemu: " + option.label + ", " + value);
-    if (option.default_choice >= 0 && have_game_config) {
+    // A player's type is this game's whatever Cemu says its default is: it
+    // is what lets a controller arriving be that player -- see
+    // keep_pad_order().
+    if ((option.default_choice >= 0 || is_cemu_controls_option(option.id)) && have_game_config) {
         game_config.wii_u_options[option.id] = option.active;
         persist_game_config();
     }
@@ -2582,8 +2592,31 @@ void App::Impl::set_cemu_option(int index, int choice) {
 }
 
 void App::Impl::keep_pad_order() {
+    // A controller arriving becomes a player only where this game has had
+    // one, as it had it -- never None. Elsewhere it waits in Not used to be
+    // added, its type chosen then. Until Cemu has said what types it has,
+    // nobody joins, and nothing is kept: the line is worked out again once
+    // it has. A Cemu with no types to say lets anyone join, as before.
+    const bool told = !external_source->options_supported() || !cemu_options.empty();
+    std::vector<bool> joinable(kPadPlayers, false);
+    bool any_type = false;
+    for (int player = 0; player < kPadPlayers && told; ++player) {
+        const int option = cemu_player_type_option(player);
+        if (option < 0) continue;
+        any_type = true;
+        const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+        const auto kept = game_config.wii_u_options.find(type.id);
+        joinable[static_cast<std::size_t>(player)] =
+            have_game_config && kept != game_config.wii_u_options.end() && kept->second >= 0 &&
+            kept->second < static_cast<int>(type.choices.size()) &&
+            (offered_type(type.choices[static_cast<std::size_t>(kept->second)]) ||
+             type.choices[static_cast<std::size_t>(kept->second)] == "Classic Controller");
+    }
+    if (told && !any_type) joinable.clear();
+    pad_order.joinable = joinable;
+    if (!told) return;
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
-    pad_order = order_of(pads, line_up_pads(pads, pad_order, holds_gamepad()), holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, line_up_pads(pads, pad_order, holds_gamepad()), holds_gamepad()));
 }
 
 void App::Impl::add_pad_as_player(const std::string& identity, int type) {
@@ -2592,7 +2625,7 @@ void App::Impl::add_pad_as_player(const std::string& identity, int type) {
     const int pad = pad_index(pads, identity);
     const int player = first_free_player(lineup);
     if (pad < 0 || !add_player(lineup, pad)) return;
-    pad_order = order_of(pads, lineup, holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     // Its type first, so the game is not shown it as something else.
     set_cemu_option(cemu_player_type_option(player), type);
     log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " was added as " +
@@ -3763,12 +3796,18 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                     result.controller_opened < static_cast<int>(rows.size())) {
                     open_wii_u_player(rows[static_cast<std::size_t>(result.controller_opened)].slot);
                 }
-            } else if (result.controller_adding) {
-                // The first player with no controller, the same way.
-                if (!is_companion() && local_game()) {
+            } else if (result.controller_adding >= 0) {
+                // A controller not used: the first player with no
+                // controller, to add it as, the same way.
+                const std::vector<ControllerRowView>& rows = picker->state().wii_u_controllers;
+                if (!is_companion() && local_game() &&
+                    result.controller_adding < static_cast<int>(rows.size())) {
                     const std::vector<KnownPad> pads = gather_pads(companion_joined());
                     const int player = first_free_player(line_up_pads(pads, pad_order, holds_gamepad()));
-                    if (player < kWiiUPlayers) open_wii_u_player(PadSlot::player_number(player), true);
+                    if (player < kWiiUPlayers) {
+                        open_wii_u_player(PadSlot::player_number(player), true,
+                                          rows[static_cast<std::size_t>(result.controller_adding)].pad);
+                    }
                 }
             } else if (result.amiibo_chosen >= 0) {
                 // Chosen from the list, from either device: the host's files.

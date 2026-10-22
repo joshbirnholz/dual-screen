@@ -87,8 +87,9 @@ struct LayoutPickerResult {
     // page A opened, and the row whose controller X buzzes.
     int controller_opened = -1;
     int controller_identified = -1;
-    // Add Controller chosen: a new player's page, to say what it is first.
-    bool controller_adding = false;
+    // A controller not used chosen, by row: a new player's page, to say
+    // what it is first.
+    int controller_adding = -1;
     // Y picking a row's controller up to move it: the row; and while it is
     // held, a place up (-1) or down (1). A, B or Y put it down where it is,
     // which needs nothing more.
@@ -578,11 +579,9 @@ private:
         // A DS or 3DS game's Button Mapping, a page of its own, at the top
         // of its Controls.
         ButtonMapping,
-        // A Wii U's controller: the GamePad or a player -- see
-        // LayoutPickerState::wii_u_controllers. A controller not used has
-        // no row; Add Controller, after the players, makes it one.
+        // A Wii U's controller: the GamePad, a player or one not used -- see
+        // LayoutPickerState::wii_u_controllers.
         Controller,
-        AddController,
     };
     struct OptionRow {
         Option option = Option::Cursor;

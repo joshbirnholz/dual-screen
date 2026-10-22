@@ -15,22 +15,13 @@
 namespace ds {
 namespace {
 
-// What Controls shows of a Wii U's line: how many rows -- the GamePad and
-// the players, not a controller not used -- and whether Add Controller is
-// one: with a controller not used to add, and room for another player.
-std::pair<int, bool> controls_shape(const std::vector<ControllerRowView>& rows) {
-    int shown = 0;
+// Whether a Wii U's line has room for another player.
+bool room_for_a_player(const std::vector<ControllerRowView>& rows) {
     int players = 0;
-    bool spare = false;
     for (const ControllerRowView& row : rows) {
-        if (row.slot.kind == PadSlot::Kind::NotUsed) {
-            if (!row.pad.empty()) spare = true;
-            continue;
-        }
-        ++shown;
         if (row.slot.kind == PadSlot::Kind::Player) ++players;
     }
-    return {shown, spare && players < kWiiUPlayers};
+    return players < kWiiUPlayers;
 }
 
 }  // namespace
@@ -189,10 +180,8 @@ void LayoutPicker::rebuild_footer() {
         // rows, as before.
         if (!state_.wii_u_controllers.empty()) {
             for (std::size_t index = 0; index < state_.wii_u_controllers.size(); ++index) {
-                if (state_.wii_u_controllers[index].slot.kind == PadSlot::Kind::NotUsed) continue;
                 controls_.push_back(OptionRow{Option::Controller, static_cast<int>(index)});
             }
-            if (controls_shape(state_.wii_u_controllers).second) controls_.push_back(OptionRow{Option::AddController});
         } else {
             controls_.push_back(OptionRow{Option::ControllerOrder});
             for (int index = controls_from; index < producers; ++index) {
@@ -264,7 +253,7 @@ void LayoutPicker::rebuild_footer() {
 
 void LayoutPicker::set_wii_u_controllers(const std::vector<ControllerRowView>& rows) {
     if (rows == state_.wii_u_controllers) return;
-    const bool count_changed = controls_shape(rows) != controls_shape(state_.wii_u_controllers);
+    const bool count_changed = rows.size() != state_.wii_u_controllers.size();
     state_.wii_u_controllers = rows;
     if (count_changed) rebuild_footer();
     // The controller in hand stays under the cursor wherever the line has
@@ -371,7 +360,6 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
         case Option::ControllerOrder: return "Controller Order";
-        case Option::AddController: return "+ Add Controller";
         case Option::ButtonMapping: return "Change Controls";
         case Option::Controller:
             if (row.index >= 0 && row.index < static_cast<int>(state_.wii_u_controllers.size())) {
@@ -442,8 +430,7 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
         case Option::GraphicPacks:
         case Option::ControllerOrder:
         case Option::ButtonMapping:
-        case Option::Controller:
-        case Option::AddController: break;
+        case Option::Controller: break;
     }
     // One value is nothing to choose between.
     if (choices.size() < 2) choices.clear();
@@ -495,8 +482,7 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
             return state_.screens_swap_value_shown ? (state_.screens_swapped ? "On" : "Off") : "";
         // A page, not a value.
         case Option::GraphicPacks:
-        case Option::ControllerOrder:
-        case Option::AddController: return std::string();
+        case Option::ControllerOrder: return std::string();
         // A page, which says whether this game has made any changes in it.
         case Option::ButtonMapping: return std::string();
         // Drawn as a controller, not as a value -- see render_controller_row().
@@ -673,7 +659,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.resume_choosable != state_.resume_choosable ||
                                  state.reset_available != state_.reset_available ||
                                  state.smoothing_available != state_.smoothing_available ||
-                                 controls_shape(state.wii_u_controllers) != controls_shape(state_.wii_u_controllers) ||
+                                 state.wii_u_controllers.size() != state_.wii_u_controllers.size() ||
                                  state.producer_options.size() != state_.producer_options.size() ||
                                  state.producer_controls_from != state_.producer_controls_from ||
                                  state.graphic_packs_available != state_.graphic_packs_available ||
@@ -1039,17 +1025,19 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                     if (state_.graphic_packs_available) result.graphic_packs_requested = true;
                     break;
                 case Option::ControllerOrder: result.controllers_requested = true; break;
-                case Option::AddController: result.controller_adding = true; break;
                 case Option::ButtonMapping: result.button_mapping_requested = true; break;
                 case Option::Producer:
                     result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                     break;
-                // The GamePad's or a player's page; a controller not used
-                // has neither.
+                // The GamePad's or a player's page; a controller not used,
+                // a new player's, to add it as -- where there is room.
                 case Option::Controller:
                     if (const ControllerRowView* row = focused_controller()) {
+                        const int index = rows()[static_cast<std::size_t>(item_)].index;
                         if (row->slot.kind != PadSlot::Kind::NotUsed) {
-                            result.controller_opened = rows()[static_cast<std::size_t>(item_)].index;
+                            result.controller_opened = index;
+                        } else if (room_for_a_player(state_.wii_u_controllers)) {
+                            result.controller_adding = index;
                         }
                     }
                     break;
@@ -1734,16 +1722,12 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const Color ink = lifted ? theme.background : menu_row_text(focused);
     const Color dim = lifted ? theme.panel : theme.text_dim;
 
-    // The GamePad or the player's lights, in a column of their own; Not Used
-    // says so there.
+    // The GamePad or the player's lights, in a column of their own; a
+    // controller not used has no place, and nothing there.
     const PadSlotView slot(line);
     const float centre_y = row.y + row.h * 0.5f;
     const float slot_x = row.x + pad + slot.width * 0.5f;
-    if (view.slot.kind == PadSlot::Kind::NotUsed) {
-        const float small = scale * 0.75f;
-        text.draw(quads, "Not Used", slot_x, std::round(centre_y - TextRenderer::line_height(small) * 0.5f), small, dim,
-                  TextAlign::Center);
-    } else {
+    if (view.slot.kind != PadSlot::Kind::NotUsed) {
         const bool icons = load_ui_icons(ui_icons_, ui_icons_tried_);
         slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink, view.type);
     }
@@ -1954,16 +1938,12 @@ void LayoutPicker::render(QuadRenderer& quads,
             // A Wii U's player or GamePad opens its page; a controller not
             // used has none.
             const char* confirm = "OK";
-            if (system_ == SystemId::WiiU && section_ == MenuSection::ControllerOrder && on_content_ &&
-                item_ >= 0 && item_ < static_cast<int>(controls_.size()) &&
-                controls_[static_cast<std::size_t>(item_)].option == Option::AddController) {
-                confirm = "Add";
-            } else if (controller != nullptr) {
+            if (controller != nullptr) {
                 if (controller->slot.kind == PadSlot::Kind::GamePad ||
                     controller->slot.kind == PadSlot::Kind::Player) {
                     confirm = "Edit";
                 } else {
-                    confirm = nullptr;
+                    confirm = room_for_a_player(state_.wii_u_controllers) ? "Add" : nullptr;
                 }
             }
             if (confirm != nullptr) guide.push_back({ButtonGlyph::A, confirm, PromptRole::ActsOnSelection});

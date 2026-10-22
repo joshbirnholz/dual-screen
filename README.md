@@ -544,23 +544,21 @@ describe a different controller from the one behind it.
 
 The quick menu's **Controls** lists the line: the GamePad, then each player,
 each with its name, what the game has it as (**Wii U GamePad**, **Wii Remote
-+ Nunchuk**) and where it is. A controller not used is not listed: **+ Add
-Controller**, under the players while a controller is not used and there
-are fewer than four, opens the next
-player's page to choose its type and controller first, and **Add Controller**
-there makes it a player. Controllers join as players in the order they
-connect, and each player is what this game had it as last -- a player with a
-controller is never **None**; one the game has never had starts as a Wii U
-Pro Controller. Nor is one a Classic Controller alone, which a Wii U never
-sees -- it is always plugged into a Wii Remote, whose buttons a game can read
-too -- so it is a **Wii Classic Controller**, a Wii Remote with one plugged
-in: the remote's buttons can be mapped as well, though few games want them.
++ Nunchuk**) and where it is, then any controller not used, with no place of
+its own. **A** (Add) on one of those opens the first empty player's page to
+choose its type first, and **Add Controller** there makes it that player.
+A controller arriving becomes a player by itself only where this game has
+had that player before, and as what it had it as -- never **None**;
+anywhere else it waits, not used, to be added. A player is never a Classic
+Controller alone either, which a Wii U never sees -- it is always plugged
+into a Wii Remote, whose buttons a game can read too -- so it is a **Wii
+Classic Controller**, a Wii Remote with one plugged in: the remote's buttons
+can be mapped as well, though few games want them.
 **A** (Edit) opens
 the GamePad's or a player's page: **Controller Type**, above, and
 **Controller**, which is any controller on either device, this device's
-listed first -- picking one another player has swaps the two -- and **Remove
-Player** (**Remove Controller** on the GamePad's), which takes it out of
-play. **Y** there, **Detect Controller**, takes whichever controller a button
+listed first -- picking one another player has swaps the two -- and
+**Disconnect**, which takes it out of play. **Y** there, **Detect Controller**, takes whichever controller a button
 is pressed on in the next ten seconds. In Controls itself, **X** (Identify)
 buzzes the highlighted controller and **Y** (Change Order) picks a player's
 up: move it up or down among the players, and **A**, **B** or **Y** put it

@@ -188,6 +188,11 @@ struct PadOrder {
     std::string gamepad;  // empty for none
     std::vector<std::string> players;
     std::vector<std::string> unused;
+    // Which players a controller arriving may become, by number from 0 --
+    // on a Wii U, those the game has a type for already -- the rest going to
+    // Not used instead. Empty for any. Kept whether or not anything has
+    // been chosen, and not by order_of().
+    std::vector<bool> joinable;
 };
 
 // Where each pad stands.

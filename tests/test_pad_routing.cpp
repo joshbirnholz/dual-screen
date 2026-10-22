@@ -226,6 +226,22 @@ void test_a_chosen_order_holds_while_pads_come_and_go() {
     CHECK(got[0] == PadSlot::player_number(2));
 }
 
+// A controller arriving becomes a player only where it may -- on a Wii U,
+// a player the game has a type for -- and otherwise waits, not used.
+void test_a_controller_joins_only_a_player_it_may_be() {
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};
+    PadOrder order;
+    order.joinable = {true, false};
+    PadLineup lineup = ds::line_up_pads(pads, order, true);
+    CHECK_EQ(lineup.gamepad, 0);
+    CHECK(lineup.players == std::vector<int>({1}));
+    CHECK(lineup.unused == std::vector<int>({2}));
+    // Anyone, with nothing said.
+    order.joinable.clear();
+    lineup = ds::line_up_pads(pads, order, true);
+    CHECK(lineup.players == std::vector<int>({1, 2}));
+}
+
 // Each slot gets exactly its own pads' presses.
 void test_each_slot_gets_its_own_pads_presses() {
     std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(false, 0)};
@@ -533,6 +549,7 @@ int main() {
     test_an_empty_gamepad_is_taken_rather_than_traded();
     test_a_wii_u_moves_only_among_its_players();
     test_a_chosen_order_holds_while_pads_come_and_go();
+    test_a_controller_joins_only_a_player_it_may_be();
     test_each_slot_gets_its_own_pads_presses();
     test_the_controllers_screen_moves_a_pad_like_steam_does();
     test_a_controller_chosen_for_a_place_trades_with_the_one_there();

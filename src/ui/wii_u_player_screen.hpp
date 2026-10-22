@@ -29,8 +29,7 @@ struct WiiUPlayerScreenResult {
     // A controller chosen to be this one, by pad_identity(), trading places
     // with the one here -- or, empty, none here at all.
     std::optional<std::string> controller_chosen;
-    // Remove Player, or the GamePad's Remove Controller: the controller here
-    // out of play.
+    // Disconnect: the controller here out of play.
     bool removed = false;
     // Detect Controller, Y, put up: the caller watches every controller for
     // a press until it is put away -- see detected().
@@ -43,13 +42,13 @@ struct WiiUPlayerScreenResult {
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
 // menu: what the game has the player as -- Controller Type, Cemu's -- and
 // which controller is the one -- Controller, any of them on either device, a
-// controller another player has trading places -- and Remove Player, which
+// controller another player has trading places -- and Disconnect, which
 // takes the player's controller out of play. Detect Controller, Y, takes
 // whichever controller a button is pressed on next, for ten seconds. B goes
 // back to the menu.
 //
-// Add Controller's is the page of the player after the last, yet to be:
-// its type and controller are chosen first, and Add makes it one -- so a
+// A controller not used opens the page of the first player with none, yet to
+// be: its type and controller are chosen first, and Add makes it one -- so a
 // player is never there with nothing said about it.
 //
 // Everything on it is the host's, which sees every controller: the page shows
@@ -60,8 +59,9 @@ public:
     static constexpr float kDetectSeconds = 10.0f;
 
     void open(PadSlot slot);
-    // A new player's page, for Add Controller.
-    void open_adding(PadSlot slot);
+    // A new player's page, for a controller not used: `pad`, by
+    // pad_identity(), or the first not used where empty.
+    void open_adding(PadSlot slot, const std::string& pad = std::string());
     bool adding() const { return adding_; }
     // On a new player's page, what Add will make it: an index into Cemu's
     // types, -1 for none, and a controller by pad_identity().
@@ -102,8 +102,8 @@ public:
     void detected(const std::string& pad = std::string());
 
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Controller, then Remove Player -- Remove Controller, on the GamePad --
-    // where there is a controller to take out of play. A new player's has
+    // Controller, then Disconnect where there is a controller to take out of
+    // play. A new player's has
     // Add instead.
     enum class Row { Type, Controller, Remove, Add };
     int focus() const { return focus_; }

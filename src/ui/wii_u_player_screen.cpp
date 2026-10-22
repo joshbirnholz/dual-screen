@@ -30,9 +30,11 @@ void WiiUPlayerScreen::open(PadSlot slot) {
     pending_chosen_ = false;
 }
 
-void WiiUPlayerScreen::open_adding(PadSlot slot) {
+void WiiUPlayerScreen::open_adding(PadSlot slot, const std::string& pad) {
     open(slot);
     adding_ = true;
+    pending_pad_ = pad;
+    pending_chosen_ = !pad.empty();
 }
 
 void WiiUPlayerScreen::detected(const std::string& pad) {
@@ -145,7 +147,7 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
     std::vector<std::string> labels;
     if (focused_row() == Row::Type) {
         // Cemu's, but for None -- a player with no controller is one taken
-        // out of play, which is Remove Player's -- and a Classic Controller
+        // out of play, which is Disconnect's -- and a Classic Controller
         // alone, which a Wii U never sees: one is always plugged into a Wii
         // Remote, which is Wii Remote + Classic Controller.
         int current = 0;
@@ -266,7 +268,7 @@ void WiiUPlayerScreen::remove(WiiUPlayerScreenResult& result) {
 }
 
 std::string WiiUPlayerScreen::remove_label() const {
-    return slot_.kind == PadSlot::Kind::Player ? "Remove Player" : "Remove Controller";
+    return "Disconnect";
 }
 
 PopupText WiiUPlayerScreen::detect_text() const {
@@ -447,7 +449,7 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
         const Row focused = focused_row();
         if (focused != Row::Add || !pending_pad_.empty()) {
             guide.push_back({ButtonGlyph::A,
-                             focused == Row::Remove ? "Remove" : focused == Row::Add ? "Add" : "Change",
+                             focused == Row::Remove ? "Disconnect" : focused == Row::Add ? "Add" : "Change",
                              PromptRole::ActsOnSelection});
         }
     }

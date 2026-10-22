@@ -1247,8 +1247,8 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
     CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and plus");
 }
 
-// A Wii U's Controls: the GamePad, then each player, then Add Controller --
-// a controller not used has no row -- rather than Controller Order and
+// A Wii U's Controls: the GamePad, then each player, then each controller
+// not used, which A adds as a new player -- rather than Controller Order and
 // Cemu's types. A opens a player's page, X buzzes a controller, Y picks a
 // player's up to move it -- Up and Down along the players, A, B or Y
 // putting it down -- and the GamePad's is not picked up.
@@ -1322,12 +1322,13 @@ void test_wii_u_controls_list_every_controller() {
         CHECK(picker.is_open());
     }
 
-    // Add Controller: a new player's page, and nothing to pick up.
+    // A controller not used: a new player's page to add it, and nothing to
+    // pick up.
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.controller_adding && result.controller_opened == -1);
+    CHECK(result.controller_adding == 3 && result.controller_opened == -1);
     // Nor is the GamePad's controller picked up, when it has one.
     std::vector<ControllerRowView> held = state.wii_u_controllers;
     held[0].pad = "this#6";
@@ -1336,7 +1337,7 @@ void test_wii_u_controls_list_every_controller() {
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
-    // Four players, as many as a Wii U pairs: no Add Controller.
+    // Four players, as many as a Wii U pairs: nothing to add one as.
     std::vector<ControllerRowView> full = state.wii_u_controllers;
     for (int player = 2; player < 4; ++player) {
         ControllerRowView more = second;
@@ -1345,12 +1346,10 @@ void test_wii_u_controls_list_every_controller() {
         full.push_back(more);
     }
     picker.set_wii_u_controllers(full);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 5);
-    // Nor with every controller in play.
-    std::vector<ControllerRowView> all_in = state.wii_u_controllers;
-    all_in.pop_back();
-    picker.set_wii_u_controllers(all_in);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 6);
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_adding, -1);
     picker.set_wii_u_controllers(state.wii_u_controllers);
     CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
