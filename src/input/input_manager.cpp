@@ -896,6 +896,9 @@ void InputManager::handle_event(const SDL_Event& event) {
             } else if (button == kMenuSettingsButton) {
                 push_action(UiAction::MenuSettings);
                 meaning = "settings";
+            } else if (button == kMenuMinusButton) {
+                push_action(UiAction::MenuMinus);
+                meaning = "the menu's minus";
             }
 
             // And the first press of each button, at a level that reaches the
@@ -991,6 +994,7 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDLK_F6: push_action(UiAction::MenuQuit); break;
                 case SDLK_F4: push_action(UiAction::MenuSettings); break;
                 case SDLK_F7: push_action(UiAction::MenuDisconnect); break;
+                case SDLK_F8: push_action(UiAction::MenuMinus); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
                 // Return doubles as DS Start in game, but game input is off
                 // while a menu is open, so there is no conflict.

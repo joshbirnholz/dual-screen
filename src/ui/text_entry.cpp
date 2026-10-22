@@ -99,6 +99,28 @@ TextEntryResult TextEntryPopup::update(const std::vector<UiAction>& actions,
     return result;
 }
 
+int TextEntryPopup::button_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    return popup_button_at(geometry(output_width, output_height), x, y);
+}
+
+bool TextEntryPopup::contains(float x, float y, float output_width, float output_height) const {
+    return open_ && geometry(output_width, output_height).box.contains(x, y);
+}
+
+TextEntryResult TextEntryPopup::tap(int button) {
+    TextEntryResult result;
+    if (!open_) return result;
+    const int answer = cursor_.tap(button);
+    if (answer == 1) {
+        result.done = true;
+    } else if (answer == 0) {
+        result.cancelled = true;
+    }
+    if (result.done || result.cancelled) open_ = false;
+    return result;
+}
+
 void TextEntryPopup::render(QuadRenderer& quads, TextRenderer& text, float output_width,
                             float output_height) {
     if (!open_) return;

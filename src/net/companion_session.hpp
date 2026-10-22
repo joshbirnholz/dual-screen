@@ -680,6 +680,8 @@ public:
     void request_custom_textures(bool on);
     // A Touch Point being placed on the host's Button Mapping, put here.
     void request_touch_spot(float u, float v);
+    // A new mapping profile's name, as typed here so far.
+    void request_profile_name(const std::string& name);
     void request_resume_from_save_state(bool on);
     void request_render_scale(int scale);
     // Whether the host reads how this device is being held -- true only on a

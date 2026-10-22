@@ -185,7 +185,8 @@ void UiSoundJudge::note_input(const std::vector<UiAction>& actions, bool tapped,
             case UiAction::MenuQuit:
             case UiAction::MenuReset:
             case UiAction::MenuDisconnect:
-            case UiAction::MenuSettings: offer(Pending::Confirm); break;
+            case UiAction::MenuSettings:
+            case UiAction::MenuMinus: offer(Pending::Confirm); break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu: offer(Pending::Cancel); break;
             default: break;

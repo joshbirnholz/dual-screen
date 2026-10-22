@@ -36,6 +36,16 @@ public:
                            float output_height);
     void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
 
+    // For a page that hears taps the one way every tap is heard (see
+    // MenuPage): which of Cancel and OK is under a point, or -1 -- and one
+    // tapped, by that index, answered as pressed. And for the other device
+    // drawing the same popup, its cursor.
+    int button_at(float x, float y, float output_width, float output_height) const;
+    bool contains(float x, float y, float output_width, float output_height) const;
+    TextEntryResult tap(int button);
+    int focus() const { return cursor_.focus(); }
+    void set_focus(int focus) { cursor_.set_focus(focus); }
+
 private:
     PopupText words() const;
     PopupGeometry geometry(float output_width, float output_height) const;

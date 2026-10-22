@@ -583,7 +583,20 @@ included; **Y** puts it on turbo; **X** puts every button back. Each player
 keeps a mapping for each controller type, with the game, so changing a
 player's type and back keeps what it had. Dualscreen does the mapping and
 hands Cemu the controller's own buttons, so Cemu's own input settings for
-these controllers are not used. In Controls itself, **X** (Identify)
+these controllers are not used.
+
+**−** on that page, or on a DS or 3DS game's Change Controls, opens
+**Mapping Profiles**: mappings kept under a name, for any game to load.
+**Save as New Profile…** names the mapping as it is now and keeps it. Over
+a profile, **A** loads it into this game, **Y** (Save Over) puts the
+mapping as it is now in its place, and **X** deletes it. There is a list
+for DS games, one for 3DS games and one for each Wii U controller type, so
+a Wii Remote's profiles are only offered for a Wii Remote. A loaded profile
+is copied into the game, so changing the game's mapping afterwards leaves
+the profile as it was. They are kept by the device running the games, in
+`mapping_profiles.json` beside its settings.
+
+In Controls itself, **X** (Identify)
 buzzes the highlighted controller and **Y** (Change Order) picks a player's
 or the GamePad's up -- drawn white, its words in the accent colour, with
 arrows before its name: move it up or down the line, up from Player 1 to be

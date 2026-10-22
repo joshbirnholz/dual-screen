@@ -614,6 +614,7 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
             case UiAction::MenuReset:
             case UiAction::MenuDisconnect:
             case UiAction::MenuSettings:
+            case UiAction::MenuMinus:
             case UiAction::OpenMenu:
             case UiAction::Quit:
             case UiAction::ToggleFilter:

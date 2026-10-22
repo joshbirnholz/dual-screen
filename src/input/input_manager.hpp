@@ -59,6 +59,9 @@ enum class UiAction {
     // Menu-only for the same reason again -- and it is the settings of the
     // device running the game, wherever the press came from.
     MenuSettings,
+    // The button a Nintendo pad prints - on, in a menu: Button Mapping's
+    // profiles. Menu-only, as the three above.
+    MenuMinus,
     // Escape, while a game is being played: opens the quick menu, the same as
     // F1 or Tab. SteamOS has a system shortcut that sends Escape, which makes
     // it the key easiest to reach from a pad with no keyboard in sight.

@@ -17,6 +17,7 @@
 
 #include "app.hpp"
 #include "config/game_config.hpp"
+#include "config/mapping_profiles.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
@@ -401,6 +402,45 @@ void test_game_config_survives_a_corrupt_file() {
     CHECK(!unkeyed.save(paths));
 }
 
+// Mapping profiles are kept for every game, by kind, in one file: what is
+// saved is read back, and a missing file is none at all.
+void test_mapping_profiles_round_trip() {
+    const std::string sandbox = make_sandbox();
+    setenv("XDG_CONFIG_HOME", path_join(sandbox, "config").c_str(), 1);
+    const AppPaths paths = AppPaths::resolve();
+    CHECK(MappingProfiles::load(paths).of("ds").empty());
+
+    MappingProfiles profiles;
+    MappingProfile steering;
+    steering.name = "Touch Steering";
+    steering.buttons[PadControl::L] = PadAction::TouchPoint;
+    steering.buttons.spot(PadControl::L) = TouchSpot{0.25f, 0.5f};
+    steering.right_stick = RightStickMode::TouchAnalog;
+    CHECK(profiles.add(mapping_profile_kind(SystemId::Ds), steering));
+    MappingProfile kart;
+    kart.name = "Kart";
+    kart.wii_u[PadControl::B] = WiiUAction::Two;
+    CHECK(profiles.add(mapping_profile_kind(WiiUController::Remote), kart));
+    CHECK(profiles.save(paths));
+
+    const MappingProfiles reloaded = MappingProfiles::load(paths);
+    CHECK(reloaded == profiles);
+    CHECK(reloaded.of("wii_u.remote").size() == 1 && reloaded.of("wii_u.remote")[0].name == "Kart");
+    CHECK(mapping_profile_heading("wii_u.nunchuk") == "Wii Remote + Nunchuk Profiles");
+    CHECK(mapping_profile_heading("3ds") == "3DS Profiles");
+
+    // Saved over, it keeps its name; taken out, it is gone.
+    MappingProfiles changed = reloaded;
+    MappingProfile other = kart;
+    other.name = "Ignored";
+    other.wii_u[PadControl::B] = WiiUAction::One;
+    CHECK(changed.replace("wii_u.remote", 0, other));
+    CHECK(changed.of("wii_u.remote")[0].name == "Kart" &&
+          changed.of("wii_u.remote")[0].wii_u[PadControl::B] == WiiUAction::One);
+    CHECK(changed.remove("ds", 0) && changed.of("ds").empty());
+    CHECK(!changed.remove("ds", 0));
+}
+
 void test_settings_round_trip() {
     const std::string sandbox = make_sandbox();
     setenv("XDG_CONFIG_HOME", path_join(sandbox, "config").c_str(), 1);
@@ -633,6 +673,7 @@ int main() {
     test_game_config_preserves_unknown_keys();
     test_game_config_survives_a_corrupt_file();
     test_settings_round_trip();
+    test_mapping_profiles_round_trip();
     test_a_lone_device_is_the_gamepad_in_the_hand_and_the_television_on_a_dock();
     test_command_line();
     return test::finish("config");

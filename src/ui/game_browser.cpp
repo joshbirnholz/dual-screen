@@ -356,6 +356,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 break;
             }
             case UiAction::MenuReset: break;
+            case UiAction::MenuMinus: break;
             // Plus: straight out to the main menu, from however deep in the
             // folders this is -- where B only goes up one. (Plus is the
             // quick menu's Settings; a file browser has no Settings.)

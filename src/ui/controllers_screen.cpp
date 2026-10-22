@@ -189,6 +189,7 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& p
             case UiAction::Right:
             case UiAction::MenuDisconnect:
             case UiAction::MenuSettings:
+            case UiAction::MenuMinus:
             case UiAction::Quit:
             case UiAction::ToggleFilter:
             case UiAction::NextLayout:

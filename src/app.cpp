@@ -16,6 +16,7 @@
 #include <thread>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <optional>
 #include <utility>
@@ -25,6 +26,7 @@
 #include "input/motion.hpp"
 #include "input/motion_compare.hpp"
 #include "config/game_config.hpp"
+#include "config/mapping_profiles.hpp"
 #include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -1030,6 +1032,17 @@ struct App::Impl {
                                       const std::vector<PointerEvent>& pointers);
     // What the page shows, for the game as it is now.
     void show_button_mapping(ButtonMappingScreen& screen) const;
+    // Mapping Profiles, kept here for every game -- see MappingProfiles --
+    // read the first time they are wanted.
+    mutable MappingProfiles mapping_profiles;
+    mutable bool mapping_profiles_read = false;
+    const MappingProfiles& profiles() const;
+    // The page's: its kind's names, and the one the mapping is, handed over.
+    void show_profiles(ButtonMappingScreen& screen, const std::string& kind, const MappingProfile& now) const;
+    // What the page asked of them: `now` the mapping as it is, `load` taking
+    // one on.
+    void act_on_profiles(const ButtonMappingScreenResult& result, const std::string& kind, const MappingProfile& now,
+                         const std::function<void(const MappingProfile&)>& load);
     // A Wii U game's: Button Mapping for the player whose page is up, or the
     // GamePad, as the controller the game has it as. Over that page, and
     // back to it.
@@ -2304,6 +2317,67 @@ bool App::Impl::button_mapping_available() const {
 
 void App::Impl::show_button_mapping(ButtonMappingScreen& screen) const {
     screen.set_mapping(button_mapping, system, pad_console_for(system, right_stick_mode));
+    if (!is_companion()) {
+        MappingProfile now;
+        now.buttons = button_mapping;
+        now.right_stick = right_stick_mode;
+        show_profiles(screen, mapping_profile_kind(system), now);
+    }
+}
+
+const MappingProfiles& App::Impl::profiles() const {
+    if (!mapping_profiles_read) {
+        mapping_profiles = MappingProfiles::load(paths);
+        mapping_profiles_read = true;
+    }
+    return mapping_profiles;
+}
+
+void App::Impl::show_profiles(ButtonMappingScreen& screen, const std::string& kind, const MappingProfile& now) const {
+    const std::vector<MappingProfile>& list = profiles().of(kind);
+    std::vector<std::string> names;
+    int current = -1;
+    const bool wii_u_kind = kind != mapping_profile_kind(SystemId::Ds) && kind != mapping_profile_kind(SystemId::ThreeDs);
+    for (std::size_t index = 0; index < list.size(); ++index) {
+        names.push_back(list[index].name);
+        const bool same = wii_u_kind ? list[index].wii_u == now.wii_u
+                                     : list[index].buttons == now.buttons && list[index].right_stick == now.right_stick;
+        if (same && current < 0) current = static_cast<int>(index);
+    }
+    screen.set_profiles(std::move(names), current, mapping_profile_heading(kind));
+}
+
+void App::Impl::act_on_profiles(const ButtonMappingScreenResult& result, const std::string& kind,
+                                const MappingProfile& now, const std::function<void(const MappingProfile&)>& load) {
+    profiles();
+    const std::vector<MappingProfile>& list = mapping_profiles.of(kind);
+    const auto name_of = [&](int index) {
+        return index >= 0 && index < static_cast<int>(list.size()) ? list[static_cast<std::size_t>(index)].name
+                                                                    : std::string();
+    };
+    if (result.profile_load >= 0 && result.profile_load < static_cast<int>(list.size())) {
+        const MappingProfile chosen = list[static_cast<std::size_t>(result.profile_load)];
+        load(chosen);
+        log_info("button mapping: the profile " + chosen.name + " was loaded");
+        return;
+    }
+    bool changed = false;
+    if (result.profile_save_new) {
+        MappingProfile saved = now;
+        saved.name = *result.profile_save_new;
+        changed = mapping_profiles.add(kind, saved);
+        log_info(changed ? "button mapping: saved as the profile " + saved.name
+                         : std::string("button mapping: there is no room for another profile"));
+    } else if (result.profile_save_over >= 0) {
+        const std::string name = name_of(result.profile_save_over);
+        changed = mapping_profiles.replace(kind, static_cast<std::size_t>(result.profile_save_over), now);
+        if (changed) log_info("button mapping: saved over the profile " + name);
+    } else if (result.profile_delete >= 0) {
+        const std::string name = name_of(result.profile_delete);
+        changed = mapping_profiles.remove(kind, static_cast<std::size_t>(result.profile_delete));
+        if (changed) log_info("button mapping: the profile " + name + " was deleted");
+    }
+    if (changed && !mapping_profiles.save(paths)) log_warn("could not save the mapping profiles");
 }
 
 void App::Impl::open_button_mapping() {
@@ -2332,10 +2406,15 @@ void App::Impl::show_wii_u_mapping(ButtonMappingScreen& screen) const {
     screen.set_wii_u_mapping(wii_u_mapping_of(player), controller,
                              player < 0 ? std::string(wii_u_controller_name(controller))
                                         : pad_slot_name(slot) + " \u00b7 " + wii_u_controller_name(controller));
+    MappingProfile now;
+    now.wii_u = wii_u_mapping_of(player);
+    show_profiles(screen, mapping_profile_kind(controller), now);
 }
 
 void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& actions,
                                              const std::vector<PointerEvent>& pointers) {
+    // A new profile's name being typed, from the keyboard.
+    button_mapping_screen.type(input.typed_text(), input.backspaces());
     if (button_mapping_screen.wii_u()) {
         update_wii_u_mapping_screen(actions, pointers);
         return;
@@ -2357,6 +2436,13 @@ void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& action
                                   : "button mapping: a button was given another job");
     }
     if (result.right_stick) request_right_stick_mode(*result.right_stick);
+    MappingProfile now;
+    now.buttons = button_mapping;
+    now.right_stick = right_stick_mode;
+    act_on_profiles(result, mapping_profile_kind(system), now, [&](const MappingProfile& profile) {
+        adopt_button_mapping(profile.buttons);
+        if (profile.right_stick != right_stick_mode) request_right_stick_mode(profile.right_stick);
+    });
     if (result.close_everything) {
         close_cemu_page();
         if (state == State::Menu) set_menu_open(false);
@@ -2375,23 +2461,32 @@ void App::Impl::update_wii_u_mapping_screen(const std::vector<UiAction>& actions
     show_wii_u_mapping(button_mapping_screen);
     const ButtonMappingScreenResult result = button_mapping_screen.update(
         actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
-    if (result.wii_u_changed && have_game_config) {
-        const PadSlot slot = wii_u_player_screen.slot();
-        const int player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
-        const WiiUController controller = wii_u_controller_of(player);
+    const PadSlot slot = wii_u_player_screen.slot();
+    const int player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
+    const WiiUController controller = wii_u_controller_of(player);
+    // Kept with the game -- or, put back to standard, not kept at all.
+    const auto keep = [&](const WiiUMapping& mapping) {
+        if (!have_game_config) return false;
         const std::string key = wii_u_mapping_key(player, controller);
-        // One put back to standard is not kept at all.
-        const bool back_to_standard = result.wii_u_changed->is_standard(controller);
+        const bool back_to_standard = mapping.is_standard(controller);
         if (back_to_standard) {
             game_config.wii_u_mappings.erase(key);
         } else {
-            game_config.wii_u_mappings[key] = *result.wii_u_changed;
+            game_config.wii_u_mappings[key] = mapping;
         }
         if (!game_config.save(paths)) log_warn("could not save this game's button mapping");
+        return back_to_standard;
+    };
+    if (result.wii_u_changed && have_game_config) {
+        const bool back_to_standard = keep(*result.wii_u_changed);
         const std::string whose = pad_slot_name(slot) + "'s " + wii_u_controller_name(controller);
         log_info(back_to_standard ? "button mapping: every button on " + whose + " is back to standard"
                                   : "button mapping: a button on " + whose + " was given another job");
     }
+    MappingProfile now;
+    now.wii_u = wii_u_mapping_of(player);
+    act_on_profiles(result, mapping_profile_kind(controller), now,
+                    [&](const MappingProfile& profile) { keep(profile.wii_u); });
     if (result.close_everything) {
         // Out of this page, then the player's under it.
         close_cemu_page();
@@ -6147,6 +6242,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     // host's as it goes -- the pad smoothly, so its directions
                     // are not sent as steps too.
                     const net::ButtonMappingViewMessage& host_view = companion_session->host_button_mapping_view();
+                    // A new profile's name typed here goes to the host as it is typed.
+                    if (host_view.naming &&
+                        mirrored_button_mapping.type_mirrored(input.typed_text(), input.backspaces())) {
+                        companion_session->request_profile_name(mirrored_button_mapping.name_text());
+                    }
                     const bool steered = steer_touch_spot(mirrored_button_mapping);
                     if (host_view.placing) strip_directions(forwarded);
                     if (mirrored_button_mapping.drag_spot(static_cast<float>(output_width),
@@ -7764,6 +7864,7 @@ int App::run(const AppOptions& options) {
                 if (request.wants_touch_spot) {
                     impl.button_mapping_screen.set_spot(TouchSpot{request.touch_spot_u, request.touch_spot_v});
                 }
+                if (request.wants_profile_name) impl.button_mapping_screen.set_name_text(request.profile_name);
                 if (request.wants_rumble_pak) {
                     impl.adopt_rumble_pak(request.rumble_pak);
                 }
@@ -8246,6 +8347,10 @@ int App::run(const AppOptions& options) {
                 // GamePad; here otherwise.
                 const bool typing = (impl.state == Impl::State::Settings && impl.settings_screen &&
                                      impl.settings_screen->wants_text()) ||
+                                    (impl.state == Impl::State::ButtonMapping && impl.button_mapping_screen.naming()) ||
+                                    (impl.state == Impl::State::Companion && impl.companion_session &&
+                                     impl.companion_session->host_button_mapping_view().open &&
+                                     impl.companion_session->host_button_mapping_view().naming) ||
                                     (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing() &&
                                      !impl.companion_types_game_dialog()) ||
                                     (impl.state == Impl::State::Companion &&

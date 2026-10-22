@@ -176,6 +176,8 @@ enum class MenuAction : uint8_t {
     // page of a list.
     PageUp = 12,
     PageDown = 13,
+    // The - button: Button Mapping's profiles.
+    Minus = 14,
 };
 
 // How a screen's pixels are encoded in a Frame message.
@@ -370,6 +372,10 @@ struct RequestMessage {
     // SessionStateMessage::custom_textures. Last, and optional.
     bool wants_custom_textures = false;
     bool custom_textures = false;
+    // A new mapping profile's name, as typed on the companion so far -- see
+    // ButtonMappingViewMessage::naming. Last, and optional.
+    bool wants_profile_name = false;
+    std::string profile_name;
 };
 
 struct RejectMessage {
@@ -797,6 +803,19 @@ struct ButtonMappingViewMessage {
     uint8_t wii_u_controller = 0;
     std::string wii_u_detail;
     WiiUMapping wii_u_mapping;
+    // Mapping Profiles: whether the picker is them, and what they are -- the
+    // names, the one in use (-1 for none), the words over them -- a new
+    // one's name being typed, with its popup's cursor, and what the question
+    // up asks (ButtonMappingScreen::Asking) and of which profile.
+    bool profiles = false;
+    std::vector<std::string> profile_names;
+    int profile_current = -1;
+    std::string profile_heading;
+    bool naming = false;
+    std::string name_text;
+    uint8_t naming_focus = 0;
+    uint8_t asking = 0;
+    int asking_profile = -1;
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
@@ -804,7 +823,11 @@ struct ButtonMappingViewMessage {
                placing == other.placing && spot_u == other.spot_u && spot_v == other.spot_v &&
                placing_stick == other.placing_stick && stick_radius == other.stick_radius &&
                wii_u == other.wii_u && wii_u_controller == other.wii_u_controller &&
-               wii_u_detail == other.wii_u_detail && wii_u_mapping == other.wii_u_mapping;
+               wii_u_detail == other.wii_u_detail && wii_u_mapping == other.wii_u_mapping &&
+               profiles == other.profiles && profile_names == other.profile_names &&
+               profile_current == other.profile_current && profile_heading == other.profile_heading &&
+               naming == other.naming && name_text == other.name_text && naming_focus == other.naming_focus &&
+               asking == other.asking && asking_profile == other.asking_profile;
     }
 };
 

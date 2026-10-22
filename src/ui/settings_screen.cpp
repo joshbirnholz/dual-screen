@@ -730,6 +730,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             case UiAction::MenuQuit:
             case UiAction::MenuReset:
             case UiAction::MenuDisconnect:
+            case UiAction::MenuMinus:
             // Already here, which is the whole of what it asks for.
             case UiAction::MenuSettings: break;
             // Escape also raises Cancel, which is what it means here.

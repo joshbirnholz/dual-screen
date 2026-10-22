@@ -60,7 +60,7 @@ void test_every_prompt_outside_a_menu_does_something() {
     CHECK(ui_action_for_glyph(ButtonGlyph::A, action) && action == UiAction::Confirm);
     CHECK(ui_action_for_glyph(ButtonGlyph::B, action) && action == UiAction::Cancel);
     CHECK(ui_action_for_glyph(ButtonGlyph::Plus, action) && action == UiAction::Quit);
-    CHECK(ui_action_for_glyph(ButtonGlyph::Minus, action) && action == UiAction::ToggleMenu);
+    CHECK(ui_action_for_glyph(ButtonGlyph::Minus, action) && action == UiAction::MenuMinus);
 }
 
 // X and Y are what a menu's upper face buttons raise -- Controller Order's

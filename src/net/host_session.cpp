@@ -1045,6 +1045,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_lcd_filter = true;
                 request.lcd_filter = request_.lcd_filter;
             }
+            if (have_request_ && !request.wants_profile_name && request_.wants_profile_name) {
+                request.wants_profile_name = true;
+                request.profile_name = request_.profile_name;
+            }
             if (have_request_ && !request.wants_custom_textures && request_.wants_custom_textures) {
                 request.wants_custom_textures = true;
                 request.custom_textures = request_.custom_textures;

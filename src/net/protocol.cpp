@@ -917,6 +917,17 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
         for (const WiiUAction action : message.wii_u_mapping.actions) put_u8(out, static_cast<uint8_t>(action));
         for (const WiiUAction action : message.wii_u_mapping.turbo_of) put_u8(out, static_cast<uint8_t>(action));
     }
+    // And Mapping Profiles.
+    put_u8(out, static_cast<uint8_t>((message.profiles ? 1u : 0u) | (message.naming ? 2u : 0u)));
+    put_u8(out, message.asking);
+    put_u16(out, static_cast<uint16_t>(std::clamp(message.asking_profile + 1, 0, 65535)));
+    put_u8(out, message.naming_focus);
+    put_string(out, message.name_text.substr(0, 255));
+    put_string(out, message.profile_heading.substr(0, 255));
+    put_u16(out, static_cast<uint16_t>(std::clamp(message.profile_current + 1, 0, 65535)));
+    const std::size_t names = std::min<std::size_t>(message.profile_names.size(), 255);
+    put_u8(out, static_cast<uint8_t>(names));
+    for (std::size_t index = 0; index < names; ++index) put_string(out, message.profile_names[index].substr(0, 255));
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -973,6 +984,31 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
                 return false;
             }
             view.wii_u = true;
+        }
+        // From a host new enough to have Mapping Profiles.
+        if (reader.remaining() > 0) {
+            uint8_t flags = 0;
+            uint16_t asking_profile = 0;
+            uint16_t current = 0;
+            uint8_t names = 0;
+            reader.u8(flags);
+            reader.u8(view.asking);
+            reader.u16(asking_profile);
+            reader.u8(view.naming_focus);
+            reader.string(view.name_text);
+            reader.string(view.profile_heading);
+            reader.u16(current);
+            reader.u8(names);
+            for (uint8_t index = 0; index < names && reader.ok(); ++index) {
+                std::string name;
+                reader.string(name);
+                view.profile_names.push_back(std::move(name));
+            }
+            if (!reader.ok()) return false;
+            view.profiles = (flags & 1u) != 0;
+            view.naming = (flags & 2u) != 0;
+            view.asking_profile = static_cast<int>(asking_profile) - 1;
+            view.profile_current = static_cast<int>(current) - 1;
         }
     }
     out = view;
@@ -1237,6 +1273,7 @@ bool menu_action_from_wire(uint8_t value, MenuAction& out) {
         case 11: out = MenuAction::Close; return true;
         case 12: out = MenuAction::PageUp; return true;
         case 13: out = MenuAction::PageDown; return true;
+        case 14: out = MenuAction::Minus; return true;
         default: break;
     }
     return false;
@@ -1288,6 +1325,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u16(out, touch_spot_u16(message.touch_spot_v));
     // 0 for no change, 1 off, 2 on.
     put_u8(out, !message.wants_custom_textures ? 0u : message.custom_textures ? 2u : 1u);
+    put_u8(out, message.wants_profile_name ? 1u : 0u);
+    put_string(out, message.wants_profile_name ? message.profile_name.substr(0, 255) : std::string());
     finish_message(out, start, MessageType::Request);
 }
 
@@ -1402,6 +1441,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         if (textures > 2) return false;
         out.wants_custom_textures = textures != 0;
         out.custom_textures = textures == 2;
+    }
+    out.wants_profile_name = false;
+    out.profile_name.clear();
+    if (reader.remaining() > 0) {
+        uint8_t wants_name = 0;
+        reader.u8(wants_name);
+        reader.string(out.profile_name);
+        if (!reader.ok() || wants_name > 1) return false;
+        out.wants_profile_name = wants_name != 0;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);

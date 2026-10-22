@@ -8,28 +8,9 @@ numbers can change freely.
 
 ## Next up
 
-### Controls
-
-- **Button mapping, the rest of it.** DS and 3DS games have Controls >
-  Change Controls now: each pad button and d-pad direction given one of the
-  console's buttons, Touch Point (placed on the paused game's touch screen),
-  Activate Touch Cursor, Open Menu, Swap Screens, Next Screen Layout, Blow
-  into Mic or Disabled, kept with the game; Y toggles turbo on a button
-  pressing one of the console's or a Touch Point, X is Reset to Default, one
-  page on both devices, and the right stick's row last (C-Stick, Circle Pad,
-  D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Wii U
-  games have the same page per player and the GamePad, as Edit Button
-  Mapping on the player's page, beside Motion and Rumble switches. Still to
-  do, in this order, from the mockups
-  (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - Mapping profiles for DS, 3DS and each Wii U controller type, saved and
-    loaded from the mapping page on the − button (Y is turbo); loading one
-    copies it into the game.
-
 ### After remapping
 
-- **Starting a session from a connected device.** Not to be worked on
-  until remapping is done. Half built on the branch
+- **Starting a session from a connected device.** Half built on the branch
   `claude/remote-start-wip`: the Steam `shortcuts.vdf` reader and game
   list, the background service (`dualscreen --service`, a systemd user
   unit) with pairing codes and tokens, the device-side calls, and

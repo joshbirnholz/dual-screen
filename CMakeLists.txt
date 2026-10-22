@@ -118,6 +118,8 @@ add_library(dualscreen_core STATIC
     src/video/mediacodec_decoder.cpp
     src/video/video_encoder.cpp
     src/config/game_config.cpp
+    src/config/mapping_json.cpp
+    src/config/mapping_profiles.cpp
     src/config/paths.cpp
     src/config/settings.cpp
     src/config/melonds_tuning.cpp

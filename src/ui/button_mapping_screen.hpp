@@ -19,6 +19,7 @@
 #include "ui/menu_page.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
+#include "ui/text_entry.hpp"
 
 namespace ds {
 
@@ -33,6 +34,13 @@ struct ButtonMappingScreenResult {
     std::optional<RightStickMode> right_stick;
     // A Wii U controller's mapping changed: the whole of it as it now is.
     std::optional<WiiUMapping> wii_u_changed;
+    // Mapping Profiles: one loaded, by its index in the list; the mapping as
+    // it is saved as a new one, under this name; the mapping as it is saved
+    // over one, or one deleted, by its index.
+    int profile_load = -1;
+    std::optional<std::string> profile_save_new;
+    int profile_save_over = -1;
+    int profile_delete = -1;
 };
 
 // A DS or 3DS game's Change Controls, from Controls in its quick menu: each of
@@ -51,6 +59,11 @@ struct ButtonMappingScreenResult {
 // controller's, drawn beside the list, and there is no right stick's row --
 // a stick is a stick on a Wii U.
 //
+// Mapping Profiles, on -, are mappings kept under a name for any game to load:
+// Save as New Profile..., then the profiles there are for this page's kind of
+// mapping -- a DS game's, a Wii Remote + Nunchuk's -- the one the mapping is
+// now filled. A loads one, Y saves the mapping over one, X deletes one.
+//
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
 // page on both, cursor, picker and all.
@@ -62,6 +75,8 @@ public:
         choice_.close();
         confirming_ = false;
         placing_ = false;
+        profiles_up_ = false;
+        naming_.close();
     }
     bool is_open() const { return open_; }
     // Whether a paused game is behind it, to be dimmed rather than covered.
@@ -74,6 +89,36 @@ public:
     // Wii Remote + Nunchuk" -- at the right of the heading.
     void set_wii_u_mapping(const WiiUMapping& mapping, WiiUController controller, std::string detail);
     bool wii_u() const { return wii_u_; }
+    // Mapping Profiles: the names of those there are for this page's kind of
+    // mapping, which of them the mapping is now (-1 for none), and the words
+    // over them -- "DS Profiles". Every frame, from whoever keeps them.
+    void set_profiles(std::vector<std::string> names, int current, std::string heading);
+    bool profiles_open() const { return profiles_up_ && choice_.is_open(); }
+    // A new profile being named, and what has been typed: the keyboard is to
+    // type into it -- see InputManager::set_text_entry() -- what it typed
+    // coming in through type(), before update().
+    bool naming() const { return naming_.is_open(); }
+    const std::string& name_text() const { return naming_.text(); }
+    int naming_focus() const { return naming_.focus(); }
+    void type(const std::string& typed, int backspaces) {
+        typed_ = typed;
+        backspaces_ = backspaces;
+    }
+    // Typed on the other device.
+    void set_name_text(const std::string& text) {
+        if (naming_.is_open()) naming_.set_text(text);
+    }
+    // Typed here into the other device's popup, which is drawn as typed
+    // rather than as that device last said for a moment, until it has caught
+    // up. True if the name changed.
+    bool type_mirrored(const std::string& typed, int backspaces);
+    // What the question up over the page asks.
+    enum class Asking : uint8_t { Reset, Delete, SaveOver };
+    Asking asking() const { return asking_; }
+    int asking_profile() const { return asking_profile_; }
+    const std::vector<std::string>& profile_names() const { return profile_names_; }
+    int profile_current() const { return profile_current_; }
+    const std::string& profile_heading() const { return profile_heading_; }
     WiiUController wii_u_controller() const { return wii_u_controller_; }
     const WiiUMapping& wii_u_mapping() const { return wii_u_mapping_; }
     const std::string& detail() const { return detail_; }
@@ -153,6 +198,8 @@ public:
     static constexpr int kConfirmEntryBase = 0x4800;
     static constexpr int kPlacingOkEntry = 0x5000;
     static constexpr int kSpotEntryBase = 0x10000;
+    // A button of a new profile's name's popup.
+    static constexpr int kNamingEntryBase = 0x5800;
     // A spot as an entry, to 1/1024 of the screen each way, and back.
     static int spot_entry(const TouchSpot& spot);
     static TouchSpot entry_spot(int entry);
@@ -178,6 +225,15 @@ private:
     void choose(int index, ButtonMappingScreenResult& result);
     void ask_revert();
     void answer_revert(int button, ButtonMappingScreenResult& result);
+    // Mapping Profiles: up over the page, the cursor on `focus` (a line of
+    // it), or on the profile in use; the profile a line is, or -1; and one
+    // chosen, Y or X pressed on one, and the name typed.
+    void open_profiles(int focus);
+    int profile_of_line(int line) const;
+    void choose_profile(int line, ButtonMappingScreenResult& result);
+    void ask_about_profile(Asking asking);
+    void start_naming();
+    void finish_naming(const TextEntryResult& answer, ButtonMappingScreenResult& result);
     // Turbo's picker, beside the same row, after Turbo was chosen.
     // Y: the focused button made to press its console button over and over
     // while it is held, or back to pressing it once.
@@ -235,6 +291,22 @@ private:
     WiiUController wii_u_controller_ = WiiUController::Pro;
     std::string detail_;
     std::vector<WiiUAction> choice_wii_u_;
+    // Mapping Profiles, in choice_ while profiles_up_.
+    bool profiles_up_ = false;
+    std::vector<std::string> profile_names_;
+    int profile_current_ = -1;
+    std::string profile_heading_;
+    // A profile just saved, by name, for the cursor to be on once it is in
+    // the list.
+    std::string profile_saved_;
+    TextEntryPopup naming_;
+    std::string typed_;
+    int backspaces_ = 0;
+    // How many more of the other device's views keep the name typed here.
+    int own_name_views_ = 0;
+    // The question's subject, and the profile it is about.
+    Asking asking_ = Asking::Reset;
+    int asking_profile_ = -1;
     SystemId system_ = SystemId::Ds;
     PadConsole console_;
     int focus_ = 0;

@@ -549,6 +549,8 @@ void test_request_round_trip() {
     sent.touch_spot_v = 0.75f;
     sent.wants_custom_textures = true;
     sent.custom_textures = true;
+    sent.wants_profile_name = true;
+    sent.profile_name = "Mine";
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -588,6 +590,14 @@ void test_request_round_trip() {
     CHECK(received.wants_lcd_filter && received.lcd_filter);
     CHECK(received.wants_touch_spot && received.touch_spot_u == 0.25f && received.touch_spot_v == 0.75f);
     CHECK(received.wants_custom_textures && received.custom_textures);
+    CHECK(received.wants_profile_name && received.profile_name == "Mine");
+    // From a companion from before Mapping Profiles: asks nothing about a
+    // name -- and the rest below is counted from there.
+    constexpr std::size_t kNameBytes = 1 + 2 + 4;
+    payload.resize(payload.size() - kNameBytes);
+    RequestMessage unnamed;
+    CHECK(decode_request(payload.data(), payload.size(), unnamed));
+    CHECK(!unnamed.wants_profile_name && unnamed.wants_custom_textures);
     // From a companion from before Custom Textures: asks nothing about them.
     RequestMessage untextured;
     CHECK(decode_request(payload.data(), payload.size() - 1, untextured));
@@ -654,7 +664,8 @@ void test_request_round_trip() {
     // the set it means, if the sender says so, and each one has to be refused
     // rather than becoming one of the real values by accident.
     //
-    // Everything after the layout id is fixed-width, so the bytes are counted
+    // Everything after the layout id is fixed-width -- but for a profile's
+    // name, empty here -- so the bytes are counted
     // back from the end -- forwards would have to walk past a string. An
     // offset that has drifted would still "pass" a rejection check by hitting
     // some other byte that happens to be refused too, so each one is first
@@ -667,37 +678,39 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 34, 1u,
+        {"audio target", 37, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 32, 1u,
+        {"handedness", 35, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 18, 2u,
+        {"right stick mode", 21, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 13, 2u,
+        {"left stick click", 16, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 12, 2u,
+        {"rumble pak", 15, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 11, 2u,
+        {"resume from save state", 14, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
-        {"screen swap", 10, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
-        {"LCD filter", 7, 1u,
+        {"screen swap", 13, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"LCD filter", 10, 1u,
          [](const RequestMessage& message) { return message.wants_lcd_filter && !message.lcd_filter; }},
-        {"touch spot", 6, 1u, [](const RequestMessage& message) { return message.wants_touch_spot; }},
-        {"custom textures", 1, 1u,
+        {"touch spot", 9, 1u, [](const RequestMessage& message) { return message.wants_touch_spot; }},
+        {"custom textures", 4, 1u,
          [](const RequestMessage& message) {
              return message.wants_custom_textures && !message.custom_textures;
          }},
+        // And a profile's name's, before its empty name's two bytes.
+        {"profile name", 3, 1u, [](const RequestMessage& message) { return message.wants_profile_name; }},
     };
 
     for (const EnumByte& field : kEnumBytes) {
@@ -2167,7 +2180,8 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.spot_u == 0.5f && std::fabs(received.spot_v - 1.0f) < 0.001f);
     CHECK(!received.placing_stick);
     // From a host from before it: not placing.
-    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 8, received));
+    // (Past the Wii U byte and Mapping Profiles' twelve, empty.)
+    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 8 - 12, received));
     CHECK(!received.placing);
     // The Touch Analog Stick's page: its centre the spot, and its size.
     sent.placing_stick = true;
@@ -2194,6 +2208,26 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.wii_u && received.wii_u_detail == sent.wii_u_detail);
     CHECK(received.wii_u_mapping == sent.wii_u_mapping);
     CHECK(received.wii_u_controller == sent.wii_u_controller);
+
+    // Mapping Profiles: the list, the one in use, a name being typed and the
+    // question asked of one.
+    sent.profiles = true;
+    sent.profile_names = {"Touch Steering", "Left-Handed"};
+    sent.profile_current = 1;
+    sent.profile_heading = "Wii Classic Controller Profiles";
+    sent.naming = true;
+    sent.name_text = "Kart";
+    sent.naming_focus = 1;
+    sent.asking = 2;
+    sent.asking_profile = 0;
+    buffer.clear();
+    encode_button_mapping_view(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received.profiles && received.profile_names == sent.profile_names);
+    CHECK(received.profile_current == 1 && received.profile_heading == sent.profile_heading);
+    CHECK(received.naming && received.name_text == "Kart" && received.naming_focus == 1);
+    CHECK(received.asking == 2 && received.asking_profile == 0);
 
     // Closed is a message too.
     buffer.clear();

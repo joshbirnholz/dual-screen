@@ -88,6 +88,8 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/app.cpp
     companion/source/local_play.cpp
     src/config/game_config.cpp
+    src/config/mapping_json.cpp
+    src/config/mapping_profiles.cpp
     src/config/settings.cpp
     src/config/melonds_tuning.cpp
     src/config/sha1.cpp

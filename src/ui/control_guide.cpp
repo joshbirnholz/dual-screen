@@ -121,7 +121,7 @@ bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out) {
         case ButtonGlyph::A: out = UiAction::Confirm; return true;
         case ButtonGlyph::B: out = UiAction::Cancel; return true;
         case ButtonGlyph::Plus: out = UiAction::Quit; return true;
-        case ButtonGlyph::Minus: out = UiAction::ToggleMenu; return true;
+        case ButtonGlyph::Minus: out = UiAction::MenuMinus; return true;
         case ButtonGlyph::L: out = UiAction::PageUp; return true;
         case ButtonGlyph::R: out = UiAction::PageDown; return true;
         // What the upper face buttons raise in a menu -- Controller Order's

@@ -133,7 +133,7 @@ BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard 
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
 # the two with the desktop build's own, since nothing here can run this link.
 LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
-               game_config.cpp settings.cpp melonds_tuning.cpp sha1.cpp \
+               game_config.cpp mapping_json.cpp mapping_profiles.cpp settings.cpp melonds_tuning.cpp sha1.cpp \
                ds_rom_info.cpp game_title.cpp save_store.cpp save_folder.cpp console_title_info.cpp \
                gl_call_trace.cpp hw_render_target.cpp \
                external_frame_link.cpp external_screen_source.cpp \

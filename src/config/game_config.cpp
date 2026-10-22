@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "config/mapping_json.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -99,42 +100,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
         get_string(document, "separate_screen", "top") == "bottom" ? ScreenId::Bottom : ScreenId::Top;
     config.right_stick_mode = right_stick_mode_from_key(
         get_string(document, "right_stick_mode", right_stick_mode_key(config.right_stick_mode)));
-    if (const auto found = document.find("button_mapping");
-        found != document.end() && found->is_object()) {
-        for (const auto& [key, action] : found->items()) {
-            PadControl control = PadControl::A;
-            if (action.is_string() && pad_control_from_key(key, control)) {
-                config.button_mapping[control] = pad_action_from_key(action.get<std::string>());
-            }
-        }
-    }
-    // What a Turbo button presses, and where a Touch Point touches.
-    if (const auto found = document.find("button_turbo"); found != document.end() && found->is_object()) {
-        for (const auto& [key, action] : found->items()) {
-            PadControl control = PadControl::A;
-            if (action.is_string() && pad_control_from_key(key, control)) {
-                config.button_mapping.turbo(control) = pad_action_from_key(action.get<std::string>());
-            }
-        }
-    }
-    if (const auto found = document.find("touch_analog_stick"); found != document.end() && found->is_array() &&
-                                                                 found->size() == 3 && (*found)[0].is_number() &&
-                                                                 (*found)[1].is_number() && (*found)[2].is_number()) {
-        config.button_mapping.stick_centre = TouchSpot{std::clamp((*found)[0].get<float>(), 0.0f, 1.0f),
-                                                       std::clamp((*found)[1].get<float>(), 0.0f, 1.0f)};
-        config.button_mapping.stick_radius = clamp_stick_radius((*found)[2].get<float>());
-    }
-    if (const auto found = document.find("button_touch_points");
-        found != document.end() && found->is_object()) {
-        for (const auto& [key, spot] : found->items()) {
-            PadControl control = PadControl::A;
-            if (spot.is_array() && spot.size() == 2 && spot[0].is_number() && spot[1].is_number() &&
-                pad_control_from_key(key, control)) {
-                config.button_mapping.spot(control) =
-                    TouchSpot{std::clamp(spot[0].get<float>(), 0.0f, 1.0f), std::clamp(spot[1].get<float>(), 0.0f, 1.0f)};
-            }
-        }
-    }
+    read_button_mapping(document, config.button_mapping);
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
     config.custom_textures = get_bool(document, "custom_textures", config.custom_textures);
     config.lcd_filter = get_bool(document, "lcd_filter", config.lcd_filter);
@@ -152,20 +118,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     if (const auto found = document.find("wii_u_mappings");
         found != document.end() && found->is_object()) {
         for (const auto& [key, kept] : found->items()) {
-            if (!kept.is_object()) continue;
-            WiiUMapping mapping;
-            for (const char* part : {"actions", "turbo"}) {
-                const auto actions = kept.find(part);
-                if (actions == kept.end() || !actions->is_object()) continue;
-                for (const auto& [control_key, action] : actions->items()) {
-                    PadControl control = PadControl::A;
-                    if (!action.is_string() || !pad_control_from_key(control_key, control)) continue;
-                    const WiiUAction read = wii_u_action_from_key(action.get<std::string>());
-                    if (std::string(part) == "actions") mapping[control] = read;
-                    else mapping.turbo(control) = read;
-                }
-            }
-            config.wii_u_mappings[key] = mapping;
+            if (kept.is_object()) config.wii_u_mappings[key] = wii_u_mapping_from_json(kept);
         }
     }
     for (auto [name, kept] : {std::make_pair("wii_u_motion_off", &config.wii_u_motion_off),
@@ -219,27 +172,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["screen_gap"] = screen_gap;
     document["separate_screen"] = separate_screen == ScreenId::Bottom ? "bottom" : "top";
     document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
-    document["button_mapping"] = json::object();
-    for (std::size_t index = 0; index < kPadControls; ++index) {
-        const PadControl control = static_cast<PadControl>(index);
-        if (button_mapping[control] != PadAction::Standard) {
-            document["button_mapping"][pad_control_key(control)] = pad_action_key(button_mapping[control]);
-        }
-    }
-    document["button_turbo"] = json::object();
-    document["button_touch_points"] = json::object();
-    for (std::size_t index = 0; index < kPadControls; ++index) {
-        const PadControl control = static_cast<PadControl>(index);
-        if (button_mapping.turbo(control) != PadAction::Standard) {
-            document["button_turbo"][pad_control_key(control)] = pad_action_key(button_mapping.turbo(control));
-        }
-        if (!(button_mapping.spot(control) == TouchSpot())) {
-            document["button_touch_points"][pad_control_key(control)] =
-                json::array({button_mapping.spot(control).u, button_mapping.spot(control).v});
-        }
-    }
-    document["touch_analog_stick"] = json::array(
-        {button_mapping.stick_centre.u, button_mapping.stick_centre.v, button_mapping.stick_radius});
+    write_button_mapping(button_mapping, document);
     document["rumble_pak"] = rumble_pak;
     document["custom_textures"] = custom_textures;
     document["lcd_filter"] = lcd_filter;
@@ -248,19 +181,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["wii_u_options"] = json::object();
     for (const auto& [id, choice] : wii_u_options) document["wii_u_options"][id] = choice;
     document["wii_u_mappings"] = json::object();
-    for (const auto& [key, mapping] : wii_u_mappings) {
-        json kept = {{"actions", json::object()}, {"turbo", json::object()}};
-        for (std::size_t index = 0; index < kPadControls; ++index) {
-            const PadControl control = static_cast<PadControl>(index);
-            if (mapping[control] != WiiUAction::Standard) {
-                kept["actions"][pad_control_key(control)] = wii_u_action_key(mapping[control]);
-            }
-            if (mapping.turbo(control) != WiiUAction::Standard) {
-                kept["turbo"][pad_control_key(control)] = wii_u_action_key(mapping.turbo(control));
-            }
-        }
-        document["wii_u_mappings"][key] = kept;
-    }
+    for (const auto& [key, mapping] : wii_u_mappings) document["wii_u_mappings"][key] = wii_u_mapping_json(mapping);
     document["wii_u_motion_off"] = json::array();
     for (const std::string& slot : wii_u_motion_off) document["wii_u_motion_off"].push_back(slot);
     document["wii_u_rumble_off"] = json::array();

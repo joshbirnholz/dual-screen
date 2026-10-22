@@ -1176,6 +1176,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         // Not a value this menu holds: the caller puts the screen up and this
         // one gets out of the way.
         case UiAction::MenuSettings: result.settings_requested = true; break;
+        case UiAction::MenuMinus: break;
         // R3 is handled by the app, so that it means the same thing here as it
         // does in a game; the app pushes the result back in with
         // set_filtering(). Toggling it again here would undo that.

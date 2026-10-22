@@ -2335,6 +2335,13 @@ void CompanionSession::request_touch_spot(float u, float v) {
     send_request(request);
 }
 
+void CompanionSession::request_profile_name(const std::string& name) {
+    RequestMessage request;
+    request.wants_profile_name = true;
+    request.profile_name = name;
+    send_request(request);
+}
+
 void CompanionSession::request_resume_from_save_state(bool on) {
     RequestMessage request;
     request.wants_resume_from_save_state = true;
