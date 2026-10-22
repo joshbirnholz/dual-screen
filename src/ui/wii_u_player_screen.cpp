@@ -148,13 +148,18 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
         // of play, which is Remove Player's.
         int current = 0;
         const int now = adding_ ? pending_type_ : type_current_;
+        std::vector<UiIcon> icons;
         for (std::size_t index = 0; index < types_.size(); ++index) {
             if (types_[index] == "None") continue;
             if (static_cast<int>(index) == now) current = static_cast<int>(labels.size());
             labels.push_back(wii_u_type_name(types_[index]));
+            icons.push_back(wii_u_type_icon(types_[index]));
             choice_types_.push_back(static_cast<int>(index));
         }
         choice_.open(std::move(labels), current, row);
+        // Each drawn as the controller it is; the strip is loaded as the page
+        // is drawn.
+        choice_.set_icons(&icons_, std::move(icons));
         return;
     }
     // Every controller under the device it is on, each saying what it is

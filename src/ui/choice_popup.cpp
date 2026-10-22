@@ -9,11 +9,21 @@
 
 namespace ds {
 
+float ChoicePopup::icon_room(float line) const {
+    if (icon_strip_ == nullptr || !icon_strip_->valid()) return 0.0f;
+    for (const UiIcon icon : icons_) {
+        if (icon != UiIcon::Count) return std::round(line * kIconLines) + std::round(line * 0.5f);
+    }
+    return 0.0f;
+}
+
 void ChoicePopup::open(std::vector<std::string> choices, int current, const PixelRect& row) {
     choices_ = std::move(choices);
     glyph_pairs_.clear();
     headings_.clear();
     hints_.clear();
+    icon_strip_ = nullptr;
+    icons_.clear();
     colors_.clear();
     columns_ = 0;
     current_ = current >= 0 && current < static_cast<int>(choices_.size()) ? current : -1;
@@ -169,7 +179,7 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         widest = glyph * 2.0f + TextRenderer::measure_width("/", scale * 0.9f) + line * 0.3f;
     } else {
         for (std::size_t index = 0; index < choices_.size(); ++index) {
-            float wide = TextRenderer::measure_width(choices_[index], scale);
+            float wide = TextRenderer::measure_width(choices_[index], scale) + icon_room(line);
             if (index < hints_.size() && !hints_[index].empty()) {
                 wide += gap + TextRenderer::measure_width(hints_[index], scale * kHintScale);
             }
@@ -427,6 +437,16 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             glyphs->draw(quads, glyph_pairs_[index].second, pen_x, glyph_y, height, theme.text);
             continue;
         }
+        float text_x_words = text_x;
+        if (const float room = icon_room(line); room > 0.0f) {
+            if (index < icons_.size() && icons_[index] != UiIcon::Count) {
+                const float size = std::round(line * kIconLines);
+                draw_ui_icon(quads, *icon_strip_, icons_[index],
+                             PixelRect{text_x, std::round(row.y + (row.h - size) * 0.5f), size, size},
+                             held ? theme.accent : theme.text);
+            }
+            text_x_words += room;
+        }
         float text_right = dot.x - gap;
         if (index < hints_.size() && !hints_[index].empty()) {
             const float hint_scale = scale * kHintScale;
@@ -438,8 +458,8 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
                       theme.text_dim);
             text_right = hint_x - gap;
         }
-        draw_fitted_text(quads, text, choices_[index], text_x, std::round(row.y + (row.h - line) * 0.5f),
-                         text_right - text_x, scale, held ? theme.accent : theme.text, TextAlign::Left,
+        draw_fitted_text(quads, text, choices_[index], text_x_words, std::round(row.y + (row.h - line) * 0.5f),
+                         text_right - text_x_words, scale, held ? theme.accent : theme.text, TextAlign::Left,
                          focused, focus_seconds);
     }
     quads.clear_clip();

@@ -1741,11 +1741,11 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
                   TextAlign::Center);
     } else {
         const bool icons = load_ui_icons(ui_icons_, ui_icons_tried_);
-        slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink);
+        slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink, view.type);
     }
 
-    // Where it is, on the right; the controller, and what the game has it
-    // as under it, between.
+    // Where it is, on the right; the controller between -- what the game has
+    // it as is drawn over its lights.
     const float place_scale = scale * 0.85f;
     const float right = row.x + row.w - pad;
     text.draw(quads, view.place, right, std::round(centre_y - TextRenderer::line_height(place_scale) * 0.5f),
@@ -1754,21 +1754,10 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const float room =
         std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
     const float name_scale = scale * 1.1f;
-    const float type_scale = scale * 0.8f;
     const std::string name = view.pad.empty() ? std::string("No Controller") : view.name;
     const Color& name_ink = view.pad.empty() ? dim : ink;
-    if (view.type.empty()) {
-        text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x,
-                  std::round(centre_y - TextRenderer::line_height(name_scale) * 0.5f), name_scale, name_ink);
-        return;
-    }
-    const float name_height = TextRenderer::line_height(name_scale);
-    const float type_height = TextRenderer::line_height(type_scale);
-    const float gap = std::round(line * 0.15f);
-    const float top = std::round(centre_y - (name_height + gap + type_height) * 0.5f);
-    text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x, top, name_scale, name_ink);
-    text.draw(quads, TextRenderer::elide_right(view.type, room, type_scale), name_x, top + name_height + gap,
-              type_scale, dim);
+    text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x,
+              std::round(centre_y - TextRenderer::line_height(name_scale) * 0.5f), name_scale, name_ink);
 }
 
 void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,

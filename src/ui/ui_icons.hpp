@@ -14,7 +14,38 @@ namespace ds {
 
 // The cells of assets/ui_icons.png, in order -- see assets/make_ui_icons.py.
 // Each is coverage only, tinted for whatever it is drawn on.
-enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Sync, Android, WiiUGamePad, Tv, Count };
+enum class UiIcon {
+    Get,
+    Send,
+    History,
+    Delete,
+    SteamDeck,
+    Switch,
+    Pc,
+    Sync,
+    Android,
+    WiiUGamePad,
+    Tv,
+    // What a Wii U game has a player as.
+    WiiUPro,
+    ClassicPro,
+    WiiRemote,
+    WiiRemoteNunchuk,
+    WiiRemoteClassic,
+    Count
+};
+
+// The icon for what a Wii U game has a player as, in Cemu's words or the
+// menus' -- see wii_u_type_name() -- or Count for none.
+inline UiIcon wii_u_type_icon(const std::string& type) {
+    if (type == "Pro Controller" || type == "Wii U Pro Controller") return UiIcon::WiiUPro;
+    if (type == "Classic Controller") return UiIcon::ClassicPro;
+    if (type == "Wii Remote") return UiIcon::WiiRemote;
+    if (type == "Wii Remote + Nunchuk") return UiIcon::WiiRemoteNunchuk;
+    if (type == "Wii Remote + Classic Controller") return UiIcon::WiiRemoteClassic;
+    if (type == "Wii U GamePad") return UiIcon::WiiUGamePad;
+    return UiIcon::Count;
+}
 
 // The strip, loaded into `texture` the first time it is wanted. False, once
 // and with a line in the log, when it will not load.

@@ -12,6 +12,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/ui_icons.hpp"
 
 namespace ds {
 
@@ -54,6 +55,8 @@ public:
     static constexpr float kMinWidthLines = 18.0f;
     // A hint's words, beside a choice's.
     static constexpr float kHintScale = 0.8f;
+    // An icon before a choice's words, square, in lines.
+    static constexpr float kIconLines = 2.2f;
 
     // Up over `row`, the row whose value it is, with `current` filled.
     void open(std::vector<std::string> choices, int current, const PixelRect& row);
@@ -71,6 +74,13 @@ public:
     // After open(): a few words at the right of a choice, dim, saying more
     // of what it is -- "of another button". Empty for none.
     void set_hints(std::vector<std::string> hints) { hints_ = std::move(hints); }
+    // After open(): an icon from the menus' strip, `strip`, before each
+    // choice's words -- UiIcon::Count for none. `strip` is the caller's and
+    // has to outlive the popup's drawing; null draws none.
+    void set_icons(const Texture* strip, std::vector<UiIcon> icons) {
+        icon_strip_ = strip;
+        icons_ = std::move(icons);
+    }
     bool heading(int index) const {
         return index >= 0 && index < static_cast<int>(headings_.size()) && headings_[static_cast<std::size_t>(index)];
     }
@@ -142,6 +152,11 @@ private:
     std::vector<Color> colors_;
     std::vector<bool> headings_;
     std::vector<std::string> hints_;
+    const Texture* icon_strip_ = nullptr;
+    std::vector<UiIcon> icons_;
+    // How wide an icon is, with the gap after it, for a row whose words are
+    // `line` high: none where nothing has one.
+    float icon_room(float line) const;
     int columns_ = 0;
     int current_ = -1;
     int focus_ = 0;

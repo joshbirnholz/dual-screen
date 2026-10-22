@@ -565,7 +565,11 @@ Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it
 -- the second square alone filled for Player 2, as a Wii U lights them,
 rather than the first two a Switch would. A Wii U stops at four; Players 5 to
-8 take a Switch's patterns. A Lite has no rumble motor, so its own controls cannot buzz. It all
+8 take a Switch's patterns. Over a player's lights is what the game has it
+as, drawn as that controller -- a Wii U Pro Controller, a Classic Controller
+Pro, a Wii Remote alone or with a Nunchuk or a Classic Controller -- the way
+the back of a Wii U game's box shows them, and the same pictures are beside
+each choice of Controller Type. A Switch Lite has no rumble motor, so its own controls cannot buzz. It all
 works mid-game and from either device's buttons, and lasts until the app
 closes: a controller is recognised for as long as it stays connected, so one
 that is unplugged and plugged back in joins the end of the line.
