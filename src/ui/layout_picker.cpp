@@ -1933,16 +1933,16 @@ void LayoutPicker::render(QuadRenderer& quads,
             guide.push_back({ButtonGlyph::Dpad, "Change Order"});
             guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         } else {
+            // Always, and always first: it is the one prompt here that is
+            // about the machine rather than about the game. Everything else
+            // the face buttons used to do is in the list now.
+            guide.push_back({ButtonGlyph::Plus, "Settings"});
             if (controller != nullptr && !controller->pad.empty()) {
                 guide.push_back({ButtonGlyph::X, "Identify"});
                 if (controller->slot.kind == PadSlot::Kind::Player) {
                     guide.push_back({ButtonGlyph::Y, "Change Order"});
                 }
             }
-            // Always: it is the one prompt here that is about the machine
-            // rather than about the game. Everything else the face buttons
-            // used to do is in the list now.
-            guide.push_back({ButtonGlyph::Plus, "Settings"});
             // Back either way: off the right-hand side, or out of the menu.
             // One word for B wherever the cursor is, rather than one that
             // changes -- and none on the list shown in place of a Wii U
