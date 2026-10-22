@@ -127,6 +127,18 @@ PadOrder order_of(const std::vector<KnownPad>& pads, const PadLineup& lineup, bo
     return order;
 }
 
+bool move_among_players(PadLineup& lineup, int pad, int direction) {
+    if (direction == 0) return false;
+    std::vector<int>& players = lineup.players;
+    const auto in_players = std::find(players.begin(), players.end(), pad);
+    if (in_players == players.end()) return false;
+    const std::ptrdiff_t at = in_players - players.begin();
+    const std::ptrdiff_t to = at + (direction < 0 ? -1 : 1);
+    if (to < 0 || to >= static_cast<std::ptrdiff_t>(players.size())) return false;
+    std::swap(players[static_cast<std::size_t>(at)], players[static_cast<std::size_t>(to)]);
+    return true;
+}
+
 bool move_in_lineup(PadLineup& lineup, int pad, int direction) {
     if (direction == 0) return false;
     std::vector<int>& players = lineup.players;

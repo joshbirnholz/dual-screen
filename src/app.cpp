@@ -2455,7 +2455,7 @@ void App::Impl::move_pad(const std::string& identity, int direction) {
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
     PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
     const int pad = pad_index(pads, identity);
-    if (pad < 0 || !move_in_lineup(lineup, pad, direction)) return;
+    if (pad < 0 || !move_among_players(lineup, pad, direction)) return;
     pad_order = order_of(pads, lineup, holds_gamepad());
     log_info("controllers: the order was changed");
 }

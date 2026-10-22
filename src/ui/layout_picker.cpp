@@ -274,7 +274,9 @@ const ControllerRowView* LayoutPicker::focused_controller() const {
 
 void LayoutPicker::pick_up_controller(LayoutPickerResult& result) {
     const ControllerRowView* row = focused_controller();
-    if (row == nullptr || row->pad.empty()) return;
+    // Only a player's: the order is the players', the GamePad's controller
+    // is chosen on its page.
+    if (row == nullptr || row->pad.empty() || row->slot.kind != PadSlot::Kind::Player) return;
     held_controller_ = row->pad;
     confirm_ = MenuConfirm::Moving;
     result.controller_picked_up = controls_[static_cast<std::size_t>(item_)].index;
@@ -1917,7 +1919,9 @@ void LayoutPicker::render(QuadRenderer& quads,
         } else {
             if (controller != nullptr && !controller->pad.empty()) {
                 guide.push_back({ButtonGlyph::X, "Identify"});
-                guide.push_back({ButtonGlyph::Y, "Change Order"});
+                if (controller->slot.kind == PadSlot::Kind::Player) {
+                    guide.push_back({ButtonGlyph::Y, "Change Order"});
+                }
             }
             // Always: it is the one prompt here that is about the machine
             // rather than about the game. Everything else the face buttons

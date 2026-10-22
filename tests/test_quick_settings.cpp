@@ -1249,8 +1249,9 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
 
 // A Wii U's Controls: every controller, the GamePad first, rather than
 // Controller Order and Cemu's types. A opens a player's page, X buzzes a
-// controller, Y picks it up to move it -- Up and Down along the line, B
-// putting it back -- and a controller not used is picked up by A too.
+// controller, Y picks a player's up to move it -- Up and Down along the
+// players, A, B or Y putting it down -- and the GamePad's and a controller
+// not used are not picked up.
 void test_wii_u_controls_list_every_controller() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -1316,12 +1317,24 @@ void test_wii_u_controls_list_every_controller() {
         CHECK(picker.is_open());
     }
 
-    // Not used: A does nothing; Y picks it up.
+    // Not used: neither A nor Y does anything.
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(!picker.moving_controller() && result.controller_opened == -1);
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK_EQ(result.controller_picked_up, 2);
+    CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    // Nor is the GamePad's controller picked up, when it has one.
+    std::vector<ControllerRowView> held = state.wii_u_controllers;
+    held[0].pad = "this#6";
+    held[0].name = "Steam Deck";
+    picker.set_wii_u_controllers(held);
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    picker.set_wii_u_controllers(state.wii_u_controllers);
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_picked_up, 1);
     CHECK(picker.moving_controller());
 
     // The other device, told so.
