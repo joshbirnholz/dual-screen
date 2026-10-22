@@ -448,13 +448,14 @@ void test_welcome_and_session_round_trip() {
         player.type = "Wii Remote + Nunchuk";
         player.place = "Steam Deck  P2";
         player.device = "Steam Deck";
+        player.listed = 3;
         state.wii_u_controllers = {gamepad, player};
         buffer.clear();
         encode_session_state(state, buffer);
         CHECK(one_message(buffer, type, payload));
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK(received_state.wii_u_controllers == state.wii_u_controllers);
-        const std::size_t rows = 1 + (2 + 5 * 2 + 13) + (2 + 5 * 2 + 11 + 29 + 20 + 14 + 10);
+        const std::size_t rows = 1 + (3 + 5 * 2 + 13) + (3 + 5 * 2 + 11 + 29 + 20 + 14 + 10);
         CHECK(decode_session_state(payload.data(), payload.size() - rows, received_state));
         CHECK(received_state.wii_u_controllers.empty());
         state.wii_u_controllers.clear();

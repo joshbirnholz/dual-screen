@@ -67,9 +67,13 @@ struct ControllerRowView {
     // "Steam Deck  P2"; and the device alone, "Steam Deck".
     std::string place;
     std::string device;
+    // Where it comes when every controller is listed to choose from, the
+    // same whatever is where: the host's first, then the other device's,
+    // each in the order its own system has them.
+    int listed = 0;
     bool operator==(const ControllerRowView& other) const {
         return slot == other.slot && pad == other.pad && name == other.name && type == other.type &&
-               place == other.place && device == other.device;
+               place == other.place && device == other.device && listed == other.listed;
     }
 };
 

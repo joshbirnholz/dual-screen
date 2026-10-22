@@ -367,6 +367,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
         put_string(out, row.type.substr(0, 255));
         put_string(out, row.place.substr(0, 255));
         put_string(out, row.device.substr(0, 255));
+        put_u8(out, static_cast<uint8_t>(std::clamp(row.listed, 0, 255)));
     }
     finish_message(out, start, MessageType::SessionState);
 }
@@ -1818,6 +1819,9 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             reader.string(row.type);
             reader.string(row.place);
             reader.string(row.device);
+            uint8_t listed = 0;
+            reader.u8(listed);
+            row.listed = listed;
             if (kind > 2) return false;
             row.slot.kind = static_cast<PadSlot::Kind>(kind);
             row.slot.player = player;

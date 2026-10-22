@@ -7,6 +7,7 @@
 #endif
 
 #include <algorithm>
+#include <tuple>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -2441,6 +2442,20 @@ std::vector<ControllerRowView> App::Impl::wii_u_controller_rows() const {
         }
         rows.push_back(std::move(row));
     }
+    // Where each comes in Controller's list, which is the same however the
+    // line is: this device's first, then the other's, each by the player
+    // its own system has it as.
+    std::vector<std::pair<std::tuple<int, int, std::string>, std::size_t>> order;
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        const int pad = pad_index(pads, rows[index].pad);
+        if (pad < 0) continue;
+        const KnownPad& known = pads[static_cast<std::size_t>(pad)];
+        order.push_back({{known.on_this_device ? 0 : 1, known.slot >= 0 ? known.slot : kPadPlayers + pad,
+                          rows[index].pad},
+                         index});
+    }
+    std::sort(order.begin(), order.end());
+    for (std::size_t at = 0; at < order.size(); ++at) rows[order[at].second].listed = static_cast<int>(at);
     return rows;
 }
 

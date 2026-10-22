@@ -118,15 +118,22 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
     add("None", "", false, "");
     const ControllerRowView* own = own_row();
     int current = own != nullptr && !own->pad.empty() ? -1 : 1;
-    std::vector<std::string> devices;
+    // In the order they are listed, which is the same whichever is where.
+    std::vector<const ControllerRowView*> listed;
     for (const ControllerRowView& row : controllers_) {
-        if (row.pad.empty()) continue;
-        if (std::find(devices.begin(), devices.end(), row.device) == devices.end()) devices.push_back(row.device);
+        if (!row.pad.empty()) listed.push_back(&row);
+    }
+    std::stable_sort(listed.begin(), listed.end(),
+                     [](const ControllerRowView* a, const ControllerRowView* b) { return a->listed < b->listed; });
+    std::vector<std::string> devices;
+    for (const ControllerRowView* row : listed) {
+        if (std::find(devices.begin(), devices.end(), row->device) == devices.end()) devices.push_back(row->device);
     }
     for (const std::string& device : devices) {
         add(device, "", true, "");
-        for (const ControllerRowView& row : controllers_) {
-            if (row.pad.empty() || row.device != device) continue;
+        for (const ControllerRowView* entry : listed) {
+            const ControllerRowView& row = *entry;
+            if (row.device != device) continue;
             const bool here = own != nullptr && row.pad == own->pad;
             if (here) current = static_cast<int>(labels.size());
             add(row.name, row.pad, false, here ? std::string() : slot_hint(row.slot));
