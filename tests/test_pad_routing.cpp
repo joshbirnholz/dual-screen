@@ -8,6 +8,7 @@
 
 #include "input/pad_routing.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/wii_u_player_screen.hpp"
 
 namespace {
 
@@ -267,6 +268,128 @@ void test_the_controllers_screen_moves_a_pad_like_steam_does() {
 
 }  // namespace
 
+// A player's page choosing a controller puts it in that place, trading with
+// the one there; a GamePad with none takes it; and one taken out of play goes
+// to the top of Not used, the players after it moving up.
+void test_a_controller_chosen_for_a_place_trades_with_the_one_there() {
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};
+    PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
+    CHECK(ds::put_in_slot(lineup, 2, PadSlot::player_number(0)));
+    CHECK(lineup.players == std::vector<int>({2, 1}));
+    CHECK(ds::put_in_slot(lineup, 1, PadSlot::gamepad()));
+    CHECK_EQ(lineup.gamepad, 1);
+    CHECK(lineup.players == std::vector<int>({2, 0}));
+    CHECK(!ds::put_in_slot(lineup, 1, PadSlot::gamepad()));
+    // No Player 3 to be.
+    CHECK(!ds::put_in_slot(lineup, 1, PadSlot::player_number(2)));
+
+    PadLineup empty = ds::line_up_pads(pads, PadOrder(), false);
+    CHECK_EQ(empty.gamepad, -1);
+    CHECK(ds::put_in_slot(empty, 1, PadSlot::gamepad()));
+    CHECK_EQ(empty.gamepad, 1);
+    CHECK(empty.players == std::vector<int>({0, 2}));
+
+    CHECK(ds::take_out_of_play(lineup, 2));
+    CHECK(lineup.players == std::vector<int>({0}));
+    CHECK(lineup.unused == std::vector<int>({2}));
+    // And one not used back in, trading with Player 1.
+    CHECK(ds::put_in_slot(lineup, 2, PadSlot::player_number(0)));
+    CHECK(lineup.players == std::vector<int>({2}));
+    CHECK(lineup.unused == std::vector<int>({0}));
+    CHECK(!ds::take_out_of_play(lineup, 0));
+}
+
+std::vector<ds::ControllerRowView> controller_rows() {
+    ds::ControllerRowView gamepad;
+    gamepad.slot = PadSlot::gamepad();
+    gamepad.pad = "this#1";
+    gamepad.name = "Steam Deck Controls";
+    gamepad.type = "Wii U GamePad";
+    gamepad.device = "Steam Deck";
+    gamepad.place = "Steam Deck  P1";
+    ds::ControllerRowView first;
+    first.slot = PadSlot::player_number(0);
+    first.pad = "companion#2";
+    first.name = "Xbox Wireless Controller";
+    first.type = "Wii U Pro Controller";
+    first.device = "Living Room PC";
+    first.place = "Living Room PC  P1";
+    ds::ControllerRowView spare;
+    spare.pad = "companion#3";
+    spare.name = "8BitDo Pro 2";
+    spare.device = "Living Room PC";
+    spare.place = "Living Room PC  P2";
+    return {gamepad, first, spare};
+}
+
+// A player's page: Controller Type, Cemu's but for None, and Controller --
+// Detect Controller, None and every controller under its device -- and X
+// taking the player out of play. The GamePad's has no type to choose.
+void test_a_players_page_chooses_a_type_and_a_controller() {
+    using ds::UiAction;
+    using ds::WiiUPlayerScreen;
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    const std::vector<std::string> types{"Pro Controller", "Classic Controller", "Wii Remote",
+                                         "Wii Remote + Nunchuk", "Wii Remote + Classic Controller", "None"};
+    WiiUPlayerScreen page;
+    page.open(PadSlot::player_number(0));
+    page.set_controllers(controller_rows(), types, 0);
+    CHECK(page.title() == "Player 1");
+    CHECK_EQ(page.rows().size(), static_cast<std::size_t>(2));
+    CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
+
+    // Controller Type: five of Cemu's six, on the one it is.
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(page.choosing());
+    CHECK_EQ(page.choice_focus(), 0);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_EQ(result.type_chosen, 3);
+    CHECK(!page.choosing());
+    for (int step = 0; step < 8; ++step) page.update({UiAction::Down}, {}, kWidth, kHeight);
+
+    // Controller: on the one it is, past Detect, None and its device's name.
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(page.choosing());
+    CHECK_EQ(page.choice_focus(), 5);
+    // The spare, under it.
+    result = page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.controller_chosen && *result.controller_chosen == "companion#3");
+
+    // Detect Controller, which runs out.
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    for (int step = 0; step < 8; ++step) page.update({UiAction::Up}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.detect_started && page.detecting());
+    CHECK_EQ(page.detect_seconds(), 10);
+    // Nothing but B, while it waits.
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(page.detecting() && !page.choosing());
+    for (int step = 0; step < 50; ++step) page.tick(0.25f);
+    CHECK(!page.detecting());
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    for (int step = 0; step < 8; ++step) page.update({UiAction::Up}, {}, kWidth, kHeight);
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    page.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(!page.detecting() && page.is_open());
+
+    // X: out of play, and the page with it.
+    result = page.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK(result.removed && result.close_requested && !page.is_open());
+
+    WiiUPlayerScreen gamepad;
+    gamepad.open(PadSlot::gamepad());
+    gamepad.set_controllers(controller_rows(), types, 0);
+    CHECK(gamepad.title() == "GamePad");
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(1));
+    result = gamepad.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK(result.removed && !result.close_requested && gamepad.is_open());
+}
+
 int main() {
     test_slots_and_pads_are_named_as_people_read_them();
     test_defaults_come_straight_from_the_order();
@@ -279,5 +402,7 @@ int main() {
     test_a_chosen_order_holds_while_pads_come_and_go();
     test_each_slot_gets_its_own_pads_presses();
     test_the_controllers_screen_moves_a_pad_like_steam_does();
+    test_a_controller_chosen_for_a_place_trades_with_the_one_there();
+    test_a_players_page_chooses_a_type_and_a_controller();
     return test::finish("pad-routing");
 }

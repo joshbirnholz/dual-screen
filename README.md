@@ -117,7 +117,7 @@ Every menu works the same under a finger, the mouse and the mouse wheel, on
 whichever device it is drawn: a list is dragged, flicked or turned with the
 wheel; a first tap on a row highlights it and a second chooses it; a tap off
 an open popup puts it away. A page of the host's drawn on the connected
-device -- the quick menu, Graphics Packs, Controller Order, the amiibo
+device -- the quick menu, Graphics Packs, a Wii U player's page, the amiibo
 browser -- is one page on both: where it is scrolled, the cursor and any
 popup are the same on both screens, whichever is scrolled or tapped, and a
 tap there is sent over as the thing it landed on, so the host answers it
@@ -408,18 +408,17 @@ Three things are different about a Wii U session:
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
-- **Player 1 Controller** to **Player 4 Controller**, in Controls, are
-  what each player's controller is to the game -- **Pro Controller**,
-  **Classic Controller**, **Wii Remote**, **Wii Remote + Nunchuk**, **Wii
-  Remote + Classic Controller** or **None** -- kept for each game and set as
-  it starts, so a game that wants Wii Remotes and one that wants Pro
+- **Controller Type**, on Player 1 to Player 4's pages in Controls, is
+  what each player's controller is to the game -- **Wii U Pro Controller**,
+  **Classic Controller**, **Wii Remote**, **Wii Remote + Nunchuk** or **Wii
+  Remote + Classic Controller** -- kept for each game and set as it starts, so a game that wants Wii Remotes and one that wants Pro
   Controllers each get theirs without a trip to Cemu's input settings. A
   change happens at once, as if the controller had been swapped. Cemu's own
   saved controller profiles are left as they were: a game with nothing chosen
   gets what Cemu started with.
 
   A player's controller is only plugged in while a pad is feeding it: unplug
-  the pad, or move it off the player in Controller Order, and the game sees
+  the pad, or move it off the player in Controls, and the game sees
   that controller disconnect, as a real one's would; it comes back, as the
   type this game wants, when a pad does. So a game never counts controllers
   nobody is holding.
@@ -543,22 +542,28 @@ change what this device is called there. The name is only shown: a virtual pad's
 when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
-**Controller Order**, at the top of the quick menu's Controls, rearranges the line the way SteamOS's own
-Controller Order screen does. Each row starts with what that controller is:
-the GamePad, drawn as one, or a player, drawn as four small squares the way a
-Wii Remote's lights show it -- the second square alone filled for Player 2,
-as a Wii U lights them, rather than the first two a Switch would. A Wii U
-stops at four; Players 5 to 8 take a Switch's patterns. A controller in
-neither has nothing there. Press confirm to pick a controller up, move it
-up or down, and press confirm again to put it down. Moving one up from Player 1
-makes it the GamePad; moving one down past the last player puts it in **Not
-used**. Press **X** or **Y** (Identify) to give the highlighted controller
-one short buzz, which is how to tell them apart. Either works, because which of
-them a pad calls X depends on the pad. A Switch Lite has no rumble motor, so
-its own controls cannot buzz. It works mid-game and from either device's
-buttons, and lasts until the app closes: a controller is recognised for as long
-as it stays connected, so one that is unplugged and plugged back in joins the
-end of the line.
+The quick menu's **Controls** lists the line: the GamePad, then each player,
+then any controller not used, each with its name, what the game has it as
+(**Wii U GamePad**, **Wii Remote + Nunchuk**) and where it is. **A** opens
+the GamePad's or a player's page: **Controller Type**, above, and
+**Controller**, which is any controller on either device -- picking one
+another player has swaps the two, and **Detect Controller...** takes
+whichever controller a button is pressed on in the next ten seconds. **X**
+there takes the player out of play. In Controls itself, **X** (Identify)
+buzzes the highlighted controller and **Y** (Change Order) picks it up: move
+it up or down the line, **A** puts it down and **B** puts it back. A
+controller not used is picked up with **A** too.
+
+Each row starts with what that controller is: the GamePad, drawn as one, or
+a player, drawn as four small squares the way a Wii Remote's lights show it
+-- the second square alone filled for Player 2, as a Wii U lights them,
+rather than the first two a Switch would. A Wii U stops at four; Players 5 to
+8 take a Switch's patterns. Moving a controller up from Player 1 makes it the
+GamePad; moving one down past the last player puts it in **Not Used**. A
+Switch Lite has no rumble motor, so its own controls cannot buzz. It all
+works mid-game and from either device's buttons, and lasts until the app
+closes: a controller is recognised for as long as it stays connected, so one
+that is unplugged and plugged back in joins the end of the line.
 
 A player's rumble goes to its controller, on whichever device it is on. A
 companion older than this needs updating to have its controllers counted one

@@ -93,7 +93,7 @@ CPPFILES    := main.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp menu_overlay.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
-               connecting_screen.cpp control_guide.cpp controllers_screen.cpp graphic_packs_screen.cpp button_mapping_screen.cpp game_browser.cpp choice_popup.cpp text_entry.cpp game_dialog.cpp mirrored_game_dialog.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
+               connecting_screen.cpp control_guide.cpp controllers_screen.cpp graphic_packs_screen.cpp button_mapping_screen.cpp wii_u_player_screen.cpp game_browser.cpp choice_popup.cpp text_entry.cpp game_dialog.cpp mirrored_game_dialog.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                notice_popup.cpp \
                battery.cpp build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)

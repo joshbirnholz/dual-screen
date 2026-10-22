@@ -40,9 +40,36 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.amiibo_available = session.host_amiibo_available();
     state.producer_options = session.host_producer_options();
     state.producer_choices = session.host_producer_choices();
+    state.producer_controls_from = session.host_producer_controls_from();
+    state.wii_u_controllers = session.host_wii_u_controllers();
     state.amiibo = session.host_amiibo();
     state.amiibo_folder = session.host_amiibo_folder();
     return state;
+}
+
+void show_host_wii_u_player(WiiUPlayerScreen& screen, const net::CompanionSession& session,
+                            float output_width, float output_height) {
+    const net::WiiUPlayerViewMessage& view = session.host_wii_u_player_view();
+    // Whose page it is, then what it shows, then where the host has its
+    // cursor on it.
+    if (!screen.is_open() || !(screen.slot() == view.slot)) screen.open(view.slot);
+    std::vector<std::string> types;
+    int current = -1;
+    if (view.slot.kind == PadSlot::Kind::Player) {
+        // Cemu's option for the player, as the host's menu lists it.
+        const std::string label = "Player " + std::to_string(view.slot.player + 1) + " Controller";
+        const auto& options = session.host_producer_options();
+        const auto& choices = session.host_producer_choices();
+        for (std::size_t index = 0; index < options.size() && index < choices.size(); ++index) {
+            if (options[index].first != label) continue;
+            types = choices[index];
+            for (std::size_t at = 0; at < types.size(); ++at) {
+                if (types[at] == options[index].second) current = static_cast<int>(at);
+            }
+        }
+    }
+    screen.set_controllers(session.host_wii_u_controllers(), std::move(types), current);
+    screen.show_mirrored(view, output_width, output_height);
 }
 
 }  // namespace ds

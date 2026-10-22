@@ -75,6 +75,7 @@
 #include "ui/controllers_screen.hpp"
 #include "ui/button_mapping_screen.hpp"
 #include "ui/graphic_packs_screen.hpp"
+#include "ui/wii_u_player_screen.hpp"
 #include "ui/data_management_screen.hpp"
 #include "ui/forwarder_screen.hpp"
 #include "ui/game_browser.hpp"
@@ -378,6 +379,8 @@ struct App::Impl {
         Amiibo,
         // A DS or 3DS game's Button Mapping, from its menu's Controls.
         ButtonMapping,
+        // A Wii U game's player, or its GamePad, from its menu's Controls.
+        WiiUPlayer,
         // A Wii U game's own dialog -- an error, its keyboard -- shown over
         // it in place of Cemu's, the game going on underneath. See
         // update_game_dialogs().
@@ -515,6 +518,10 @@ struct App::Impl {
     ControllersScreen controllers_screen;
     GraphicPacksScreen graphic_packs_screen;
     ButtonMappingScreen button_mapping_screen;
+    WiiUPlayerScreen wii_u_player_screen;
+    // Detect Controller's: each controller's buttons as of the last frame, by
+    // pad_identity(), so only a press made since counts.
+    std::map<std::string, uint32_t> detect_pressing;
     // Cemu's own options, as it last said: shown in a Wii U menu's Options,
     // and the ones it keeps for every game alike set to this game's choice
     // once each session -- see ExternalOption::default_choice.
@@ -544,6 +551,9 @@ struct App::Impl {
     GraphicPacksScreen mirrored_graphic_packs;
     // And the game's Button Mapping.
     ButtonMappingScreen mirrored_button_mapping;
+    WiiUPlayerScreen mirrored_wii_u_player;
+    bool wii_u_player_view_sent = false;
+    net::WiiUPlayerViewMessage wii_u_player_view_said;
     bool button_mapping_view_sent = false;
     net::ButtonMappingViewMessage button_mapping_view_said;
     // What the companion was last told of the Graphics Packs page -- see
@@ -677,6 +687,11 @@ struct App::Impl {
     // is, and until when -- see identify_pad(). A newer one ends its own.
     std::optional<KnownPad> identifying_pad;
     uint32_t identify_until_ms = 0;
+    // The line as it was when a controller was picked up in Controls, for B
+    // to put back -- see LayoutPickerResult::controller_put_back -- and the
+    // controller in hand.
+    std::optional<PadOrder> order_before_move;
+    std::string moving_pad;
     // Where the Controllers screen was opened from, which is where closing it
     // goes back to.
     State controllers_came_from = State::Playing;
@@ -1010,6 +1025,15 @@ struct App::Impl {
                                       const std::vector<PointerEvent>& pointers);
     // What the page shows, for the game as it is now.
     void show_button_mapping(ButtonMappingScreen& screen) const;
+    // A Wii U game's player's page -- see WiiUPlayerScreen. `screen` is
+    // handed the controllers and the player's types; a companion's, the
+    // host's, through show_host_wii_u_player().
+    void open_wii_u_player(PadSlot slot);
+    void update_wii_u_player_screen(const std::vector<UiAction>& actions,
+                                    const std::vector<PointerEvent>& pointers);
+    void show_wii_u_player(WiiUPlayerScreen& screen) const;
+    // Detect Controller watching for a press: true once one was found.
+    bool detect_controller();
     // The page on screen now that taps reach as a MenuPage, or none -- and
     // that page updated with these presses and no pointer, to hear the taps
     // the other device sent it. See MenuPage.
@@ -1024,6 +1048,21 @@ struct App::Impl {
     // Where among cemu_options the players' controllers begin, which the
     // menu lists under Controls rather than Game Options; -1 for none.
     int cemu_controls_from() const;
+    // Cemu's option for player `player`'s controller type (0 for Player 1),
+    // by its index in cemu_options; -1 where it has none.
+    int cemu_player_type_option(int player) const;
+    // A Wii U game's Controls as the menu lists them -- see
+    // LayoutPickerState::wii_u_controllers.
+    std::vector<ControllerRowView> wii_u_controller_rows() const;
+    // The pad of one, by pad_identity(), as an index into `pads`; -1 for none.
+    static int pad_index(const std::vector<KnownPad>& pads, const std::string& identity);
+    // Moves pad `identity` in the line: a place up or down, into a slot, or
+    // out of play. Logged as a player would say it.
+    void move_pad(const std::string& identity, int direction);
+    void put_pad_in_slot(const std::string& identity, PadSlot slot);
+    void take_pad_out_of_play(const std::string& identity);
+    // Controls' answers, from either device's pad -- see LayoutPickerResult.
+    void apply_controls_result(const LayoutPickerResult& result);
     // Settings' Wii U TV audio, told to a Cemu that is up, when it is not
     // what it was. Cemu reads it as a game starts, so a game already
     // running hears it once it is reset.
@@ -1096,7 +1135,8 @@ struct App::Impl {
     // back to where they came from -- Button Mapping too, though it is not
     // Cemu's.
     bool on_cemu_page() const {
-        return state == State::GraphicPacks || state == State::Amiibo || state == State::ButtonMapping;
+        return state == State::GraphicPacks || state == State::Amiibo || state == State::ButtonMapping ||
+               state == State::WiiUPlayer;
     }
     void enter_cemu_page(State page);
     void close_cemu_page();
@@ -1433,6 +1473,8 @@ void App::Impl::destroy_window() {
         picker->release_textures();
     }
     controllers_screen.release_textures();
+    wii_u_player_screen.release_textures();
+    mirrored_wii_u_player.release_textures();
     mirrored_controllers.release_textures();
     if (data_screen) data_screen->release_textures();
     // The game's icon, which is kept while it is the same game: kept across
@@ -1989,6 +2031,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.name = reading.name;
         pad.slot = reading.slot;
         pad.held = reading.held;
+        pad.pressing = reading.pressing;
         pads.push_back(pad);
     }
     if (!companion_here) {
@@ -2016,6 +2059,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.name = reported.name;
         pad.slot = reported.slot;
         pad.held = reported.held;
+        pad.pressing = reported.pressing;
         pads.push_back(pad);
     }
     return pads;
@@ -2185,6 +2229,101 @@ void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& action
     }
 }
 
+void App::Impl::show_wii_u_player(WiiUPlayerScreen& screen) const {
+    // Cemu's types for the player, with the one it has now.
+    std::vector<std::string> types;
+    int current = -1;
+    if (screen.slot().kind == PadSlot::Kind::Player) {
+        const int option = cemu_player_type_option(screen.slot().player);
+        if (option >= 0) {
+            types = cemu_options[static_cast<std::size_t>(option)].choices;
+            current = cemu_options[static_cast<std::size_t>(option)].active;
+        }
+    }
+    screen.set_controllers(wii_u_controller_rows(), std::move(types), current);
+}
+
+void App::Impl::open_wii_u_player(PadSlot slot) {
+    enter_cemu_page(State::WiiUPlayer);
+    wii_u_player_screen.open(slot);
+    show_wii_u_player(wii_u_player_screen);
+    log_info("the page for " + pad_slot_name(slot) + " is up");
+}
+
+bool App::Impl::detect_controller() {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    std::map<std::string, uint32_t> now;
+    std::string found;
+    for (const KnownPad& pad : pads) {
+        const std::string identity = pad_identity(pad);
+        now[identity] = pad.pressing;
+        const auto was = detect_pressing.find(identity);
+        // A button down that was not before -- on a controller that was here
+        // a frame ago, so one plugged in with a button held does not count.
+        if (found.empty() && was != detect_pressing.end() && (pad.pressing & ~was->second) != 0) found = identity;
+    }
+    detect_pressing = std::move(now);
+    if (found.empty()) return false;
+    put_pad_in_slot(found, wii_u_player_screen.slot());
+    wii_u_player_screen.detected();
+    detect_pressing.clear();
+    return true;
+}
+
+void App::Impl::update_wii_u_player_screen(const std::vector<UiAction>& actions,
+                                           const std::vector<PointerEvent>& pointers) {
+    // The game went while the page was up: no player left to change.
+    if (system != SystemId::WiiU || !local_game()) {
+        close_cemu_page();
+        return;
+    }
+    show_wii_u_player(wii_u_player_screen);
+    // A press found on a controller is that controller chosen, and nothing
+    // else: the button pressed was for this, not for the page.
+    if (wii_u_player_screen.detecting()) {
+        wii_u_player_screen.tick(static_cast<float>(last_delta_seconds));
+        if (detect_controller()) return;
+        if (!wii_u_player_screen.detecting()) {
+            detect_pressing.clear();
+            log_info("controllers: no controller was pressed in time");
+        }
+    }
+    const WiiUPlayerScreenResult result = wii_u_player_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    const PadSlot slot = wii_u_player_screen.slot();
+    if (result.type_chosen >= 0 && slot.kind == PadSlot::Kind::Player) {
+        const int option = cemu_player_type_option(slot.player);
+        if (option >= 0) {
+            const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+            const int count = static_cast<int>(type.choices.size());
+            const int at = type.active >= 0 ? type.active : 0;
+            if (count > 0) step_cemu_option(option, ((result.type_chosen - at) % count + count) % count);
+        }
+    }
+    if (result.controller_chosen) {
+        if (result.controller_chosen->empty()) {
+            if (const ControllerRowView* own = wii_u_player_screen.own_row()) take_pad_out_of_play(own->pad);
+        } else {
+            put_pad_in_slot(*result.controller_chosen, slot);
+        }
+    }
+    if (result.removed) {
+        if (const ControllerRowView* own = wii_u_player_screen.own_row()) take_pad_out_of_play(own->pad);
+    }
+    if (result.detect_started) {
+        // Where every controller's buttons are as it starts.
+        detect_pressing.clear();
+        for (const KnownPad& pad : gather_pads(companion_joined())) detect_pressing[pad_identity(pad)] = pad.pressing;
+        log_info("controllers: waiting for a press on the controller " + pad_slot_name(slot) + " will use");
+    }
+    if (result.close_everything) {
+        close_cemu_page();
+        if (state == State::Menu) set_menu_open(false);
+    } else if (result.close_requested) {
+        close_cemu_page();
+    }
+}
+
 void App::Impl::open_graphic_packs() {
     enter_cemu_page(State::GraphicPacks);
     graphic_packs_screen.open();
@@ -2264,6 +2403,111 @@ int App::Impl::cemu_controls_from() const {
         if (is_cemu_controls_option(cemu_options[index].id)) return static_cast<int>(index);
     }
     return -1;
+}
+
+int App::Impl::cemu_player_type_option(int player) const {
+    const std::string id = "player" + std::to_string(player + 1) + "_type";
+    for (std::size_t index = 0; index < cemu_options.size(); ++index) {
+        if (cemu_options[index].id == id) return static_cast<int>(index);
+    }
+    return -1;
+}
+
+std::vector<ControllerRowView> App::Impl::wii_u_controller_rows() const {
+    std::vector<ControllerRowView> rows;
+    if (system != SystemId::WiiU || is_companion()) return rows;
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    const PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    const std::string other = companion_joined() ? host_session->companion_name() : std::string("Other Device");
+    for (const LineupRow& line : lineup_rows(lineup)) {
+        ControllerRowView row;
+        row.slot = line.slot;
+        if (line.pad >= 0 && static_cast<std::size_t>(line.pad) < pads.size()) {
+            const KnownPad& pad = pads[static_cast<std::size_t>(line.pad)];
+            row.pad = pad_identity(pad);
+            row.name = pad.name.empty() ? pad_label(pad) : pad.name;
+            row.device = pad.on_this_device ? settings.device_name : other;
+            row.place = row.device + (pad.slot >= 0 ? "  P" + std::to_string(pad.slot + 1) : std::string());
+        }
+        // What the game has there: the GamePad, or the type Cemu has the
+        // player as.
+        if (line.slot.kind == PadSlot::Kind::GamePad) {
+            row.type = "Wii U GamePad";
+        } else if (line.slot.kind == PadSlot::Kind::Player) {
+            const int option = cemu_player_type_option(line.slot.player);
+            if (option >= 0) {
+                const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+                if (type.active >= 0 && type.active < static_cast<int>(type.choices.size())) {
+                    row.type = wii_u_type_name(type.choices[static_cast<std::size_t>(type.active)]);
+                }
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+int App::Impl::pad_index(const std::vector<KnownPad>& pads, const std::string& identity) {
+    for (std::size_t index = 0; index < pads.size(); ++index) {
+        if (pad_identity(pads[index]) == identity) return static_cast<int>(index);
+    }
+    return -1;
+}
+
+void App::Impl::move_pad(const std::string& identity, int direction) {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    const int pad = pad_index(pads, identity);
+    if (pad < 0 || !move_in_lineup(lineup, pad, direction)) return;
+    pad_order = order_of(pads, lineup, holds_gamepad());
+    log_info("controllers: the order was changed");
+}
+
+void App::Impl::put_pad_in_slot(const std::string& identity, PadSlot slot) {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    const int pad = pad_index(pads, identity);
+    if (pad < 0 || !put_in_slot(lineup, pad, slot)) return;
+    pad_order = order_of(pads, lineup, holds_gamepad());
+    log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " is now " + pad_slot_name(slot));
+}
+
+void App::Impl::take_pad_out_of_play(const std::string& identity) {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    const int pad = pad_index(pads, identity);
+    if (pad < 0 || !take_out_of_play(lineup, pad)) return;
+    pad_order = order_of(pads, lineup, holds_gamepad());
+    log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " is no longer used");
+}
+
+void App::Impl::apply_controls_result(const LayoutPickerResult& result) {
+    // The line is the host's: a companion's press reaches the host's menu
+    // and lands here there.
+    if (is_companion() || !picker) return;
+    const std::vector<ControllerRowView>& rows = picker->state().wii_u_controllers;
+    const auto row_at = [&](int index) -> const ControllerRowView* {
+        return index >= 0 && index < static_cast<int>(rows.size()) ? &rows[static_cast<std::size_t>(index)] : nullptr;
+    };
+    if (const ControllerRowView* row = row_at(result.controller_identified)) {
+        const std::vector<KnownPad> pads = gather_pads(companion_joined());
+        const int pad = pad_index(pads, row->pad);
+        if (pad >= 0) identify_pad(pads[static_cast<std::size_t>(pad)]);
+    }
+    if (const ControllerRowView* row = row_at(result.controller_picked_up)) {
+        order_before_move = pad_order;
+        moving_pad = row->pad;
+    }
+    if (result.controller_moved != 0 && !moving_pad.empty()) move_pad(moving_pad, result.controller_moved);
+    if (result.controller_put_back && order_before_move) {
+        pad_order = *order_before_move;
+        log_info("controllers: the order was put back");
+    }
+    if (!picker->moving_controller()) {
+        order_before_move.reset();
+        moving_pad.clear();
+    }
+    picker->set_wii_u_controllers(wii_u_controller_rows());
 }
 
 std::vector<std::vector<std::string>> App::Impl::cemu_option_choices() const {
@@ -2560,6 +2804,10 @@ void App::Impl::close_cemu_page() {
     } else if (state == State::ButtonMapping) {
         button_mapping_screen.close();
         log_info("the button mapping page is down");
+    } else if (state == State::WiiUPlayer) {
+        wii_u_player_screen.close();
+        detect_pressing.clear();
+        log_info("the player's page is down");
     }
     if (cemu_page_came_from == State::Menu && local_game()) {
         set_menu_open(true);
@@ -2593,6 +2841,7 @@ MenuPage* App::Impl::page_shown() {
         case State::Controllers: return &controllers_screen;
         case State::Amiibo: return &amiibo_browser;
         case State::ButtonMapping: return &button_mapping_screen;
+        case State::WiiUPlayer: return &wii_u_player_screen;
         default: return nullptr;
     }
 }
@@ -2606,6 +2855,7 @@ net::MirroredPage App::Impl::mirrored_page() const {
         case State::Controllers: return net::MirroredPage::Controllers;
         case State::Amiibo: return net::MirroredPage::AmiiboBrowser;
         case State::ButtonMapping: return net::MirroredPage::ButtonMapping;
+        case State::WiiUPlayer: return net::MirroredPage::WiiUPlayer;
         // Settings and its pages are this device's own; the rest are not
         // over a game the two share, or have nothing that scrolls.
         case State::Settings:
@@ -2643,6 +2893,9 @@ void App::Impl::sync_companion_scroll() {
         } else if (companion_session->host_button_mapping_view().open) {
             page = &mirrored_button_mapping;
             shown = net::MirroredPage::ButtonMapping;
+        } else if (companion_session->host_wii_u_player_view().open) {
+            page = &mirrored_wii_u_player;
+            shown = net::MirroredPage::WiiUPlayer;
         }
     }
     if (const std::optional<net::MenuScrollMessage> said =
@@ -2701,6 +2954,7 @@ void App::Impl::update_shown_page(const std::vector<UiAction>& actions) {
         case State::Controllers: update_controllers_screen(actions, {}); break;
         case State::Amiibo: update_amiibo_browser(actions, {}); break;
         case State::ButtonMapping: update_button_mapping_screen(actions, {}); break;
+        case State::WiiUPlayer: update_wii_u_player_screen(actions, {}); break;
         default: break;
     }
 }
@@ -2876,6 +3130,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (state == State::GraphicPacks) graphic_packs_screen.close();
     if (state == State::Amiibo) amiibo_browser.close();
     if (state == State::ButtonMapping) button_mapping_screen.close();
+    if (state == State::WiiUPlayer) wii_u_player_screen.close();
     if (state == State::DataManagement && data_screen) data_screen->close();
     data_from_settings = false;
     log_info("the menu button: every page put away, back to the game");
@@ -3311,6 +3566,7 @@ void App::Impl::open_quick_menu() {
 }
 
 void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed_here) {
+            apply_controls_result(result);
             // Made here whichever device's pad chose them: the saves are on
             // this machine, beside the game.
             if (!is_companion()) {
@@ -3435,6 +3691,14 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             } else if (result.button_mapping_requested) {
                 // The game's, kept on the device running it, the same way.
                 if (button_mapping_available()) open_button_mapping();
+            } else if (result.controller_opened >= 0) {
+                // A player's page, on the device that can see every
+                // controller, the same way.
+                const std::vector<ControllerRowView>& rows = picker->state().wii_u_controllers;
+                if (!is_companion() && local_game() &&
+                    result.controller_opened < static_cast<int>(rows.size())) {
+                    open_wii_u_player(rows[static_cast<std::size_t>(result.controller_opened)].slot);
+                }
             } else if (result.amiibo_chosen >= 0) {
                 // Chosen from the list, from either device: the host's files.
                 if (!is_companion() && amiibo_available() &&
@@ -3490,12 +3754,14 @@ void App::Impl::open_picker(bool embedded, bool from_game) {
         picker_state.producer_options = companion_session->host_producer_options();
         picker_state.producer_choices = companion_session->host_producer_choices();
         picker_state.producer_controls_from = companion_session->host_producer_controls_from();
+        picker_state.wii_u_controllers = companion_session->host_wii_u_controllers();
         picker_state.amiibo = companion_session->host_amiibo();
         picker_state.amiibo_folder = companion_session->host_amiibo_folder();
     } else if (system == SystemId::WiiU) {
         picker_state.producer_options = cemu_option_rows();
         picker_state.producer_choices = cemu_option_choices();
         picker_state.producer_controls_from = cemu_controls_from();
+        picker_state.wii_u_controllers = wii_u_controller_rows();
         // Looked for afresh each time the menu opens, so a file added since
         // is there.
         if (picker_state.amiibo_available) scan_amiibo_folder();
@@ -5319,6 +5585,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::GraphicPacks: graphic_packs_screen.describe_for_sound(view); break;
         case State::Amiibo: amiibo_browser.describe_for_sound(view); break;
         case State::ButtonMapping: button_mapping_screen.describe_for_sound(view); break;
+        case State::WiiUPlayer: wii_u_player_screen.describe_for_sound(view); break;
         case State::Message: message.describe_for_sound(view); break;
         case State::GameDialog: view.focus = static_cast<uint64_t>(game_dialog_screen.focus()); break;
         case State::Browser:
@@ -5535,6 +5802,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                             companion_session->request_menu_focus(tap);
                         }
                     }
+                } else if (companion_session->host_wii_u_player_view().open) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(mirrored_wii_u_player.guide_hits(), forwarded, rest);
+                    for (const int tap : MenuPage::taps_on(mirrored_wii_u_player, rest,
+                                                           static_cast<float>(output_width),
+                                                           static_cast<float>(output_height))) {
+                        if (tap == MenuPage::kTapOffPopup) {
+                            companion_session->request_menu_action(net::MenuAction::Cancel);
+                        } else {
+                            companion_session->request_menu_focus(tap);
+                        }
+                    }
                 } else if (companion_session->host_button_mapping_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_button_mapping.guide_hits(), forwarded, rest);
@@ -5722,6 +6001,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::WiiUPlayer: {
+            update_wii_u_player_screen(actions, pointers);
+            break;
+        }
+
         case State::GameDialog: {
             game_dialog_screen.type(input.typed_text(), input.backspaces());
             const GameDialogResult result = game_dialog_screen.update(
@@ -5875,6 +6159,8 @@ void App::Impl::render_pages(float width, float height, bool over_game,
                                      is_companion() && local_screen == ScreenId::Bottom);
         }
         picker->set_device_screen(wii_u_screen_here());
+        // Controls as they are this frame: controllers come, go and move.
+        if (!is_companion() && system == SystemId::WiiU) picker->set_wii_u_controllers(wii_u_controller_rows());
         refresh_game_icon();
         picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
         picker->render(quads, text, button_glyphs, width, height, shown_game_title(), frames);
@@ -5890,6 +6176,9 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         ScreenSource* const drawing = active_source();
         button_mapping_screen.set_touch_screen(drawing != nullptr ? drawing->screens().bottom : nullptr);
         button_mapping_screen.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::WiiUPlayer) {
+        wii_u_player_screen.set_over_game(over_game);
+        wii_u_player_screen.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
         controllers_screen.render(quads, text, button_glyphs, width, height,
@@ -5991,6 +6280,7 @@ void App::Impl::render() {
         const net::GraphicPacksViewMessage& packs = companion_session->host_graphic_packs_view();
         const net::AmiiboBrowserViewMessage& amiibo = companion_session->host_amiibo_browser_view();
         const net::ButtonMappingViewMessage& mapping = companion_session->host_button_mapping_view();
+        const net::WiiUPlayerViewMessage& player = companion_session->host_wii_u_player_view();
         const auto draw_page = [&](bool over_game) {
             if (view.open) {
                 render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
@@ -6020,12 +6310,20 @@ void App::Impl::render() {
                 mirrored_button_mapping.show_mirrored(mapping, width, height);
                 mirrored_button_mapping.set_over_game(over_game);
                 mirrored_button_mapping.render(quads, text, button_glyphs, width, height);
+            } else if (player.open) {
+                if (!over_game) {
+                    quads.begin_frame(output_width, output_height);
+                    quads.clear(ui_theme().background);
+                }
+                show_host_wii_u_player(mirrored_wii_u_player, *companion_session, width, height);
+                mirrored_wii_u_player.set_over_game(over_game);
+                mirrored_wii_u_player.render(quads, text, button_glyphs, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs, quads, text, button_glyphs,
                                               width, height, packs, over_game);
             }
         };
-        if (view.open || packs.open || amiibo.open || mapping.open) {
+        if (view.open || packs.open || amiibo.open || mapping.open || player.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game, which goes on, and the blurred still otherwise.
             if (ScreenSource* drawing = active_source()) {
@@ -6121,6 +6419,7 @@ void App::Impl::render() {
             quads.clear(ui_theme().background);
             picker->set_preview_screen(own_separate_screen());
             picker->set_device_screen(wii_u_screen_here());
+            if (!is_companion() && system == SystemId::WiiU) picker->set_wii_u_controllers(wii_u_controller_rows());
             refresh_game_icon();
             picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
             picker->render(quads, text, button_glyphs, width, height, shown_game_title(), nullptr);
@@ -6915,6 +7214,9 @@ int App::run(const AppOptions& options) {
                 shared.amiibo = impl.picker->state().amiibo;
                 shared.amiibo_folder = impl.picker->state().amiibo_folder;
             }
+            // Every controller, whatever is up: the player's page needs them
+            // as much as the menu does.
+            shared.wii_u_controllers = impl.wii_u_controller_rows();
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -6972,6 +7274,19 @@ int App::run(const AppOptions& options) {
             } else if (impl.graphic_packs_view_sent) {
                 impl.host_session->set_graphic_packs_view(net::GraphicPacksViewMessage());
                 impl.graphic_packs_view_sent = false;
+            }
+            // And a Wii U player's page, which is a few numbers too.
+            {
+                const net::WiiUPlayerViewMessage player =
+                    impl.state == Impl::State::WiiUPlayer ? wii_u_player_view_of(impl.wii_u_player_screen)
+                                                          : net::WiiUPlayerViewMessage();
+                if (player.open || impl.wii_u_player_view_sent) {
+                    if (!impl.wii_u_player_view_sent || !(player == impl.wii_u_player_view_said)) {
+                        impl.host_session->set_wii_u_player_view(player);
+                        impl.wii_u_player_view_said = player;
+                    }
+                    impl.wii_u_player_view_sent = player.open;
+                }
             }
             // And Button Mapping, which is a few numbers.
             {
@@ -7232,6 +7547,10 @@ int App::run(const AppOptions& options) {
                 }
                 if (impl.state == Impl::State::ButtonMapping) {
                     impl.update_button_mapping_screen({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::WiiUPlayer) {
+                    impl.update_wii_u_player_screen({action}, {});
                     continue;
                 }
                 if (impl.state == Impl::State::DataManagement) {

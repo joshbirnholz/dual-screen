@@ -1247,6 +1247,96 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
     CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and plus");
 }
 
+// A Wii U's Controls: every controller, the GamePad first, rather than
+// Controller Order and Cemu's types. A opens a player's page, X buzzes a
+// controller, Y picks it up to move it -- Up and Down along the line, B
+// putting it back -- and a controller not used is picked up by A too.
+void test_wii_u_controls_list_every_controller() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.producer_options = {{"Graphics", "High"}, {"Player 1 Controller", "Pro Controller"}};
+    state.producer_choices = {{"High", "Low"}, {"Pro Controller", "Wii Remote"}};
+    state.producer_controls_from = 1;
+    ControllerRowView gamepad;
+    gamepad.slot = PadSlot::gamepad();
+    gamepad.type = "Wii U GamePad";
+    ControllerRowView first;
+    first.slot = PadSlot::player_number(0);
+    first.pad = "this#4";
+    first.name = "Xbox Wireless Controller";
+    first.type = "Wii U Pro Controller";
+    ControllerRowView spare;
+    spare.pad = "this#5";
+    spare.name = "8BitDo Pro 2";
+    state.wii_u_controllers = {gamepad, first, spare};
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    open_on(picker, state, MenuSection::ControllerOrder);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
+    // Cemu's type is on the player's page, not in Game Options: there are
+    // only its graphics and Hide Cursor.
+    CHECK_EQ(picker.items_in(MenuSection::Options), 2);
+
+    // The GamePad, with no controller: nothing to buzz or pick up.
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
+    LayoutPickerResult result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_identified, -1);
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK(!picker.moving_controller());
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_opened, 0);
+
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
+    result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_identified, 1);
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_picked_up, 1);
+    CHECK(picker.moving_controller());
+    CHECK(!picker.awaiting_confirmation());
+    result = picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_moved, 1);
+    // The line moved, and the controller in hand with it.
+    std::vector<ControllerRowView> moved = state.wii_u_controllers;
+    std::swap(moved[1].pad, moved[2].pad);
+    std::swap(moved[1].name, moved[2].name);
+    picker.set_wii_u_controllers(moved);
+    CHECK(picker.focus() == LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
+    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(result.controller_put_back);
+    CHECK(!picker.moving_controller());
+    CHECK(picker.is_open());
+    // A puts it down where it is.
+    picker.set_wii_u_controllers(state.wii_u_controllers);
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
+    picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!picker.moving_controller() && !result.controller_put_back && result.controller_opened == -1);
+
+    // Not used: A picks it up.
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_picked_up, 2);
+    CHECK(picker.moving_controller());
+
+    // The other device, told so.
+    LayoutPicker other(registry);
+    other.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    other.open(state);
+    other.show(state, picker.focus(), picker.confirmation(), picker.confirm_focus_wire());
+    CHECK(other.moving_controller());
+    CHECK_EQ(other.items_in(MenuSection::ControllerOrder), 3);
+
+    // From a host that lists no controllers: Controller Order and Cemu's rows.
+    LayoutPickerState older = state;
+    older.wii_u_controllers.clear();
+    LayoutPicker before(registry);
+    before.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    before.open(older);
+    CHECK_EQ(before.items_in(MenuSection::ControllerOrder), 2);
+}
+
 // Reset and Quit throw away something the player cannot get back, so neither
 // happens on the press that asked for it.
 void test_reset_and_quit_are_asked_about_first() {
@@ -2070,6 +2160,7 @@ int main() {
     test_wii_u_menu_has_its_own_sections();
     test_wii_u_controls_list_the_players_controllers();
     test_wii_u_menu_guide_is_ok_back_and_settings();
+    test_wii_u_controls_list_every_controller();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();
     test_nothing_else_answers_while_a_confirmation_is_up();

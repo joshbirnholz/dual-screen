@@ -189,6 +189,8 @@ public:
         std::vector<std::pair<std::string, std::string>> producer_options;
         std::vector<std::vector<std::string>> producer_choices;
         int producer_controls_from = -1;
+        // See SessionStateMessage::wii_u_controllers.
+        std::vector<ControllerRowView> wii_u_controllers;
         // See SessionStateMessage::button_mapping.
         ButtonMapping button_mapping;
         // See SessionStateMessage::favorite_color.
@@ -259,6 +261,8 @@ public:
     // The Button Mapping page as it stands here (closed once it is not):
     // sent on change.
     void set_button_mapping_view(const ButtonMappingViewMessage& view);
+    // A Wii U player's page, the same way.
+    void set_wii_u_player_view(const WiiUPlayerViewMessage& view);
     // And the game's own dialog, up over it (kind 0 once it is not).
     void set_game_dialog(const GameDialogMessage& dialog);
     // The companion's answers to it, oldest first.
@@ -723,6 +727,8 @@ private:
     bool stylus_cursor_dirty_ = false;
     std::vector<uint8_t> button_mapping_view_;
     bool button_mapping_view_dirty_ = false;
+    std::vector<uint8_t> wii_u_player_view_;
+    bool wii_u_player_view_dirty_ = false;
     std::deque<GameDialogAnswerMessage> game_dialog_answers_;
     std::optional<UpdateAnswerMessage> companion_update_answer_;
 

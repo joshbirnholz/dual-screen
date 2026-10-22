@@ -641,6 +641,11 @@ public:
     // Where the stylus on the right stick is on the host, to draw it here
     // over the touch screen too. See StylusCursorMessage.
     const StylusCursorMessage& host_stylus_cursor() const { return host_stylus_cursor_; }
+    // A Wii U game's controllers, as its Controls lists them -- see
+    // SessionStateMessage::wii_u_controllers.
+    const std::vector<ControllerRowView>& host_wii_u_controllers() const { return host_wii_u_controllers_; }
+    // A Wii U player's page. See WiiUPlayerViewMessage.
+    const WiiUPlayerViewMessage& host_wii_u_player_view() const { return host_wii_u_player_view_; }
     // And its Button Mapping page. See ButtonMappingViewMessage.
     const ButtonMappingViewMessage& host_button_mapping_view() const { return host_button_mapping_view_; }
     void answer_game_dialog(const GameDialogAnswerMessage& answer);
@@ -1202,6 +1207,8 @@ private:
     std::optional<MenuCursorMessage> host_menu_cursor_;
     StylusCursorMessage host_stylus_cursor_;
     ButtonMappingViewMessage host_button_mapping_view_;
+    std::vector<ControllerRowView> host_wii_u_controllers_;
+    WiiUPlayerViewMessage host_wii_u_player_view_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

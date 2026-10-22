@@ -193,6 +193,68 @@ bool move_in_lineup(PadLineup& lineup, int pad, int direction) {
     return true;
 }
 
+namespace {
+
+// Where a pad stands in the line: the GamePad's place, a player's or one of
+// Not used's -- or nowhere.
+int* place_of(PadLineup& lineup, int pad) {
+    if (pad < 0) return nullptr;
+    if (lineup.gamepad == pad) return &lineup.gamepad;
+    for (int& player : lineup.players) {
+        if (player == pad) return &player;
+    }
+    for (int& unused : lineup.unused) {
+        if (unused == pad) return &unused;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+bool put_in_slot(PadLineup& lineup, int pad, PadSlot slot) {
+    int* from = place_of(lineup, pad);
+    if (from == nullptr) return false;
+    int* to = nullptr;
+    if (slot.kind == PadSlot::Kind::GamePad) {
+        to = &lineup.gamepad;
+    } else if (slot.kind == PadSlot::Kind::Player && slot.player >= 0 &&
+               slot.player < static_cast<int>(lineup.players.size())) {
+        to = &lineup.players[static_cast<std::size_t>(slot.player)];
+    } else {
+        return false;
+    }
+    if (from == to) return false;
+    if (*to >= 0) {
+        std::swap(*from, *to);
+        return true;
+    }
+    // An empty GamePad: the pad leaves its place, and the line closes up.
+    *to = pad;
+    if (from == &lineup.gamepad) {
+        lineup.gamepad = -1;
+    } else {
+        std::vector<int>& list =
+            (from >= lineup.players.data() && from < lineup.players.data() + lineup.players.size())
+                ? lineup.players
+                : lineup.unused;
+        list.erase(list.begin() + (from - list.data()));
+    }
+    return true;
+}
+
+bool take_out_of_play(PadLineup& lineup, int pad) {
+    if (pad < 0) return false;
+    if (lineup.gamepad == pad) {
+        lineup.gamepad = -1;
+    } else {
+        const auto at = std::find(lineup.players.begin(), lineup.players.end(), pad);
+        if (at == lineup.players.end()) return false;
+        lineup.players.erase(at);
+    }
+    lineup.unused.insert(lineup.unused.begin(), pad);
+    return true;
+}
+
 std::vector<LineupRow> lineup_rows(const PadLineup& lineup) {
     std::vector<LineupRow> rows;
     rows.push_back(LineupRow{PadSlot::gamepad(), lineup.gamepad});

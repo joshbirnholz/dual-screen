@@ -636,6 +636,17 @@ std::vector<PadReading> InputManager::pad_readings() const {
         // Steam's slot under Steam Input; SDL's own numbering otherwise.
         reading.slot = SDL_GameControllerGetPlayerIndex(controller);
 #endif
+#ifdef __SWITCH__
+        if (id == 0 || id == kSwitchHandheldId) {
+            const SplitPads& split = split_pads();
+            reading.pressing =
+                held_state_from(split_raw_state(id == 0 ? split.player_one : split.handheld, controller)).buttons;
+        } else {
+            reading.pressing = held_state_of(controller).buttons;
+        }
+#else
+        reading.pressing = held_state_of(controller).buttons;
+#endif
         if (game_input_enabled_) {
 #ifdef __SWITCH__
             // Player 1 and the handheld controls, which SDL reads as one pad,

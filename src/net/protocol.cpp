@@ -356,6 +356,18 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u16(out, touch_spot_u16(message.button_mapping.stick_centre.u));
     put_u16(out, touch_spot_u16(message.button_mapping.stick_centre.v));
     put_u16(out, touch_spot_u16(message.button_mapping.stick_radius));
+    const std::size_t rows = std::min<std::size_t>(message.wii_u_controllers.size(), 32);
+    put_u8(out, static_cast<uint8_t>(rows));
+    for (std::size_t index = 0; index < rows; ++index) {
+        const ControllerRowView& row = message.wii_u_controllers[index];
+        put_u8(out, static_cast<uint8_t>(row.slot.kind));
+        put_u8(out, static_cast<uint8_t>(std::clamp(row.slot.player, 0, 255)));
+        put_string(out, row.pad.substr(0, 255));
+        put_string(out, row.name.substr(0, 255));
+        put_string(out, row.type.substr(0, 255));
+        put_string(out, row.place.substr(0, 255));
+        put_string(out, row.device.substr(0, 255));
+    }
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -430,6 +442,8 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
         // Which input this is -- see InputMessage::sequence.
         if (message.has_sequence) {
             put_u32(out, message.sequence);
+            // And each one's buttons, heard by the game or not.
+            for (std::size_t index = 0; index < count; ++index) put_u32(out, message.pads[index].pressing);
         }
     }
 }
@@ -755,7 +769,7 @@ bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage
     uint8_t count = 0;
     reader.u8(page);
     reader.u8(count);
-    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::ButtonMapping) || count > 16) return false;
+    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::WiiUPlayer) || count > 16) return false;
     MenuScrollMessage message;
     message.page = static_cast<MirroredPage>(page);
     for (uint8_t index = 0; index < count && reader.ok(); ++index) {
@@ -785,7 +799,7 @@ bool decode_menu_cursor(const uint8_t* data, std::size_t size, MenuCursorMessage
     reader.u8(page);
     reader.u8(shown);
     reader.u32(held);
-    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::ButtonMapping)) return false;
+    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::WiiUPlayer)) return false;
     MenuCursorMessage message;
     message.page = static_cast<MirroredPage>(page);
     message.shown = shown != 0;
@@ -824,6 +838,41 @@ bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMes
     out.v = v / 65535.0f;
     out.opacity = opacity / 255.0f;
     out.pressed = pressed != 0;
+    return true;
+}
+
+void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.open ? 1u : 0u);
+    put_u8(out, static_cast<uint8_t>(message.slot.kind));
+    put_u8(out, static_cast<uint8_t>(std::clamp(message.slot.player, 0, 255)));
+    put_u8(out, message.focus);
+    put_u8(out, message.choice_focus);
+    put_u8(out, message.detecting ? 1u : 0u);
+    put_u8(out, message.detect_seconds);
+    finish_message(out, start, MessageType::WiiUPlayerView);
+}
+
+bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerViewMessage& out) {
+    Reader reader(data, size);
+    uint8_t open = 0;
+    uint8_t kind = 0;
+    uint8_t player = 0;
+    uint8_t detecting = 0;
+    WiiUPlayerViewMessage view;
+    reader.u8(open);
+    reader.u8(kind);
+    reader.u8(player);
+    reader.u8(view.focus);
+    reader.u8(view.choice_focus);
+    reader.u8(detecting);
+    reader.u8(view.detect_seconds);
+    if (!reader.ok() || kind > 2) return false;
+    view.open = open != 0;
+    view.slot.kind = static_cast<PadSlot::Kind>(kind);
+    view.slot.player = player;
+    view.detecting = detecting != 0;
+    out = view;
     return true;
 }
 
@@ -1754,6 +1803,28 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         out.button_mapping.stick_centre = TouchSpot{u / 65536.0f, v / 65536.0f};
         out.button_mapping.stick_radius = clamp_stick_radius(radius / 65536.0f);
     }
+    out.wii_u_controllers.clear();
+    if (reader.remaining() > 0) {
+        uint8_t rows = 0;
+        reader.u8(rows);
+        for (uint8_t index = 0; index < rows && reader.ok(); ++index) {
+            ControllerRowView row;
+            uint8_t kind = 0;
+            uint8_t player = 0;
+            reader.u8(kind);
+            reader.u8(player);
+            reader.string(row.pad);
+            reader.string(row.name);
+            reader.string(row.type);
+            reader.string(row.place);
+            reader.string(row.device);
+            if (kind > 2) return false;
+            row.slot.kind = static_cast<PadSlot::Kind>(kind);
+            row.slot.player = player;
+            out.wii_u_controllers.push_back(row);
+        }
+        if (!reader.ok()) return false;
+    }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);
     out.settings_open = (settings_open != 0);
@@ -1894,6 +1965,10 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
                 out.has_sequence = false;
                 if (reader.remaining() >= 4) {
                     out.has_sequence = reader.u32(out.sequence);
+                    // And their buttons, from a companion that says.
+                    if (reader.remaining() >= 4 * out.pads.size()) {
+                        for (ReportedPad& pad : out.pads) reader.u32(pad.pressing);
+                    }
                 }
             }
         }

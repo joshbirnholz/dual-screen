@@ -146,6 +146,9 @@ struct PadReading {
     // is being moved when its own sensors can say (see MotionReader, which
     // switches them on).
     DsInputState held;
+    // Its buttons as they are, heard by the game or not: what Detect
+    // Controller watches, while a menu has the game hearing nothing.
+    uint32_t pressing = 0;
 };
 
 class InputManager {

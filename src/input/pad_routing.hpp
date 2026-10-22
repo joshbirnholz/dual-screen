@@ -49,6 +49,37 @@ struct PadSlot {
 // What the Controllers screen calls it: "GamePad", "Player 1", "Not used".
 std::string pad_slot_name(PadSlot slot);
 
+// One row of a Wii U game's Controls tab, as words: the GamePad, a player or
+// Not Used, the controller there, what the game is handed for it, and where
+// the controller is. Worked out by the device running the game, which can
+// see every controller, and told to the other one so both draw one list.
+struct ControllerRowView {
+    PadSlot slot;
+    // Which controller, as pad_identity() has it; empty for a GamePad with
+    // none.
+    std::string pad;
+    // The controller's name; empty for a GamePad with none.
+    std::string name;
+    // What the game has there: "Wii U GamePad", "Wii Remote + Nunchuk".
+    // Empty for Not Used.
+    std::string type;
+    // Which device it is on, and which player that device has it as:
+    // "Steam Deck  P2"; and the device alone, "Steam Deck".
+    std::string place;
+    std::string device;
+    bool operator==(const ControllerRowView& other) const {
+        return slot == other.slot && pad == other.pad && name == other.name && type == other.type &&
+               place == other.place && device == other.device;
+    }
+};
+
+// What a Wii U game is handed for a player, from Cemu's name for it, as the
+// menus say it: Cemu's "Pro Controller" is a "Wii U Pro Controller", and the
+// rest are as Cemu has them.
+inline std::string wii_u_type_name(const std::string& cemu) {
+    return cemu == "Pro Controller" ? std::string("Wii U Pro Controller") : cemu;
+}
+
 // One controller somewhere in the session.
 //
 // Never known by its name. The name Steam hands SDL for a virtual pad is
@@ -80,6 +111,8 @@ struct KnownPad {
     // What it is holding right now: buttons and both sticks, and how it is
     // being moved if it can say.
     DsInputState held;
+    // Its buttons, heard by the game or not -- see PadReading::pressing.
+    uint32_t pressing = 0;
 };
 
 // Which pad this is, for as long as it stays connected: "this#12",
@@ -147,6 +180,14 @@ PadOrder order_of(const std::vector<KnownPad>& pads, const PadLineup& lineup, bo
 // trading places when it is not -- and down from the last player is the top
 // of Not used. Returns whether anything moved.
 bool move_in_lineup(PadLineup& lineup, int pad, int direction);
+
+// Pad `pad` put in `slot` -- the GamePad, or a player there already is --
+// trading places with the pad there, if any. Returns whether anything moved.
+bool put_in_slot(PadLineup& lineup, int pad, PadSlot slot);
+
+// Pad `pad` out of play, at the top of Not used, the players after it moving
+// up. Returns whether anything moved.
+bool take_out_of_play(PadLineup& lineup, int pad);
 
 // One line of the line as shown: its slot, and its pad, or -1 for an empty
 // GamePad.

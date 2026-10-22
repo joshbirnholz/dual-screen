@@ -11,6 +11,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
+#include "input/pad_routing.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
@@ -81,6 +82,17 @@ struct LayoutPickerResult {
     // And for the Wii U game's graphics packs, which are Cemu's, on the
     // machine running it.
     bool graphic_packs_requested = false;
+    // A Wii U's Controls, by a row's index in
+    // LayoutPickerState::wii_u_controllers, or -1: the row whose player's
+    // page A opened, and the row whose controller X buzzes.
+    int controller_opened = -1;
+    int controller_identified = -1;
+    // Y picking a row's controller up to move it: the row; while it is held,
+    // a place up (-1) or down (1); and B putting the line back as it was.
+    // A puts it down where it is, which needs nothing more.
+    int controller_picked_up = -1;
+    int controller_moved = 0;
+    bool controller_put_back = false;
     // One of Cemu's own options in a Wii U's Options, stepped on: its index
     // in LayoutPickerState::producer_options. -1 for none.
     int producer_option = -1;
@@ -151,6 +163,11 @@ struct LayoutPickerState {
     // player's controller type -- begin, or -1 for none: those are listed
     // there, under Controller Order, rather than in Game Options.
     int producer_controls_from = -1;
+    // A Wii U's Controls: the GamePad, each player and Not Used, in the line
+    // pad_routing.hpp describes. The host's, which sees every controller, and
+    // told to the other device. Empty, the Controller Order page and Cemu's
+    // rows are listed there instead.
+    std::vector<ControllerRowView> wii_u_controllers;
     // Scan amiibo, where Cemu can: the amiibo found in `amiibo_folder`, by
     // name, listed on the right to be chosen from directly. The host's too.
     bool amiibo_available = false;
@@ -245,6 +262,9 @@ enum class MenuConfirm : uint8_t {
     // Not a question either: an option's choices, beside its row -- see
     // ChoicePopup. Its cursor travels as the popup's focus.
     Choice = 7,
+    // Nor this: a Wii U's controller picked up in Controls, moved up and down
+    // the line until it is put down.
+    Moving = 8,
 };
 
 // The list down the left of a DS or 3DS quick menu, the way Nintendo Switch
@@ -304,7 +324,7 @@ public:
     void set_preview_screen(ScreenId screen) { preview_screen_ = screen; }
     // Whether a confirmation is up, which the app needs to know: while one is,
     // the menu is not what the player is answering.
-    bool awaiting_confirmation() const { return confirm_ != MenuConfirm::None; }
+    bool awaiting_confirmation() const { return confirming(); }
 
     // The whole of what the other device has to be told to draw the same menu,
     // and what it hands back when it is the one being told.
@@ -420,6 +440,12 @@ public:
         state_.producer_controls_from = controls_from;
         rebuild_footer();
     }
+    // A Wii U's Controls, as they are now -- see
+    // LayoutPickerState::wii_u_controllers. Every frame: controllers come
+    // and go, and move.
+    void set_wii_u_controllers(const std::vector<ControllerRowView>& rows);
+    // Whether a controller is picked up in Controls -- see MenuConfirm::Moving.
+    bool moving_controller() const { return confirm_ == MenuConfirm::Moving; }
     void set_amiibo(std::vector<std::string> amiibo, std::string folder) {
         state_.amiibo = std::move(amiibo);
         state_.amiibo_folder = std::move(folder);
@@ -551,10 +577,14 @@ private:
         // A DS or 3DS game's Button Mapping, a page of its own, at the top
         // of its Controls.
         ButtonMapping,
+        // A Wii U's controller: the GamePad, a player or Not Used -- see
+        // LayoutPickerState::wii_u_controllers.
+        Controller,
     };
     struct OptionRow {
         Option option = Option::Cursor;
-        // Which of Cemu's, for a Producer row.
+        // Which of Cemu's, for a Producer row; which controller's, for a
+        // Controller row.
         int index = -1;
     };
 
@@ -583,7 +613,17 @@ private:
     PopupGeometry confirm_popup(float output_width, float output_height) const;
     // Puts a question up, the cursor on its answer.
     void ask(MenuConfirm confirm);
-    bool confirming() const { return confirm_ != MenuConfirm::None; }
+    // A question or a popup up -- not a controller picked up, which leaves
+    // the list as it is.
+    bool confirming() const { return confirm_ != MenuConfirm::None && confirm_ != MenuConfirm::Moving; }
+    // The Controls row the cursor is on, if it is a Wii U's controller's.
+    const ControllerRowView* focused_controller() const;
+    // Y on one: the controller there picked up, to be moved -- one there is.
+    void pick_up_controller(LayoutPickerResult& result);
+    // A Controller row: the GamePad or lights, the controller, what the game
+    // has, and where it is.
+    void render_controller_row(QuadRenderer& quads, TextRenderer& text, const PixelRect& row, int index,
+                               bool focused, float scale);
     int tile_count() const { return static_cast<int>(tiles_.size()); }
     ScreenId preview_screen_ = ScreenId::Top;
     // The layout behind a tile, and where a layout's tile is. Everything that
@@ -667,6 +707,8 @@ private:
     // Controls: a Wii U's Controller Order, then each player's controller;
     // a DS or 3DS game's Button Mapping and Right Stick.
     std::vector<OptionRow> controls_;
+    // The controller picked up, by pad_identity(), while it is moved.
+    std::string held_controller_;
     // The rows of a list section: Controls', or Options'; and of whichever
     // is up.
     const std::vector<OptionRow>& rows_of(MenuSection section) const {

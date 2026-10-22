@@ -19,9 +19,10 @@ namespace {
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
 // then no lists of Cemu's choices, then the favorite color's byte, then no
 // corner notice, then where Controls' rows begin, then the Button Mapping,
-// then Custom Textures' byte, then the Touch Analog Stick's six.
+// then Custom Textures' byte, then the Touch Analog Stick's six, then no
+// Wii U controllers.
 constexpr std::size_t kWiiUTail =
-    2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls + 1 + 6;
+    2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls + 1 + 6 + 1;
 }  // namespace
 using namespace ds::net;
 
@@ -327,7 +328,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls) - 1 - 6,
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls) - 1 - 6 - 1,
                                received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
@@ -341,7 +342,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.custom_textures_choosable && received_state.custom_textures);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 6, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 6 - 1, received_state));
     CHECK(!received_state.custom_textures_choosable && !received_state.custom_textures);
     state.custom_textures_choosable = false;
     state.custom_textures = false;
@@ -357,7 +358,7 @@ void test_welcome_and_session_round_trip() {
     // The Button Mapping's count and one byte for each control, last of all.
     // The Button Mapping, and Custom Textures' byte after it, and the Touch
     // Analog Stick's.
-    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls + 1 + 6;
+    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls + 1 + 6 + 1;
     // The host's favorite color, for the other device's menus; and none said
     // by a host from before it was sent.
     state.favorite_color = 7;
@@ -417,7 +418,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Y);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).u - 0.25f) < 0.001f);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).v - 0.75f) < 0.001f);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls - 1 - 6, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls - 1 - 6 - 1, received_state));
     CHECK(received_state.button_mapping[PadControl::L] == PadAction::TouchPoint);
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Standard);
     // The Touch Analog Stick's centre and size, last; from a host before it,
@@ -431,10 +432,33 @@ void test_welcome_and_session_round_trip() {
     CHECK(std::fabs(received_state.button_mapping.stick_centre.u - 0.3f) < 0.001f);
     CHECK(std::fabs(received_state.button_mapping.stick_centre.v - 0.6f) < 0.001f);
     CHECK(std::fabs(received_state.button_mapping.stick_radius - 0.4f) < 0.001f);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 1, received_state));
     CHECK(received_state.button_mapping.stick_centre == TouchSpot());
     CHECK_EQ(received_state.button_mapping.stick_radius, kDefaultStickRadius);
     state.button_mapping = ButtonMapping();
+    // A Wii U game's controllers, last; none from a host from before them.
+    {
+        ControllerRowView gamepad;
+        gamepad.slot = PadSlot::gamepad();
+        gamepad.type = "Wii U GamePad";
+        ControllerRowView player;
+        player.slot = PadSlot::player_number(1);
+        player.pad = "companion#3";
+        player.name = "DualSense Wireless Controller";
+        player.type = "Wii Remote + Nunchuk";
+        player.place = "Steam Deck  P2";
+        player.device = "Steam Deck";
+        state.wii_u_controllers = {gamepad, player};
+        buffer.clear();
+        encode_session_state(state, buffer);
+        CHECK(one_message(buffer, type, payload));
+        CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+        CHECK(received_state.wii_u_controllers == state.wii_u_controllers);
+        const std::size_t rows = 1 + (2 + 5 * 2 + 13) + (2 + 5 * 2 + 11 + 29 + 20 + 14 + 10);
+        CHECK(decode_session_state(payload.data(), payload.size() - rows, received_state));
+        CHECK(received_state.wii_u_controllers.empty());
+        state.wii_u_controllers.clear();
+    }
     state.menu_focus = 40;
     buffer.clear();
     encode_session_state(state, buffer);
@@ -968,12 +992,13 @@ void test_an_input_carries_its_number_and_the_host_echoes_it() {
           received.pads[0].slot == 0);
 
     // A companion from before inputs were numbered is read as not numbering
-    // them, whatever the message being decoded into said before.
+    // them, whatever the message being decoded into said before. The number
+    // is four bytes, and each pad's buttons four more after it.
     InputMessage unnumbered;
-    CHECK(decode_input(payload.data(), payload.size() - 4, unnumbered));
+    CHECK(decode_input(payload.data(), payload.size() - 4 - 4, unnumbered));
     CHECK(!unnumbered.has_sequence);
     CHECK(unnumbered.pads.size() == 1 && unnumbered.pads[0].slot == 0);
-    CHECK(decode_input(payload.data(), payload.size() - 4, received));
+    CHECK(decode_input(payload.data(), payload.size() - 4 - 4, received));
     CHECK_MSG(!received.has_sequence, "a number from an earlier input was left standing");
 
     // The echo: which input, and the first picture made with it.
@@ -2024,6 +2049,62 @@ void test_graphic_packs_view_round_trip() {
     CHECK(!received.open && received.packs.empty());
 }
 
+// What each of a companion's pads has down, heard by its game or not, after
+// the sequence number -- for the host's Detect Controller -- and nothing from
+// a companion before it.
+void test_a_companions_pads_say_what_is_pressed() {
+    InputMessage sent;
+    sent.reports_pads = true;
+    sent.has_sequence = true;
+    sent.sequence = 99;
+    ReportedPad first;
+    first.id = 7;
+    first.pressing = 0x10u;
+    ReportedPad second;
+    second.id = 8;
+    sent.pads = {first, second};
+    std::vector<uint8_t> buffer;
+    encode_input(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received;
+    CHECK(decode_input(payload.data(), payload.size(), received));
+    CHECK(received.has_sequence && received.sequence == 99u);
+    CHECK(received.pads.size() == 2 && received.pads[0].pressing == 0x10u && received.pads[1].pressing == 0u);
+    InputMessage older;
+    CHECK(decode_input(payload.data(), payload.size() - 8, older));
+    CHECK(older.has_sequence && older.sequence == 99u);
+    CHECK(older.pads.size() == 2 && older.pads[0].pressing == 0u);
+}
+
+// A Wii U player's page, for the other device to draw.
+void test_wii_u_player_view_round_trip() {
+    WiiUPlayerViewMessage sent;
+    sent.open = true;
+    sent.slot = PadSlot::player_number(2);
+    sent.focus = 1;
+    sent.choice_focus = 4;
+    sent.detecting = true;
+    sent.detect_seconds = 7;
+    std::vector<uint8_t> buffer;
+    encode_wii_u_player_view(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::WiiUPlayerView);
+    WiiUPlayerViewMessage received;
+    CHECK(decode_wii_u_player_view(payload.data(), payload.size(), received));
+    CHECK(received == sent);
+    CHECK(!decode_wii_u_player_view(payload.data(), 3, received));
+    // Closed, too, which is how the other device learns to put it away.
+    buffer.clear();
+    encode_wii_u_player_view(WiiUPlayerViewMessage(), buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_wii_u_player_view(payload.data(), payload.size(), received));
+    CHECK(!received.open);
+}
+
 void test_button_mapping_view_round_trip() {
     ButtonMappingViewMessage sent;
     sent.open = true;
@@ -2269,6 +2350,8 @@ int main() {
     test_controllers_view_round_trip();
     test_graphic_packs_view_round_trip();
     test_button_mapping_view_round_trip();
+    test_wii_u_player_view_round_trip();
+    test_a_companions_pads_say_what_is_pressed();
     test_game_dialog_round_trip();
     test_menu_scroll_and_amiibo_browser_round_trip();
     test_stylus_cursor_round_trip();

@@ -7,6 +7,7 @@
 #include "input/button_mapping.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
+#include "input/pad_routing.hpp"
 #include "core/save_points.hpp"
 #include "core/system.hpp"
 #include "layout/layout.hpp"
@@ -143,6 +144,10 @@ enum class MessageType : uint16_t {
     // player checks for updates on the host. A companion from before this
     // ignores it, and the host offers only its own.
     UpdateRequest = 29,
+    // host -> companion: a Wii U player's page, for the companion to draw
+    // while it is up -- see WiiUPlayerViewMessage. Sent when it changes, and
+    // once more when it closes.
+    WiiUPlayerView = 30,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -496,6 +501,9 @@ struct SessionStateMessage {
     // last, and optional.
     bool custom_textures_choosable = false;
     bool custom_textures = false;
+    // A Wii U game's Controls tab: every controller, as the host lines them
+    // up. A count, then each row; last, and optional.
+    std::vector<ControllerRowView> wii_u_controllers;
 };
 
 struct FrameMessage {
@@ -597,6 +605,7 @@ enum class MirroredPage : uint8_t {
     Controllers = 3,
     AmiiboBrowser = 4,
     ButtonMapping = 5,
+    WiiUPlayer = 6,
 };
 
 // Where the page both devices show is scrolled -- see MenuPage::scroll_state()
@@ -789,6 +798,27 @@ struct ButtonMappingViewMessage {
     }
 };
 
+// The host's page for one of a Wii U game's players, or its GamePad, for the
+// companion to draw the same: whose it is, the row the cursor is on, the
+// popup up beside it, and Detect Controller counting down. The controllers it
+// shows are the session state's -- see SessionStateMessage::wii_u_controllers.
+struct WiiUPlayerViewMessage {
+    bool open = false;
+    PadSlot slot = PadSlot::gamepad();
+    uint8_t focus = 0;
+    // The popup's cursor plus one, or 0 when none is up.
+    uint8_t choice_focus = 0;
+    // Detect Controller up, and how many seconds it has left.
+    bool detecting = false;
+    uint8_t detect_seconds = 0;
+
+    bool operator==(const WiiUPlayerViewMessage& other) const {
+        return open == other.open && slot == other.slot && focus == other.focus &&
+               choice_focus == other.choice_focus && detecting == other.detecting &&
+               detect_seconds == other.detect_seconds;
+    }
+};
+
 struct MenuSoundMessage {
     MenuSound sound = MenuSound::MoveCursor;
 };
@@ -830,6 +860,9 @@ struct ReportedPad {
     std::string name;
     // Its player slot on the companion, from 0, or -1 -- see KnownPad::slot.
     int slot = -1;
+    // Its buttons, heard by the game or not -- see KnownPad::pressing. 0
+    // from a companion that does not say.
+    uint32_t pressing = 0;
 };
 
 // This device's pads as a companion reports them -- see InputMessage::pads.
@@ -843,6 +876,7 @@ std::vector<ReportedPad> reported_pads(const Readings& readings) {
         pad.held = reading.held;
         pad.name = reading.name;
         pad.slot = reading.slot;
+        pad.pressing = reading.pressing;
         pads.push_back(pad);
     }
     return pads;
@@ -927,6 +961,7 @@ void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& 
 void encode_menu_cursor(const MenuCursorMessage& message, std::vector<uint8_t>& out);
 void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out);
 void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::vector<uint8_t>& out);
+void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<uint8_t>& out);
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_update_request(const UpdateRequestMessage& message, std::vector<uint8_t>& out);
@@ -988,6 +1023,7 @@ bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage
 bool decode_menu_cursor(const uint8_t* data, std::size_t size, MenuCursorMessage& out);
 bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMessage& out);
 bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMappingViewMessage& out);
+bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerViewMessage& out);
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 bool decode_update_request(const uint8_t* data, std::size_t size, UpdateRequestMessage& out);

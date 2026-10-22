@@ -612,6 +612,14 @@ void HostSession::set_button_mapping_view(const ButtonMappingViewMessage& view) 
     button_mapping_view_dirty_ = true;
 }
 
+void HostSession::set_wii_u_player_view(const WiiUPlayerViewMessage& view) {
+    std::vector<uint8_t> encoded;
+    encode_wii_u_player_view(view, encoded);
+    if (encoded == wii_u_player_view_) return;
+    wii_u_player_view_ = std::move(encoded);
+    wii_u_player_view_dirty_ = true;
+}
+
 void HostSession::set_stylus_cursor(const StylusCursorMessage& cursor) {
     std::vector<uint8_t> encoded;
     encode_stylus_cursor(cursor, encoded);
@@ -696,6 +704,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.producer_options != shared_.producer_options || state.amiibo != shared_.amiibo ||
         state.producer_choices != shared_.producer_choices ||
         state.producer_controls_from != shared_.producer_controls_from ||
+        state.wii_u_controllers != shared_.wii_u_controllers ||
         state.button_mapping != shared_.button_mapping ||
         state.favorite_color != shared_.favorite_color ||
         state.corner_notice != shared_.corner_notice ||
@@ -951,6 +960,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             menu_cursor_dirty_ = !menu_cursor_.empty();
             stylus_cursor_dirty_ = !stylus_cursor_.empty();
             button_mapping_view_dirty_ = !button_mapping_view_.empty();
+            wii_u_player_view_dirty_ = !wii_u_player_view_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
@@ -1381,6 +1391,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.producer_options = shared_.producer_options;
         state.producer_choices = shared_.producer_choices;
         state.producer_controls_from = shared_.producer_controls_from;
+        state.wii_u_controllers = shared_.wii_u_controllers;
         state.button_mapping = shared_.button_mapping;
         state.favorite_color = shared_.favorite_color;
         state.corner_notice = shared_.corner_notice;
@@ -1433,6 +1444,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (button_mapping_view_dirty_ && handshake_done_) {
         companion_.send(button_mapping_view_);
         button_mapping_view_dirty_ = false;
+    }
+    if (wii_u_player_view_dirty_ && handshake_done_) {
+        companion_.send(wii_u_player_view_);
+        wii_u_player_view_dirty_ = false;
     }
     if (game_dialog_dirty_ && handshake_done_) {
         companion_.send(game_dialog_);

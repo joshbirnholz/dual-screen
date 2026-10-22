@@ -5,6 +5,7 @@
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/pad_slot_view.hpp"
 #include "ui/page_frame.hpp"
 #include "ui/ui_icons.hpp"
 #include "ui/ui_theme.hpp"
@@ -263,49 +264,13 @@ void ControllersScreen::render(QuadRenderer& quads,
                                   scale));
     const float pad = menu_row_pad(line);
     const bool icons = load_ui_icons(icons_, icons_tried_);
-    // Which player a controller is, the way a Wii Remote's own lights say it:
-    // four squares in a row, the one for its number filled -- only that one,
-    // a Wii U's way, where a Switch fills every square up to it. A Wii U
-    // stops at four; past that, a Switch's patterns for five to eight.
-    const float light = std::round(line * 0.62f);
-    const float light_gap = std::round(light * 0.42f);
-    const float lights_width = light * 4.0f + light_gap * 3.0f;
-    // The GamePad is drawn as one, centred over the same column the lights
-    // fill. Its icon sits in a band half as tall as the square it is drawn
-    // in, nearly the square's whole width -- see ui/ui_icons.hpp.
-    const float gamepad_size = std::round(line * 2.9f);
-    const float slot_width = std::max(lights_width, gamepad_size * 0.96f);
+    // The GamePad's icon or a player's lights -- see ui/pad_slot_view.hpp.
+    const PadSlotView slot_view(line);
+    const float slot_width = slot_view.width;
     const float slot_column = slot_width + pad * 3.0f;
     const auto draw_slot = [&](const PadSlot& slot, const PixelRect& row, const Color& color) {
-        const float cy = row.y + row.h * 0.5f;
-        const float centre_x = row.x + pad + slot_width * 0.5f;
-        if (slot.kind == PadSlot::Kind::GamePad) {
-            if (icons) {
-                draw_ui_icon(quads, icons_, UiIcon::WiiUGamePad,
-                             PixelRect{std::round(centre_x - gamepad_size * 0.5f),
-                                       std::round(cy - gamepad_size * 0.5f), gamepad_size, gamepad_size},
-                             color);
-            } else {
-                text.draw(quads, "GamePad", centre_x, page_row_text_y(row, scale), scale, color,
-                          TextAlign::Center);
-            }
-            return;
-        }
-        if (slot.kind != PadSlot::Kind::Player) return;  // not used: nothing there
-        static constexpr unsigned kLit[8] = {0b0001, 0b0010, 0b0100, 0b1000,
-                                             0b1001, 0b0101, 0b1101, 0b0110};
-        const unsigned lit = kLit[std::clamp(slot.player, 0, 7)];
-        const float thickness = std::max(1.0f, std::round(light * 0.16f));
-        for (int index = 0; index < 4; ++index) {
-            const PixelRect square{std::round(centre_x - lights_width * 0.5f) +
-                                       static_cast<float>(index) * (light + light_gap),
-                                   std::round(cy - light * 0.5f), light, light};
-            if (lit & (1u << index)) {
-                quads.draw_solid(square, color);
-            } else {
-                quads.draw_outline(square, color, thickness);
-            }
-        }
+        slot_view.draw(quads, text, icons ? &icons_ : nullptr, slot, row.x + pad + slot_width * 0.5f,
+                       row.y + row.h * 0.5f, scale, color);
     };
     for (int index = 0; index < row_count; ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];

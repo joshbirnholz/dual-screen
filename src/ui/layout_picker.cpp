@@ -3,6 +3,7 @@
 #include "core/render_scale.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/pad_slot_view.hpp"
 #include "ui/page_frame.hpp"
 #include "ui/ui_icons.hpp"
 #include "util/battery.hpp"
@@ -161,9 +162,19 @@ void LayoutPicker::rebuild_footer() {
         for (int index = 0; index < controls_from; ++index) {
             options_.push_back(OptionRow{Option::Producer, index});
         }
-        controls_.push_back(OptionRow{Option::ControllerOrder});
-        for (int index = controls_from; index < producers; ++index) {
-            controls_.push_back(OptionRow{Option::Producer, index});
+        // Controls: every controller, where it is in the line and what the
+        // game has it as -- each player's type is on that player's page.
+        // From a host that says nothing of them, Controller Order and Cemu's
+        // rows, as before.
+        if (!state_.wii_u_controllers.empty()) {
+            for (std::size_t index = 0; index < state_.wii_u_controllers.size(); ++index) {
+                controls_.push_back(OptionRow{Option::Controller, static_cast<int>(index)});
+            }
+        } else {
+            controls_.push_back(OptionRow{Option::ControllerOrder});
+            for (int index = controls_from; index < producers; ++index) {
+                controls_.push_back(OptionRow{Option::Producer, index});
+            }
         }
     } else {
 
@@ -226,6 +237,47 @@ void LayoutPicker::rebuild_footer() {
         item_ = std::max(0, content_count(section_) - 1);
         on_content_ = content_count(section_) > 0;
     }
+}
+
+void LayoutPicker::set_wii_u_controllers(const std::vector<ControllerRowView>& rows) {
+    if (rows == state_.wii_u_controllers) return;
+    const bool count_changed = rows.size() != state_.wii_u_controllers.size();
+    state_.wii_u_controllers = rows;
+    if (count_changed) rebuild_footer();
+    // The controller in hand stays under the cursor wherever the line has
+    // put it.
+    if (moving_controller() && section_ == MenuSection::ControllerOrder && on_content_) {
+        for (std::size_t index = 0; index < controls_.size(); ++index) {
+            const OptionRow& row = controls_[index];
+            if (row.option == Option::Controller && row.index >= 0 &&
+                row.index < static_cast<int>(rows.size()) &&
+                rows[static_cast<std::size_t>(row.index)].pad == held_controller_) {
+                item_ = static_cast<int>(index);
+            }
+        }
+        keep_item_in_view(last_width_, last_height_);
+    }
+}
+
+const ControllerRowView* LayoutPicker::focused_controller() const {
+    if (system_ != SystemId::WiiU || section_ != MenuSection::ControllerOrder || !on_content_ || item_ < 0 ||
+        item_ >= static_cast<int>(controls_.size())) {
+        return nullptr;
+    }
+    const OptionRow& row = controls_[static_cast<std::size_t>(item_)];
+    if (row.option != Option::Controller || row.index < 0 ||
+        row.index >= static_cast<int>(state_.wii_u_controllers.size())) {
+        return nullptr;
+    }
+    return &state_.wii_u_controllers[static_cast<std::size_t>(row.index)];
+}
+
+void LayoutPicker::pick_up_controller(LayoutPickerResult& result) {
+    const ControllerRowView* row = focused_controller();
+    if (row == nullptr || row->pad.empty()) return;
+    held_controller_ = row->pad;
+    confirm_ = MenuConfirm::Moving;
+    result.controller_picked_up = controls_[static_cast<std::size_t>(item_)].index;
 }
 
 bool LayoutPicker::has_section(MenuSection section) const {
@@ -295,6 +347,11 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::GraphicPacks: return "Graphics Packs";
         case Option::ControllerOrder: return "Controller Order";
         case Option::ButtonMapping: return "Change Controls";
+        case Option::Controller:
+            if (row.index >= 0 && row.index < static_cast<int>(state_.wii_u_controllers.size())) {
+                return state_.wii_u_controllers[static_cast<std::size_t>(row.index)].name;
+            }
+            return std::string();
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;
@@ -358,7 +415,8 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
         case Option::SwapScreens:
         case Option::GraphicPacks:
         case Option::ControllerOrder:
-        case Option::ButtonMapping: break;
+        case Option::ButtonMapping:
+        case Option::Controller: break;
     }
     // One value is nothing to choose between.
     if (choices.size() < 2) choices.clear();
@@ -413,6 +471,8 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         case Option::ControllerOrder: return std::string();
         // A page, which says whether this game has made any changes in it.
         case Option::ButtonMapping: return std::string();
+        // Drawn as a controller, not as a value -- see render_controller_row().
+        case Option::Controller: return std::string();
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].second;
@@ -584,7 +644,12 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.save_sync_available != state_.save_sync_available ||
                                  state.resume_choosable != state_.resume_choosable ||
                                  state.reset_available != state_.reset_available ||
-                                 state.smoothing_available != state_.smoothing_available;
+                                 state.smoothing_available != state_.smoothing_available ||
+                                 state.wii_u_controllers.size() != state_.wii_u_controllers.size() ||
+                                 state.producer_options.size() != state_.producer_options.size() ||
+                                 state.producer_controls_from != state_.producer_controls_from ||
+                                 state.graphic_packs_available != state_.graphic_packs_available ||
+                                 state.amiibo_available != state_.amiibo_available;
     state_ = state;
     selected_layout_id_ = state.layout_id;
     if (entries_changed) {
@@ -597,6 +662,9 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
             choice_.close();
         } else if (confirm == MenuConfirm::Choice) {
             open_choice();
+        } else if (confirm == MenuConfirm::Moving) {
+            choice_.close();
+            confirm_ = MenuConfirm::Moving;
         } else {
             ask(confirm);
         }
@@ -814,6 +882,7 @@ PopupText LayoutPicker::confirm_text() const {
         case MenuConfirm::OverwriteSavePoint: words.message = "Overwrite this save state?"; break;
         case MenuConfirm::Notice: words.message = save_status_; break;
         case MenuConfirm::Choice:
+        case MenuConfirm::Moving:
         case MenuConfirm::None: break;
     }
     return words;
@@ -827,6 +896,7 @@ std::vector<PopupButton> LayoutPicker::confirm_buttons() const {
         case MenuConfirm::OverwriteSavePoint: return {{"Cancel", ""}, {"Overwrite", ""}};
         case MenuConfirm::Notice: return {{"OK", ""}};
         case MenuConfirm::Choice:
+        case MenuConfirm::Moving:
         case MenuConfirm::None: break;
     }
     return {};
@@ -945,6 +1015,17 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Producer:
                     result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                     break;
+                // The GamePad's or a player's page; a controller not used
+                // has neither, and is picked up to be put somewhere instead.
+                case Option::Controller:
+                    if (const ControllerRowView* row = focused_controller()) {
+                        if (row->slot.kind == PadSlot::Kind::NotUsed) {
+                            pick_up_controller(result);
+                        } else {
+                            result.controller_opened = rows()[static_cast<std::size_t>(item_)].index;
+                        }
+                    }
+                    break;
             }
             return;
         case MenuSection::Amiibo:
@@ -1059,11 +1140,20 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         // for hands that remember where they were.
         // Not on a Wii U's: a real GamePad has none of these as face-button
         // shortcuts either, and the game behind it reads every button.
+        // On a Wii U's controller in Controls, X buzzes it and Y picks it up.
         case UiAction::MenuQuit:
-            if (system_ != SystemId::WiiU) ask(MenuConfirm::Quit);
+            if (system_ != SystemId::WiiU) {
+                ask(MenuConfirm::Quit);
+            } else if (const ControllerRowView* row = focused_controller()) {
+                if (!row->pad.empty()) result.controller_identified = rows()[static_cast<std::size_t>(item_)].index;
+            }
             break;
         case UiAction::MenuReset:
-            if (state_.reset_available && system_ != SystemId::WiiU) ask(MenuConfirm::Reset);
+            if (state_.reset_available && system_ != SystemId::WiiU) {
+                ask(MenuConfirm::Reset);
+            } else if (system_ == SystemId::WiiU) {
+                pick_up_controller(result);
+            }
             break;
         case UiAction::MenuDisconnect:
             if (state_.session_active && system_ != SystemId::WiiU) result.disconnect_requested = true;
@@ -1141,6 +1231,37 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         return result;
     }
 
+    // A controller picked up: Up and Down move it along the line, A puts it
+    // down, B puts it back where it was. Taps do nothing until it is down.
+    if (moving_controller()) {
+        take_taps(pointers, output_width, output_height);
+        for (const UiAction action : actions) {
+            switch (action) {
+                case UiAction::Up:
+                case UiAction::Down:
+                    if (result.controller_moved == 0) result.controller_moved = action == UiAction::Up ? -1 : 1;
+                    break;
+                case UiAction::Confirm: confirm_ = MenuConfirm::None; break;
+                case UiAction::Cancel:
+                    confirm_ = MenuConfirm::None;
+                    result.controller_put_back = true;
+                    break;
+                case UiAction::ToggleMenu:
+                    confirm_ = MenuConfirm::None;
+                    result.controller_put_back = true;
+                    if (!state_.embedded) {
+                        result.close_requested = true;
+                        open_ = false;
+                    }
+                    break;
+                default: break;
+            }
+            if (!moving_controller()) break;
+        }
+        if (!moving_controller()) held_controller_.clear();
+        return result;
+    }
+
     // A confirmation takes the whole menu: while one is up it is the only
     // question on screen, so nothing behind it moves, cycles or opens.
     if (confirming()) {
@@ -1175,6 +1296,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case MenuConfirm::OverwriteSavePoint: result.save_slot = item_; break;
                 case MenuConfirm::Notice:
                 case MenuConfirm::Choice:
+                case MenuConfirm::Moving:
                 case MenuConfirm::None: break;
             }
             confirm_ = MenuConfirm::None;
@@ -1541,6 +1663,10 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     for (std::size_t index = 0; index < geometry.items.size() && index < rows().size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
+        if (rows()[index].option == Option::Controller) {
+            render_controller_row(quads, text, row, static_cast<int>(index), focused, scale);
+            continue;
+        }
         draw_menu_row(quads, row, focused, scale, index + 1 == std::min(geometry.items.size(), rows().size()),
                       on_content_ && static_cast<int>(index) == item_ + 1);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
@@ -1562,6 +1688,67 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         draw_scroll_bar(quads, geometry.content, std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry)) / span,
                         static_cast<float>(fitting) / span, line, scale);
     }
+}
+
+void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text, const PixelRect& row, int index,
+                                         bool focused, float scale) {
+    const OptionRow& option = rows()[static_cast<std::size_t>(index)];
+    if (option.index < 0 || option.index >= static_cast<int>(state_.wii_u_controllers.size())) return;
+    const ControllerRowView& view = state_.wii_u_controllers[static_cast<std::size_t>(option.index)];
+    const UiTheme& theme = ui_theme();
+    const float line = TextRenderer::line_height(scale);
+    const float pad = menu_row_pad(line);
+    // A controller in hand is drawn lifted: filled in the accent colour, so
+    // moving it is plainly a different thing from moving the cursor.
+    const bool lifted = focused && moving_controller();
+    if (lifted) {
+        quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)), theme.accent);
+    } else {
+        const int count = static_cast<int>(rows().size());
+        draw_menu_row(quads, row, focused, scale, index + 1 == count, on_content_ && index == item_ + 1);
+    }
+    const Color ink = lifted ? theme.background : menu_row_text(focused);
+    const Color dim = lifted ? theme.panel : theme.text_dim;
+
+    // The GamePad or the player's lights, in a column of their own; Not Used
+    // says so there.
+    const PadSlotView slot(line);
+    const float centre_y = row.y + row.h * 0.5f;
+    const float slot_x = row.x + pad + slot.width * 0.5f;
+    if (view.slot.kind == PadSlot::Kind::NotUsed) {
+        const float small = scale * 0.75f;
+        text.draw(quads, "Not Used", slot_x, std::round(centre_y - TextRenderer::line_height(small) * 0.5f), small, dim,
+                  TextAlign::Center);
+    } else {
+        const bool icons = load_ui_icons(ui_icons_, ui_icons_tried_);
+        slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink);
+    }
+
+    // Where it is, on the right; the controller, and what the game has it
+    // as under it, between.
+    const float place_scale = scale * 0.85f;
+    const float right = row.x + row.w - pad;
+    text.draw(quads, view.place, right, std::round(centre_y - TextRenderer::line_height(place_scale) * 0.5f),
+              place_scale, dim, TextAlign::Right);
+    const float name_x = row.x + pad + slot.width + pad;
+    const float room =
+        std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
+    const float name_scale = scale * 1.1f;
+    const float type_scale = scale * 0.8f;
+    const std::string name = view.pad.empty() ? std::string("No Controller") : view.name;
+    const Color& name_ink = view.pad.empty() ? dim : ink;
+    if (view.type.empty()) {
+        text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x,
+                  std::round(centre_y - TextRenderer::line_height(name_scale) * 0.5f), name_scale, name_ink);
+        return;
+    }
+    const float name_height = TextRenderer::line_height(name_scale);
+    const float type_height = TextRenderer::line_height(type_scale);
+    const float gap = std::round(line * 0.15f);
+    const float top = std::round(centre_y - (name_height + gap + type_height) * 0.5f);
+    text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x, top, name_scale, name_ink);
+    text.draw(quads, TextRenderer::elide_right(view.type, room, type_scale), name_x, top + name_height + gap,
+              type_scale, dim);
 }
 
 void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
@@ -1725,19 +1912,32 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuSection::Quit: break;
         }
 
-        // Leftmost, and always: it is the one prompt here that is about the
-        // machine rather than about the game, so it sits apart from the rest.
-        // Everything else the face buttons used to do is in the list now.
-        guide.push_back({ButtonGlyph::Plus, "Settings"});
-        // Back either way: off the right-hand side, or out of the menu. One
-        // word for B wherever the cursor is, rather than one that changes --
-        // and none on the list shown in place of a Wii U game, which B does
-        // not leave.
-        if (!state_.embedded || on_content_) {
-            guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+        // A Wii U's controller in Controls: X buzzes it and Y picks it up --
+        // and while it is in hand, only what moves it and puts it down.
+        const ControllerRowView* controller = focused_controller();
+        if (moving_controller()) {
+            guide.push_back({ButtonGlyph::Dpad, "Change Order"});
+            guide.push_back({ButtonGlyph::B, "Cancel", PromptRole::LeavesScreen});
+            guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
+        } else {
+            if (controller != nullptr && !controller->pad.empty()) {
+                guide.push_back({ButtonGlyph::X, "Identify"});
+                guide.push_back({ButtonGlyph::Y, "Change Order"});
+            }
+            // Always: it is the one prompt here that is about the machine
+            // rather than about the game. Everything else the face buttons
+            // used to do is in the list now.
+            guide.push_back({ButtonGlyph::Plus, "Settings"});
+            // Back either way: off the right-hand side, or out of the menu.
+            // One word for B wherever the cursor is, rather than one that
+            // changes -- and none on the list shown in place of a Wii U
+            // game, which B does not leave.
+            if (!state_.embedded || on_content_) {
+                guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+            }
+            // A tile is tapped directly, so this names a button nobody has.
+            guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         }
-        // A tile is tapped directly, so this names a button nobody has.
-        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     }
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
     // A Wii U's: which screen this device is, at the left of the prompts.

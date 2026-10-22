@@ -151,6 +151,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_wii_u_controllers_.clear();
     host_producer_choices_.clear();
     host_producer_controls_from_ = -1;
     host_button_mapping_ = ButtonMapping();
@@ -166,6 +167,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
+    host_wii_u_player_view_ = WiiUPlayerViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -330,6 +332,7 @@ void CompanionSession::disconnect() {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_wii_u_controllers_.clear();
     host_producer_choices_.clear();
     host_producer_controls_from_ = -1;
     host_button_mapping_ = ButtonMapping();
@@ -345,6 +348,7 @@ void CompanionSession::disconnect() {
     host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
+    host_wii_u_player_view_ = WiiUPlayerViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -453,6 +457,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_wii_u_controllers_.clear();
     host_producer_choices_.clear();
     host_producer_controls_from_ = -1;
     host_button_mapping_ = ButtonMapping();
@@ -468,6 +473,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
+    host_wii_u_player_view_ = WiiUPlayerViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -631,6 +637,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_graphic_packs_available_ = state.graphic_packs_available;
             host_amiibo_available_ = state.amiibo_available;
             host_producer_options_ = state.producer_options;
+            host_wii_u_controllers_ = state.wii_u_controllers;
             host_producer_choices_ = state.producer_choices;
             host_producer_controls_from_ = state.producer_controls_from;
             host_button_mapping_ = state.button_mapping;
@@ -687,6 +694,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::StylusCursor: {
             StylusCursorMessage cursor;
             if (decode_stylus_cursor(payload.data(), payload.size(), cursor)) host_stylus_cursor_ = cursor;
+            break;
+        }
+        case MessageType::WiiUPlayerView: {
+            WiiUPlayerViewMessage view;
+            if (decode_wii_u_player_view(payload.data(), payload.size(), view)) host_wii_u_player_view_ = view;
             break;
         }
         case MessageType::ButtonMappingView: {

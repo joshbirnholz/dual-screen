@@ -534,6 +534,7 @@ private:
     GraphicPacksScreen mirrored_graphic_packs_;
     // And the game's Button Mapping.
     ButtonMappingScreen mirrored_button_mapping_;
+    WiiUPlayerScreen mirrored_wii_u_player_;
     // The host's game dialog -- an error, its keyboard -- shown here too.
     MirroredGameDialog mirrored_game_dialog_;
     // The host's amiibo browser, drawn here while it is up.
@@ -1180,6 +1181,10 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
                 session_.host_button_mapping_view().open) {
                 return mirrored_button_mapping_.guide_hits();
             }
+            if (!menu_open_ && session_.host_settings_open() &&
+                session_.host_wii_u_player_view().open) {
+                return mirrored_wii_u_player_.guide_hits();
+            }
             return none;
         // Its prompts are its own, and so are taps on them.
         case State::DataManagement:
@@ -1207,6 +1212,9 @@ void Client::sync_scroll() {
         } else if (session_.host_button_mapping_view().open) {
             page = &mirrored_button_mapping_;
             shown = net::MirroredPage::ButtonMapping;
+        } else if (session_.host_wii_u_player_view().open) {
+            page = &mirrored_wii_u_player_;
+            shown = net::MirroredPage::WiiUPlayer;
         }
     }
     if (const std::optional<net::MenuScrollMessage> said =
@@ -1293,6 +1301,16 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             }
         } else if (session_.host_graphic_packs_view().open) {
             for (const int tap : MenuPage::taps_on(mirrored_graphic_packs_, pointers,
+                                                   static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_))) {
+                if (tap == MenuPage::kTapOffPopup) {
+                    session_.request_menu_action(net::MenuAction::Cancel);
+                } else {
+                    session_.request_menu_focus(tap);
+                }
+            }
+        } else if (session_.host_wii_u_player_view().open) {
+            for (const int tap : MenuPage::taps_on(mirrored_wii_u_player_, pointers,
                                                    static_cast<float>(output_width_),
                                                    static_cast<float>(output_height_))) {
                 if (tap == MenuPage::kTapOffPopup) {
@@ -2002,8 +2020,12 @@ void Client::run() {
             if (sound && host_decides) ui_sounds_.play(*sound);
         }
 
-        if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open() &&
-            !session_.host_resume_notice()) {
+        // And while the host's Detect Controller waits for a press on one of
+        // them, which may be one of these.
+        const bool host_detecting = session_.host_settings_open() && session_.host_wii_u_player_view().open &&
+                                    session_.host_wii_u_player_view().detecting;
+        if (state_ == State::Playing && !menu_open_ &&
+            (!session_.host_settings_open() || host_detecting) && !session_.host_resume_notice()) {
             // Each pad on its own as well, so a Wii U host can make them
             // different players.
             const std::vector<net::ReportedPad> pads = net::reported_pads(input_.pad_readings());
@@ -2171,7 +2193,8 @@ void Client::draw_scene() {
         const net::GraphicPacksViewMessage& packs = session_.host_graphic_packs_view();
         const net::AmiiboBrowserViewMessage& amiibo = session_.host_amiibo_browser_view();
         const net::ButtonMappingViewMessage& mapping = session_.host_button_mapping_view();
-        if (view.open || packs.open || amiibo.open || mapping.open) {
+        const net::WiiUPlayerViewMessage& player = session_.host_wii_u_player_view();
+        if (view.open || packs.open || amiibo.open || mapping.open || player.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game that goes on, and the blurred still otherwise.
             router_.decide(false);
@@ -2211,6 +2234,10 @@ void Client::draw_scene() {
                 mirrored_button_mapping_.show_mirrored(mapping, width, height);
                 mirrored_button_mapping_.set_over_game(true);
                 mirrored_button_mapping_.render(quads_, text_, button_glyphs_, width, height);
+            } else if (player.open) {
+                show_host_wii_u_player(mirrored_wii_u_player_, session_, width, height);
+                mirrored_wii_u_player_.set_over_game(true);
+                mirrored_wii_u_player_.render(quads_, text_, button_glyphs_, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs_, quads_, text_,
                                               button_glyphs_, width, height, packs,
