@@ -844,6 +844,9 @@ struct RumbleMessage {
     // "off" sent after it would wait behind whatever else the connection is
     // carrying, which with a screen streaming is a lot.
     uint16_t ping_ms = 0;
+    // How hard, in percent: a Wii Remote's is turned down -- see
+    // Settings::wii_remote_rumble. 100 from a host that does not say.
+    uint8_t strength = 100;
 };
 
 // One pad plugged into a companion, reported on its own so the host can make

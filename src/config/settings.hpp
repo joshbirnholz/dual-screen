@@ -57,6 +57,8 @@ inline bool display_is_a_steam_decks_own(int width, int height) {
 // and that option's id over the link.
 inline constexpr const char* kWiiUTvAudioChoices[3] = {"Mono", "Stereo", "Surround"};
 inline constexpr const char* kWiiUTvAudioOption = "tv_channels";
+// Settings::wii_remote_rumble's choices, in percent.
+inline constexpr int kWiiRemoteRumbleChoices[5] = {0, 25, 50, 75, 100};
 // Cemu's option for a player's controller type -- "player1_type" and on --
 // which the quick menu lists under Controls rather than Game Options.
 inline bool is_cemu_controls_option(const std::string& id) {
@@ -144,6 +146,10 @@ struct Settings {
     // setting, the same for every game: 0 mono, 1 stereo, 2 surround. Read
     // by Cemu as a game starts. See kWiiUTvAudioChoices.
     int wii_u_tv_audio = 1;
+    // How hard a controller rumbles where a Wii U game has it as a Wii
+    // Remote, in percent -- one of kWiiRemoteRumbleChoices. A real one's
+    // motor is a small one, and a pad's at full strength is far louder.
+    int wii_remote_rumble = 50;
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {

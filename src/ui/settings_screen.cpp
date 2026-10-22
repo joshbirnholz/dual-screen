@@ -14,6 +14,11 @@
 namespace ds {
 namespace {
 
+// Settings::wii_remote_rumble, as the row says it.
+std::string rumble_label(int percent) {
+    return percent <= 0 ? std::string("Off") : std::to_string(percent) + "%";
+}
+
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
@@ -254,6 +259,12 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
             choices.assign(std::begin(kWiiUTvAudioChoices), std::end(kWiiUTvAudioChoices));
             current = std::clamp(settings_.wii_u_tv_audio, 0, 2);
             break;
+        case Row::WiiRemoteRumble:
+            for (const int percent : kWiiRemoteRumbleChoices) {
+                if (percent == settings_.wii_remote_rumble) current = static_cast<int>(choices.size());
+                choices.push_back(rumble_label(percent));
+            }
+            break;
 #endif
         default: break;
     }
@@ -324,6 +335,10 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
         case Row::WiiUTvAudio:
             if (index < 0 || index >= 3) return;
             settings_.wii_u_tv_audio = index;
+            break;
+        case Row::WiiRemoteRumble:
+            if (index < 0 || index >= static_cast<int>(std::size(kWiiRemoteRumbleChoices))) return;
+            settings_.wii_remote_rumble = kWiiRemoteRumbleChoices[index];
             break;
 #endif
         default: return;
@@ -590,6 +605,14 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.wii_u_tv_audio = ((settings_.wii_u_tv_audio + direction) % 3 + 3) % 3;
             result.settings_changed = true;
             break;
+        case Row::WiiRemoteRumble: {
+            const int count = static_cast<int>(std::size(kWiiRemoteRumbleChoices));
+            int at = 0;
+            while (at + 1 < count && kWiiRemoteRumbleChoices[at] < settings_.wii_remote_rumble) ++at;
+            settings_.wii_remote_rumble = kWiiRemoteRumbleChoices[((at + direction) % count + count) % count];
+            result.settings_changed = true;
+            break;
+        }
 #endif
         case Row::UiSounds:
             settings_.ui_sounds = !settings_.ui_sounds;
@@ -810,6 +833,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Default Wii U Screen", to_string(settings_.wii_u_screen_alone)},
         {"Pause Wii U Games in the Quick Menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
         {"Wii U TV Audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
+        {"Wii Remote Rumble Strength", rumble_label(settings_.wii_remote_rumble)},
 #endif
         {"Sound Effects", settings_.ui_sounds ? "On" : "Off"},
     };
@@ -959,6 +983,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
     mix_sound_state(view.rest, settings_.pause_wii_u_in_menu ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_audio));
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_remote_rumble));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);

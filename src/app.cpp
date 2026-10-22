@@ -686,8 +686,9 @@ struct App::Impl {
     // them -- see apply_pad_rumble().
     bool rumble_quiet = false;
     // The pads whose motors this app has turned on, by pad_identity(), so that one
-    // leaving a rumbling slot -- or the slot going quiet -- is turned off.
-    std::map<std::string, KnownPad> rumbling_pads;
+    // leaving a rumbling slot -- or the slot going quiet -- is turned off;
+    // and how hard, in percent, so a change of strength is passed on.
+    std::map<std::string, std::pair<KnownPad, int>> rumbling_pads;
     // An older companion buzzing as a whole so the player can tell which it
     // is, and until when -- see identify_pad(). A newer one ends its own.
     std::optional<KnownPad> identifying_pad;
@@ -1229,6 +1230,9 @@ struct App::Impl {
                                   bool companion_here);
     // Turns each pad's motor on or off to match its slot's.
     void apply_pad_rumble();
+    // How hard a motor in `slot` runs, in percent: a Wii Remote's as Settings
+    // has it, anything else's in full.
+    int rumble_strength(PadSlot slot) const;
     // Stops every motor this app turned on for a slot, as when the game ends.
     void stop_pad_rumble();
     // True while two devices are in a session, whichever end this is.
@@ -2154,31 +2158,46 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     return gamepad;
 }
 
+int App::Impl::rumble_strength(PadSlot slot) const {
+    if (slot.kind != PadSlot::Kind::Player) return 100;
+    const int option = cemu_player_type_option(slot.player);
+    if (option < 0) return 100;
+    const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+    if (type.active < 0 || type.active >= static_cast<int>(type.choices.size())) return 100;
+    const std::string& now = type.choices[static_cast<std::size_t>(type.active)];
+    if (now.rfind("Wii Remote", 0) != 0) return 100;
+    return std::clamp(settings.wii_remote_rumble, 0, 100);
+}
+
 void App::Impl::apply_pad_rumble() {
-    std::map<std::string, KnownPad> wanted;
+    std::map<std::string, std::pair<KnownPad, int>> wanted;
     for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
         const KnownPad& pad = known_pads[index];
         const PadSlot slot = pad_slots[index];
         if (slot.kind == PadSlot::Kind::NotUsed || rumble_quiet) continue;
         const int motor = slot.kind == PadSlot::Kind::GamePad ? 0 : 1 + slot.player;
-        if (slot_rumble[motor]) wanted.emplace(pad_identity(pad), pad);
+        const int strength = rumble_strength(slot);
+        if (slot_rumble[motor] && strength > 0) wanted.emplace(pad_identity(pad), std::make_pair(pad, strength));
     }
-    const auto set = [this](const KnownPad& pad, bool active) {
+    const auto set = [this](const KnownPad& pad, bool active, int strength) {
         if (pad.on_this_device) {
-            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), active);
+            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), active, strength / 100.0f);
         } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
             host_session->publish_rumble(active);
         } else if (host_session) {
-            host_session->publish_pad_rumble(pad.id, active);
+            host_session->publish_pad_rumble(pad.id, active, static_cast<uint8_t>(strength));
         }
     };
-    for (const auto& [key, pad] : rumbling_pads) {
+    for (const auto& [key, was] : rumbling_pads) {
         const auto still = wanted.find(key);
-        if (still == wanted.end() || still->second.id != pad.id) set(pad, false);
+        if (still == wanted.end() || still->second.first.id != was.first.id) set(was.first, false, 100);
     }
-    for (const auto& [key, pad] : wanted) {
+    for (const auto& [key, now] : wanted) {
         const auto was = rumbling_pads.find(key);
-        if (was == rumbling_pads.end() || was->second.id != pad.id) set(pad, true);
+        if (was == rumbling_pads.end() || was->second.first.id != now.first.id ||
+            was->second.second != now.second) {
+            set(now.first, true, now.second);
+        }
     }
     rumbling_pads = std::move(wanted);
 }
@@ -4742,14 +4761,14 @@ void App::Impl::attach_companion_callbacks() {
             }
             audio.push(samples, frames);
         });
-    companion_session->set_rumble_callback([this](bool active, uint32_t pad, uint16_t ping_ms) {
+    companion_session->set_rumble_callback([this](bool active, uint32_t pad, uint16_t ping_ms, uint8_t strength) {
         if (ping_ms > 0) {
             // Which pad is this? A short buzz that ends here, on time.
             input.ping_pad(static_cast<SDL_JoystickID>(pad), ping_ms);
         } else if (pad == net::RumbleMessage::kWholeDevice) {
             input.set_rumble(active);
         } else {
-            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active);
+            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active, strength / 100.0f);
         }
     });
     companion_session->set_video_hold(settings.video_hold);

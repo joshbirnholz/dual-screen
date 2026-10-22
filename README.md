@@ -442,6 +442,12 @@ Three things are different about a Wii U session:
   opens the TV's sound as a game starts, so a game already running hears the
   change once it is reset. It needs this project's Cemu build.
 
+- **Wii Remote Rumble Strength**, in Settings, is how hard a controller
+  rumbles while a game has it as a Wii Remote -- **Off**, **25%**, **50%**
+  (the default), **75%** or **100%** -- for every game and every Wii Remote.
+  A real one's motor is a small one; a pad's at full strength is far louder.
+  Not on Android, whose controllers rumble at one strength.
+
 - **amiibo**, in the quick menu, lists the amiibo dumps (`.bin`, `.nfc`
   or `.dat`) in the amiibo folder, and a level or two of folders inside it,
   by name on the right. The folder is `~/amiibo` (or `~/Documents/amiibo`)

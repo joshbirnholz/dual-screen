@@ -1781,21 +1781,23 @@ void HostSession::publish_menu_sound(MenuSound sound) {
     companion_.send(out);
 }
 
-void HostSession::publish_pad_rumble(uint32_t pad, bool active) {
+void HostSession::publish_pad_rumble(uint32_t pad, bool active, uint8_t strength) {
     if (!has_companion() || !companion_reports_pads_) {
         return;
     }
+    const int saying = active ? std::max<int>(1, std::min<int>(strength, 100)) : 0;
     const auto sent = pad_rumble_sent_.find(pad);
-    if (sent != pad_rumble_sent_.end() && sent->second == active) {
+    if (sent != pad_rumble_sent_.end() && sent->second == saying) {
         return;
     }
     RumbleMessage message;
     message.active = active;
     message.pad = pad;
+    if (active) message.strength = static_cast<uint8_t>(saying);
     std::vector<uint8_t> out;
     encode_rumble(message, out);
     companion_.send(out);
-    pad_rumble_sent_[pad] = active;
+    pad_rumble_sent_[pad] = saying;
 }
 
 void HostSession::publish_pad_ping(uint32_t pad, uint16_t ms) {

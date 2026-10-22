@@ -277,7 +277,9 @@ public:
     // Rumbles one pad, or stops it: a player's motor, routed to whichever pad
     // is that player. Kept going until told to stop -- see set_rumble() for
     // why SDL has to be reminded -- and forgotten if the pad goes away.
-    void set_pad_rumble(SDL_JoystickID id, bool active);
+    // `strength` from 0 to 1: a Wii Remote's is turned down -- see
+    // Settings::wii_remote_rumble. Not on Android, whose motors have one.
+    void set_pad_rumble(SDL_JoystickID id, bool active, float strength = 1.0f);
 
     // One short buzz of `ms` on one pad -- or on every pad, for an id of -1
     // -- that ends by itself: the Controllers screen asking which pad is
@@ -346,11 +348,13 @@ private:
     // everywhere but a Switch, where SDL cannot be trusted with it -- see
     // the .cpp -- and the console's own vibration calls stand in, with the
     // length kept here.
-    void drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on, uint32_t ms);
+    void drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on, uint32_t ms,
+                     float strength = 1.0f);
     // Renews the rumble on every pad set_pad_rumble() left on, and on a
     // Switch stops any motor whose time is up.
     void refresh_pad_rumble();
-    std::map<SDL_JoystickID, bool> pad_rumble_on_;
+    // How hard each, from 0 to 1.
+    std::map<SDL_JoystickID, float> pad_rumble_on_;
     uint32_t pad_rumble_refreshed_ms_ = 0;
     // When each motor driven on a Switch is due to stop; 0 for stopped.
     std::map<SDL_JoystickID, uint32_t> motor_until_;

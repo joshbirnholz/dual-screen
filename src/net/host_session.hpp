@@ -416,7 +416,7 @@ public:
     // rumble, sent to whichever pad is that player. Only what changed goes
     // out, like publish_rumble(). Ignored for a companion that does not report
     // pads, which would read it as the whole device.
-    void publish_pad_rumble(uint32_t pad, bool active);
+    void publish_pad_rumble(uint32_t pad, bool active, uint8_t strength = 100);
     // One short buzz of `ms` on one of the companion's pads, which the
     // companion ends by itself -- see RumbleMessage::ping_ms. Always sent,
     // and leaves what publish_pad_rumble() last said about the pad alone.
@@ -767,7 +767,8 @@ private:
     bool companion_reports_pads_ = false;
     std::vector<ReportedPad> companion_pads_;
     // Which of the companion's pads were last told their motor is on.
-    std::map<uint32_t, bool> pad_rumble_sent_;
+    // How hard each pad was last told to rumble, in percent; 0 for off.
+    std::map<uint32_t, int> pad_rumble_sent_;
     CodecChoice codec_choice_ = CodecChoice::Automatic;
     // One per screen: which it is going as, since when, and what tiles have
     // been costing it -- see screen_goes_as_video().

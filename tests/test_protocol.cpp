@@ -1039,6 +1039,22 @@ void test_rumble_can_name_one_pad() {
     CHECK(received_older.active);
     CHECK_EQ(received_older.pad, RumbleMessage::kWholeDevice);
     CHECK_EQ(received_older.ping_ms, 0);
+    CHECK_EQ(received_older.strength, 100);
+
+    // A turned-down motor says how hard.
+    RumbleMessage softer;
+    softer.active = true;
+    softer.pad = 4;
+    softer.strength = 40;
+    std::vector<uint8_t> soft_buffer;
+    encode_rumble(softer, soft_buffer);
+    std::vector<uint8_t> soft_payload;
+    CHECK(one_message(soft_buffer, type, soft_payload));
+    RumbleMessage soft_received;
+    CHECK(decode_rumble(soft_payload.data(), soft_payload.size(), soft_received));
+    CHECK_EQ(soft_received.pad, 4u);
+    CHECK_EQ(soft_received.ping_ms, 0);
+    CHECK_EQ(soft_received.strength, 40);
 
     // A ping carries its own length, so the pad that buzzes ends it itself;
     // an ordinary rumble carries none and stays on until told otherwise.

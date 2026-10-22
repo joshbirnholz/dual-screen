@@ -175,7 +175,7 @@ RawPadState split_raw_state(const PadState& pad, SDL_GameController* like) {
 //
 // A Switch Lite has no rumble motor, and this does nothing there however it
 // is asked.
-void switch_vibrate(SDL_JoystickID id, bool on) {
+void switch_vibrate(SDL_JoystickID id, bool on, float strength) {
     const HidNpadIdType npad = npad_for(id);
     const u32 styles = hidGetNpadStyleSet(npad);
     HidNpadStyleTag style = HidNpadStyleTag_NpadFullKey;
@@ -201,9 +201,9 @@ void switch_vibrate(SDL_JoystickID id, bool on) {
     }
     HidVibrationValue values[2];
     for (HidVibrationValue& value : values) {
-        value.amp_low = on ? 0.6f : 0.0f;
+        value.amp_low = on ? 0.6f * strength : 0.0f;
         value.freq_low = 160.0f;
-        value.amp_high = on ? 0.6f : 0.0f;
+        value.amp_high = on ? 0.6f * strength : 0.0f;
         value.freq_high = 320.0f;
     }
     hidSendVibrationValues(handles, values, handles_wanted);
@@ -391,10 +391,11 @@ static void android_rumble(int ms) {
 #endif
 
 void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on,
-                               uint32_t ms) {
+                               uint32_t ms, float strength) {
+    strength = std::clamp(strength, 0.0f, 1.0f);
 #ifdef __SWITCH__
     (void)controller;
-    switch_vibrate(id, on);
+    switch_vibrate(id, on, strength);
     motor_until_[id] = on ? SDL_GetTicks() + ms : 0;
 #elif defined(__ANDROID__)
     // SDL's Android port has no controller rumble -- SDL_GameControllerRumble
@@ -403,10 +404,11 @@ void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller
     // Android does not say which of its devices is which of SDL's.
     (void)id;
     (void)controller;
+    (void)strength;
     android_rumble(on ? static_cast<int>(ms) : 0);
 #else
-    if (SDL_GameControllerRumble(controller, on ? 0xffffu : 0u, on ? 0xffffu : 0u,
-                                 on ? ms : 0u) != 0 &&
+    const Uint16 power = on ? static_cast<Uint16>(std::lround(0xffff * strength)) : 0u;
+    if (SDL_GameControllerRumble(controller, power, power, on ? ms : 0u) != 0 &&
         on && !said_no_rumble_[id]) {
         said_no_rumble_[id] = true;
         // Said, because "nothing buzzed" is otherwise indistinguishable from
@@ -686,20 +688,20 @@ std::vector<PadReading> InputManager::pad_readings() const {
     return readings;
 }
 
-void InputManager::set_pad_rumble(SDL_JoystickID id, bool active) {
+void InputManager::set_pad_rumble(SDL_JoystickID id, bool active, float strength) {
     SDL_GameController* controller = pad_controller(id);
     if (controller == nullptr) {
         pad_rumble_on_.erase(id);
         return;
     }
     if (active) {
-        pad_rumble_on_[id] = true;
+        pad_rumble_on_[id] = strength;
     } else {
         pad_rumble_on_.erase(id);
     }
     // The same short, renewed rumble set_rumble() uses, and for its reason.
     constexpr uint32_t kRumbleMs = 250;
-    drive_motor(id, controller, active, kRumbleMs);
+    drive_motor(id, controller, active, kRumbleMs, strength);
 }
 
 void InputManager::refresh_pad_rumble() {
@@ -732,7 +734,7 @@ void InputManager::refresh_pad_rumble() {
             it = pad_rumble_on_.erase(it);
             continue;
         }
-        drive_motor(it->first, controller, true, 250);
+        drive_motor(it->first, controller, true, 250, it->second);
         ++it;
     }
 }

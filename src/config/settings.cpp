@@ -167,6 +167,8 @@ Settings Settings::load(const AppPaths& paths) {
         const std::string tv = get_or<std::string>(document, "wii_u_tv_audio", "stereo");
         settings.wii_u_tv_audio = tv == "mono" ? 0 : tv == "surround" ? 2 : 1;
     }
+    settings.wii_remote_rumble =
+        std::clamp(get_or<int>(document, "wii_remote_rumble", settings.wii_remote_rumble), 0, 100);
     if (document.contains("wii_u_arguments") && document["wii_u_arguments"].is_array()) {
         settings.wii_u_arguments.clear();
         for (const auto& argument : document["wii_u_arguments"]) {
@@ -256,6 +258,7 @@ bool Settings::save(const AppPaths& paths) const {
         document["ds_birth_day"] = ds_birth_day;
     }
     document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
+    document["wii_remote_rumble"] = wii_remote_rumble;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;

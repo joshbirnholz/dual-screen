@@ -192,6 +192,7 @@ private:
         WiiUScreenAlone,
         PauseWiiUInMenu,
         WiiUTvAudio,
+        WiiRemoteRumble,
 #endif
         UiSounds,
         Count

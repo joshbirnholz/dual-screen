@@ -801,7 +801,7 @@ public:
     // (see ReportedPad), or RumbleMessage::kWholeDevice for all of them.
     // `ping_ms` non-zero is a single buzz that ends on its own; see
     // RumbleMessage::ping_ms.
-    using RumbleCallback = std::function<void(bool active, uint32_t pad, uint16_t ping_ms)>;
+    using RumbleCallback = std::function<void(bool active, uint32_t pad, uint16_t ping_ms, uint8_t strength)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
     // The menu sounds the host has played since this was last asked, oldest
     // first, for this device to play too. False when there are none left.
