@@ -2592,13 +2592,15 @@ void App::Impl::set_cemu_option(int index, int choice) {
 }
 
 void App::Impl::keep_pad_order() {
-    // A controller arriving becomes a player only where this game has had
-    // one, as it had it -- never None. Elsewhere it waits in Not used to be
-    // added, its type chosen then. Until Cemu has said what types it has,
-    // nobody joins, and nothing is kept: the line is worked out again once
-    // it has. A Cemu with no types to say lets anyone join, as before.
+    // A controller arriving becomes a player where this game has had one, as
+    // it had it -- never None -- or, in the first empty place of the four a
+    // Wii U pairs, a Wii U Pro Controller. Past those four it waits in Not
+    // used to be added. Until Cemu has said what types it has, nobody joins,
+    // and nothing is kept: the line is worked out again once it has. A Cemu
+    // with no types to say lets anyone join, as before.
     const bool told = !external_source->options_supported() || !cemu_options.empty();
     std::vector<bool> joinable(kPadPlayers, false);
+    std::vector<bool> remembered(kPadPlayers, false);
     bool any_type = false;
     for (int player = 0; player < kPadPlayers && told; ++player) {
         const int option = cemu_player_type_option(player);
@@ -2606,17 +2608,43 @@ void App::Impl::keep_pad_order() {
         any_type = true;
         const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
         const auto kept = game_config.wii_u_options.find(type.id);
-        joinable[static_cast<std::size_t>(player)] =
+        remembered[static_cast<std::size_t>(player)] =
             have_game_config && kept != game_config.wii_u_options.end() && kept->second >= 0 &&
             kept->second < static_cast<int>(type.choices.size()) &&
             (offered_type(type.choices[static_cast<std::size_t>(kept->second)]) ||
              type.choices[static_cast<std::size_t>(kept->second)] == "Classic Controller");
+        joinable[static_cast<std::size_t>(player)] =
+            remembered[static_cast<std::size_t>(player)] || player < kWiiUPlayers;
     }
     if (told && !any_type) joinable.clear();
     pad_order.joinable = joinable;
     if (!told) return;
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
-    pad_order = keeping_joinable(order_of(pads, line_up_pads(pads, pad_order, holds_gamepad()), holds_gamepad()));
+    const PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
+    if (!any_type) return;
+    // A player with a controller and no type of this game's yet is a Wii U
+    // Pro Controller, mapped as Cemu maps a new one, and kept as that.
+    for (int player = 0; player < static_cast<int>(lineup.players.size()); ++player) {
+        if (lineup.players[static_cast<std::size_t>(player)] < 0 || remembered[static_cast<std::size_t>(player)]) {
+            continue;
+        }
+        const int option = cemu_player_type_option(player);
+        if (option < 0) continue;
+        const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+        const auto pro = std::find(type.choices.begin(), type.choices.end(), "Pro Controller");
+        if (pro == type.choices.end()) continue;
+        const int choice = static_cast<int>(pro - type.choices.begin());
+        if (type.active == choice) {
+            if (!have_game_config) continue;
+            game_config.wii_u_options[type.id] = choice;
+            persist_game_config();
+        } else {
+            set_cemu_option(option, choice);
+        }
+        log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(lineup.players[static_cast<std::size_t>(player)])]) +
+                 " joined as " + pad_slot_name(PadSlot::player_number(player)) + ", a Wii U Pro Controller");
+    }
 }
 
 void App::Impl::add_pad_as_player(const std::string& identity, int type) {

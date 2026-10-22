@@ -547,9 +547,11 @@ each with its name, what the game has it as (**Wii U GamePad**, **Wii Remote
 + Nunchuk**) and where it is, then any controller not used, with no place of
 its own. **A** (Add) on one of those opens the first empty player's page to
 choose its type first, and **Add Controller** there makes it that player.
-A controller arriving becomes a player by itself only where this game has
-had that player before, and as what it had it as -- never **None**;
-anywhere else it waits, not used, to be added. A player is never a Classic
+A controller arriving takes the first empty player by itself: as what
+this game had that player as before -- never **None** -- or, for a player
+this game has not had, as a **Wii U Pro Controller** mapped the way Cemu
+maps a new one. With four players already, as many as a Wii U pairs, it
+waits, not used, to be added. A player is never a Classic
 Controller alone either, which a Wii U never sees -- it is always plugged
 into a Wii Remote, whose buttons a game can read too -- so it is a **Wii
 Classic Controller**, a Wii Remote with one plugged in: the remote's buttons
