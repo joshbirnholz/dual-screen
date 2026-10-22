@@ -2092,21 +2092,30 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
         }
     }
 
-    // The GamePad's buttons are its pads'; its screen and how it is held are
-    // the device showing that screen -- unless the pads in its slot are all on
-    // the other device, in which case how the GamePad is held is theirs.
+    // The GamePad's buttons are its pads'; its screen is the device showing
+    // that screen, and how it is held the device whose controller it is --
+    // the one showing it where that is either or neither. A controller
+    // through Steam Input has no motion of its own to give, so it is the
+    // device's: its own sensors, or a DSU server it reads. Where that
+    // device has none, the pad's own, and then the other device's.
     const DsInputState& screen_device = gamepad_here ? here : remote;
+    const DsInputState& other_device = gamepad_here ? remote : here;
     DsInputState gamepad = routed.gamepad;
     gamepad.touching = screen_device.touching;
     gamepad.touch_x = screen_device.touch_x;
     gamepad.touch_y = screen_device.touch_y;
     bool screen_device_holds_it = false;
-    const std::vector<std::size_t> holding = pads_in_slot(pad_slots, PadSlot::gamepad());
-    for (const std::size_t index : holding) {
-        if (known_pads[index].on_this_device == gamepad_here) screen_device_holds_it = true;
+    bool other_device_holds_it = false;
+    for (const std::size_t index : pads_in_slot(pad_slots, PadSlot::gamepad())) {
+        (known_pads[index].on_this_device == gamepad_here ? screen_device_holds_it : other_device_holds_it) = true;
     }
-    if ((holding.empty() || screen_device_holds_it) && screen_device.motion.present) {
-        gamepad.motion = screen_device.motion;
+    const bool held_on_other = other_device_holds_it && !screen_device_holds_it;
+    const DsInputState& holder = held_on_other ? other_device : screen_device;
+    const DsInputState& rest = held_on_other ? screen_device : other_device;
+    if (holder.motion.present) {
+        gamepad.motion = holder.motion;
+    } else if (!gamepad.motion.present && rest.motion.present) {
+        gamepad.motion = rest.motion;
     }
 
     apply_pad_rumble();
