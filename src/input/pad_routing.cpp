@@ -114,12 +114,14 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
             }
             return -1;
         };
-        // The GamePad's, while it is on the device holding the GamePad: the
-        // GamePad gone over to the other device takes that one's instead.
+        // The GamePad's, on either device. Only the GamePad's screen going
+        // over to the other device moves it: then a controller on the device
+        // it left gives way to the first of the one it went to.
+        const bool screen_moved = order.gamepad_here != gamepad_here;
         for (const int index : natural) {
             const KnownPad& pad = pads[static_cast<std::size_t>(index)];
             if (!order.gamepad.empty() && pad_identity(pad) == order.gamepad &&
-                pad.on_this_device == gamepad_here) {
+                (!screen_moved || pad.on_this_device == gamepad_here)) {
                 lineup.gamepad = find(order.gamepad);
             }
         }

@@ -207,9 +207,10 @@ struct PadOrder {
 // With a chosen order, each pad keeps its place; a pad that has gone leaves
 // its place empty, nobody moving up into it; and a pad that has arrived since
 // takes the first empty place among the players, or the end -- or an empty
-// GamePad, when it is on the device holding it. The GamePad's pad stays it
-// only while it is on that device: the GamePad gone over to the other device
-// takes the other device's first instead.
+// GamePad, when it is on the device holding it. The GamePad's pad can be on
+// either device, and stays it until the GamePad's screen goes over to the
+// other device: then one on the device it left gives way to the other
+// device's first.
 //
 // `gamepad_here` is whether this device is the one showing the GamePad's
 // screen: true when nothing is connected, or when the companion took the

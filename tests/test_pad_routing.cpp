@@ -233,6 +233,17 @@ void test_a_chosen_order_holds_while_pads_come_and_go() {
     CHECK(got[1] == PadSlot::player_number(1));
     CHECK(got[3] == PadSlot::player_number(2));
 
+    // A controller on the other device made the GamePad stays it while the
+    // GamePad's screen stays where it is.
+    const std::vector<KnownPad> both{pad(true, 0), pad(false, 1)};
+    PadLineup mixed = ds::line_up_pads(both, PadOrder(), true);
+    CHECK(ds::move_among_players(mixed, 1, -1));
+    CHECK_EQ(mixed.gamepad, 1);
+    const PadOrder mixed_order = ds::order_of(both, mixed, true);
+    got = slots(both, mixed_order, true);
+    CHECK(got[1] == PadSlot::gamepad());
+    CHECK(got[0] == PadSlot::player_number(0));
+
     // The GamePad moved to the other device: its pad is a player now, in
     // the first empty place; the players stay.
     got = slots(pads, order, false);

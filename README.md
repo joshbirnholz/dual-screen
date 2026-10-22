@@ -571,8 +571,8 @@ is pressed on in the next ten seconds. In Controls itself, **X** (Identify)
 buzzes the highlighted controller and **Y** (Change Order) picks a player's
 or the GamePad's up -- drawn white, its words in the accent colour, with
 arrows before its name: move it up or down the line, up from Player 1 to be
-the GamePad, and **A**, **B** or **Y** put it down where it is. Only a
-controller on the device showing the GamePad's screen can be the GamePad.
+the GamePad, and **A**, **B** or **Y** put it down where it is. Any
+controller can be the GamePad, on either device.
 
 Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it
