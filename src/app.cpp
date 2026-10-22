@@ -687,10 +687,7 @@ struct App::Impl {
     // is, and until when -- see identify_pad(). A newer one ends its own.
     std::optional<KnownPad> identifying_pad;
     uint32_t identify_until_ms = 0;
-    // The line as it was when a controller was picked up in Controls, for B
-    // to put back -- see LayoutPickerResult::controller_put_back -- and the
-    // controller in hand.
-    std::optional<PadOrder> order_before_move;
+    // The controller in hand in Controls, by pad_identity().
     std::string moving_pad;
     // Where the Controllers screen was opened from, which is where closing it
     // goes back to.
@@ -2494,19 +2491,9 @@ void App::Impl::apply_controls_result(const LayoutPickerResult& result) {
         const int pad = pad_index(pads, row->pad);
         if (pad >= 0) identify_pad(pads[static_cast<std::size_t>(pad)]);
     }
-    if (const ControllerRowView* row = row_at(result.controller_picked_up)) {
-        order_before_move = pad_order;
-        moving_pad = row->pad;
-    }
+    if (const ControllerRowView* row = row_at(result.controller_picked_up)) moving_pad = row->pad;
     if (result.controller_moved != 0 && !moving_pad.empty()) move_pad(moving_pad, result.controller_moved);
-    if (result.controller_put_back && order_before_move) {
-        pad_order = *order_before_move;
-        log_info("controllers: the order was put back");
-    }
-    if (!picker->moving_controller()) {
-        order_before_move.reset();
-        moving_pad.clear();
-    }
+    if (!picker->moving_controller()) moving_pad.clear();
     picker->set_wii_u_controllers(wii_u_controller_rows());
 }
 

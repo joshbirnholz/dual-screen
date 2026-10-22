@@ -1016,12 +1016,10 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                     result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                     break;
                 // The GamePad's or a player's page; a controller not used
-                // has neither, and is picked up to be put somewhere instead.
+                // has neither.
                 case Option::Controller:
                     if (const ControllerRowView* row = focused_controller()) {
-                        if (row->slot.kind == PadSlot::Kind::NotUsed) {
-                            pick_up_controller(result);
-                        } else {
+                        if (row->slot.kind != PadSlot::Kind::NotUsed) {
                             result.controller_opened = rows()[static_cast<std::size_t>(item_)].index;
                         }
                     }
@@ -1231,8 +1229,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         return result;
     }
 
-    // A controller picked up: Up and Down move it along the line, A puts it
-    // down, B puts it back where it was. Taps do nothing until it is down.
+    // A controller picked up: Up and Down move it along the line; A, B or Y
+    // put it down where it is now. Taps do nothing until it is down.
     if (moving_controller()) {
         take_taps(pointers, output_width, output_height);
         for (const UiAction action : actions) {
@@ -1241,14 +1239,11 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case UiAction::Down:
                     if (result.controller_moved == 0) result.controller_moved = action == UiAction::Up ? -1 : 1;
                     break;
-                case UiAction::Confirm: confirm_ = MenuConfirm::None; break;
+                case UiAction::Confirm:
                 case UiAction::Cancel:
-                    confirm_ = MenuConfirm::None;
-                    result.controller_put_back = true;
-                    break;
+                case UiAction::MenuReset: confirm_ = MenuConfirm::None; break;
                 case UiAction::ToggleMenu:
                     confirm_ = MenuConfirm::None;
-                    result.controller_put_back = true;
                     if (!state_.embedded) {
                         result.close_requested = true;
                         open_ = false;
@@ -1916,8 +1911,8 @@ void LayoutPicker::render(QuadRenderer& quads,
         // and while it is in hand, only what moves it and puts it down.
         const ControllerRowView* controller = focused_controller();
         if (moving_controller()) {
+            // B and Y put it down too, so A alone says so.
             guide.push_back({ButtonGlyph::Dpad, "Change Order"});
-            guide.push_back({ButtonGlyph::B, "Cancel", PromptRole::LeavesScreen});
             guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
         } else {
             if (controller != nullptr && !controller->pad.empty()) {

@@ -1303,20 +1303,24 @@ void test_wii_u_controls_list_every_controller() {
     std::swap(moved[1].name, moved[2].name);
     picker.set_wii_u_controllers(moved);
     CHECK(picker.focus() == LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
+    // A, B and Y each put it down where it is, and the menu stays.
     result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
-    CHECK(result.controller_put_back);
     CHECK(!picker.moving_controller());
-    CHECK(picker.is_open());
-    // A puts it down where it is.
-    picker.set_wii_u_controllers(state.wii_u_controllers);
-    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
-    picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller() && !result.controller_put_back && result.controller_opened == -1);
+    for (const UiAction drop : {UiAction::Cancel, UiAction::Confirm, UiAction::MenuReset}) {
+        picker.set_wii_u_controllers(state.wii_u_controllers);
+        picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
+        picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+        CHECK(picker.moving_controller());
+        result = picker.update({drop}, {}, kWidth, kHeight);
+        CHECK(!picker.moving_controller() && result.controller_opened == -1 && result.controller_picked_up == -1);
+        CHECK(picker.is_open());
+    }
 
-    // Not used: A picks it up.
+    // Not used: A does nothing; Y picks it up.
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!picker.moving_controller() && result.controller_opened == -1);
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
     CHECK_EQ(result.controller_picked_up, 2);
     CHECK(picker.moving_controller());
 

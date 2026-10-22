@@ -87,12 +87,11 @@ struct LayoutPickerResult {
     // page A opened, and the row whose controller X buzzes.
     int controller_opened = -1;
     int controller_identified = -1;
-    // Y picking a row's controller up to move it: the row; while it is held,
-    // a place up (-1) or down (1); and B putting the line back as it was.
-    // A puts it down where it is, which needs nothing more.
+    // Y picking a row's controller up to move it: the row; and while it is
+    // held, a place up (-1) or down (1). A, B or Y put it down where it is,
+    // which needs nothing more.
     int controller_picked_up = -1;
     int controller_moved = 0;
-    bool controller_put_back = false;
     // One of Cemu's own options in a Wii U's Options, stepped on: its index
     // in LayoutPickerState::producer_options. -1 for none.
     int producer_option = -1;
