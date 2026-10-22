@@ -167,7 +167,9 @@ struct PadLineup {
     // its own holding the GamePad is played by its touch screen and motion
     // alone.
     int gamepad = -1;
-    // Player 1 onward; never more than kPadPlayers.
+    // Player 1 onward; never more than kPadPlayers. -1 for a player whose
+    // controller has gone or was taken out: nobody moves up into its place,
+    // as on a Wii U, until a controller arrives for it. Never -1 last.
     std::vector<int> players;
     // Everything past Player 8, and anything moved down there.
     std::vector<int> unused;
@@ -198,9 +200,11 @@ struct PadOrder {
 //    device's first, then the companion's. Past eight, not used.
 //
 // With a chosen order, each pad keeps its place; a pad that has gone leaves
-// a gap the rest close up; and a pad that has arrived since joins the end of
-// the players -- or takes an empty GamePad, when it is on the device holding
-// it -- the same as it would have by default.
+// its place empty, nobody moving up into it; and a pad that has arrived since
+// takes the first empty place among the players, or the end -- or an empty
+// GamePad, when it is on the device holding it. The GamePad's pad stays it
+// only while it is on that device: the GamePad gone over to the other device
+// takes the other device's first instead.
 //
 // `gamepad_here` is whether this device is the one showing the GamePad's
 // screen: true when nothing is connected, or when the companion took the
@@ -221,21 +225,24 @@ bool move_in_lineup(PadLineup& lineup, int pad, int direction);
 // than Player 1 or the last player. The GamePad and Not used stay as they
 // are. Returns whether anything moved.
 bool move_among_players(PadLineup& lineup, int pad, int direction);
-// Pad `pad` made a new player after the last, from wherever it was -- the
-// GamePad's left with none, a player's place closed up. Returns whether it
-// was added: not past kPadPlayers.
+// Pad `pad` made a new player in the first empty place, from the GamePad or
+// Not used -- the GamePad left with none. Returns whether it was added: not
+// a player already, nor past kPadPlayers.
 bool add_player(PadLineup& lineup, int pad);
+// The first player with no controller: an empty place, or after the last.
+int first_free_player(const PadLineup& lineup);
 
 // Pad `pad` put in `slot` -- the GamePad, or a player there already is --
-// trading places with the pad there, if any. Returns whether anything moved.
+// trading places with the pad there, if any; its own place left empty
+// otherwise. Returns whether anything moved.
 bool put_in_slot(PadLineup& lineup, int pad, PadSlot slot);
 
-// Pad `pad` out of play, at the top of Not used, the players after it moving
-// up. Returns whether anything moved.
+// Pad `pad` out of play, at the top of Not used, its place left empty.
+// Returns whether anything moved.
 bool take_out_of_play(PadLineup& lineup, int pad);
 
 // One line of the line as shown: its slot, and its pad, or -1 for an empty
-// GamePad.
+// GamePad. An empty player has no line.
 struct LineupRow {
     PadSlot slot;
     int pad = -1;

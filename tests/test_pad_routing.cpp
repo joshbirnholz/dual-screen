@@ -173,8 +173,9 @@ void test_a_wii_u_moves_only_among_its_players() {
 }
 
 // A rearranged line holds by identity: pads keep their places while others
-// leave and arrive, a newcomer joins the end, and a line arranged with the
-// GamePad on the other device is dropped rather than misapplied.
+// leave and arrive -- one leaving leaves its place empty, nobody moving up --
+// a newcomer takes the first empty place, and the GamePad gone over to the
+// other device leaves its pad to join the players.
 void test_a_chosen_order_holds_while_pads_come_and_go() {
     const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};
     PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
@@ -182,10 +183,27 @@ void test_a_chosen_order_holds_while_pads_come_and_go() {
     const PadOrder order = ds::order_of(pads, lineup, true);
     CHECK(order.chosen);
 
-    // Controller 2 unplugged: the others keep their places and close up.
+    // Controller 2 unplugged: the others keep their places.
     const std::vector<KnownPad> fewer{pads[0], pads[2]};
     std::vector<PadSlot> got = slots(fewer, order, true);
     CHECK(got[0] == PadSlot::gamepad());
+    CHECK(got[1] == PadSlot::player_number(0));
+    // Player 1 unplugged instead: Player 2 stays Player 2, and a controller
+    // arriving is Player 1.
+    const std::vector<KnownPad> gap{pads[0], pads[1]};
+    PadLineup held = ds::line_up_pads(gap, order, true);
+    CHECK(held.players == std::vector<int>({-1, 1}));
+    got = ds::slots_of(gap, held);
+    CHECK(got[1] == PadSlot::player_number(1));
+    const PadOrder kept = ds::order_of(gap, held, true);
+    const std::vector<KnownPad> back{pads[0], pads[1], pad(true, 5, 77)};
+    got = slots(back, kept, true);
+    CHECK(got[1] == PadSlot::player_number(1));
+    CHECK(got[2] == PadSlot::player_number(0));
+    // The GamePad's controller gone: nobody moves up into it.
+    const std::vector<KnownPad> no_gamepad{pads[1], pads[2]};
+    got = slots(no_gamepad, order, true);
+    CHECK(got[0] == PadSlot::player_number(1));
     CHECK(got[1] == PadSlot::player_number(0));
 
     // A new controller joins at the end, and Steam's numbering moving around
@@ -200,9 +218,12 @@ void test_a_chosen_order_holds_while_pads_come_and_go() {
     CHECK(got[1] == PadSlot::player_number(1));
     CHECK(got[3] == PadSlot::player_number(2));
 
-    // The GamePad moved to the other device: back to the defaults.
+    // The GamePad moved to the other device: its pad is a player now, in
+    // the first empty place; the players stay.
     got = slots(pads, order, false);
-    CHECK(got[0] == PadSlot::player_number(0));
+    CHECK(got[2] == PadSlot::player_number(0));
+    CHECK(got[1] == PadSlot::player_number(1));
+    CHECK(got[0] == PadSlot::player_number(2));
 }
 
 // Each slot gets exactly its own pads' presses.
@@ -290,8 +311,8 @@ void test_the_controllers_screen_moves_a_pad_like_steam_does() {
 }  // namespace
 
 // A player's page choosing a controller puts it in that place, trading with
-// the one there; a GamePad with none takes it; and one taken out of play goes
-// to the top of Not used, the players after it moving up.
+// the one there; a GamePad with none takes it, leaving its place empty; and
+// one taken out of play goes to the top of Not used, its place left empty.
 void test_a_controller_chosen_for_a_place_trades_with_the_one_there() {
     const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};
     PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
@@ -308,15 +329,19 @@ void test_a_controller_chosen_for_a_place_trades_with_the_one_there() {
     CHECK_EQ(empty.gamepad, -1);
     CHECK(ds::put_in_slot(empty, 1, PadSlot::gamepad()));
     CHECK_EQ(empty.gamepad, 1);
-    CHECK(empty.players == std::vector<int>({0, 2}));
+    CHECK(empty.players == std::vector<int>({0, -1, 2}));
+    CHECK_EQ(ds::first_free_player(empty), 1);
 
     CHECK(ds::take_out_of_play(lineup, 2));
-    CHECK(lineup.players == std::vector<int>({0}));
+    CHECK(lineup.players == std::vector<int>({-1, 0}));
     CHECK(lineup.unused == std::vector<int>({2}));
-    // And one not used back in, trading with Player 1.
+    // And one not used back in, to the empty Player 1.
     CHECK(ds::put_in_slot(lineup, 2, PadSlot::player_number(0)));
+    CHECK(lineup.players == std::vector<int>({2, 0}));
+    CHECK(lineup.unused.empty());
+    // The last player out: no empty place after the rest.
+    CHECK(ds::take_out_of_play(lineup, 0));
     CHECK(lineup.players == std::vector<int>({2}));
-    CHECK(lineup.unused == std::vector<int>({0}));
     CHECK(!ds::take_out_of_play(lineup, 0));
 }
 

@@ -1170,6 +1170,10 @@ struct App::Impl {
     std::vector<PadSlot> current_pad_slots(const std::vector<KnownPad>& pads) const {
         return slots_of(pads, line_up_pads(pads, pad_order, holds_gamepad()));
     }
+    // A Wii U's line kept as it stands, every frame, so that a controller
+    // leaving leaves its place empty rather than the rest moving up -- and
+    // one arriving takes the first empty place -- as on a Wii U.
+    void keep_pad_order();
     // Whether the Wii U list is shown in place of "Playing on Cemu" -- see
     // LayoutPickerState::embedded.
     bool shows_embedded_menu() const;
@@ -2577,13 +2581,18 @@ void App::Impl::set_cemu_option(int index, int choice) {
     step_cemu_option(index, ((choice - at) % count + count) % count);
 }
 
+void App::Impl::keep_pad_order() {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    pad_order = order_of(pads, line_up_pads(pads, pad_order, holds_gamepad()), holds_gamepad());
+}
+
 void App::Impl::add_pad_as_player(const std::string& identity, int type) {
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
     PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
     const int pad = pad_index(pads, identity);
+    const int player = first_free_player(lineup);
     if (pad < 0 || !add_player(lineup, pad)) return;
     pad_order = order_of(pads, lineup, holds_gamepad());
-    const int player = static_cast<int>(lineup.players.size()) - 1;
     // Its type first, so the game is not shown it as something else.
     set_cemu_option(cemu_player_type_option(player), type);
     log_info("controllers: " + pad_label(pads[static_cast<std::size_t>(pad)]) + " was added as " +
@@ -3755,13 +3764,11 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                     open_wii_u_player(rows[static_cast<std::size_t>(result.controller_opened)].slot);
                 }
             } else if (result.controller_adding) {
-                // The player after the last, the same way.
+                // The first player with no controller, the same way.
                 if (!is_companion() && local_game()) {
-                    int players = 0;
-                    for (const ControllerRowView& row : picker->state().wii_u_controllers) {
-                        if (row.slot.kind == PadSlot::Kind::Player) ++players;
-                    }
-                    if (players < kWiiUPlayers) open_wii_u_player(PadSlot::player_number(players), true);
+                    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+                    const int player = first_free_player(line_up_pads(pads, pad_order, holds_gamepad()));
+                    if (player < kWiiUPlayers) open_wii_u_player(PadSlot::player_number(player), true);
                 }
             } else if (result.amiibo_chosen >= 0) {
                 // Chosen from the list, from either device: the host's files.
@@ -8036,6 +8043,7 @@ int App::run(const AppOptions& options) {
         const bool game_running = impl.state == Impl::State::Playing ||
                                   (impl.external_source && page_over_game);
         const bool pads_to_game = impl.state == Impl::State::Playing;
+        if (impl.system == SystemId::WiiU && !impl.is_companion() && impl.external_source) impl.keep_pad_order();
         // A controller the game was rumbling goes still under a menu, and
         // takes up again as the game has it when the menu goes.
         if (impl.rumble_quiet == pads_to_game) {

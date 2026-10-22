@@ -65,10 +65,33 @@ std::vector<int> default_order(const std::vector<KnownPad>& pads) {
 // Past Player 8 is Not used, at the top of it: the pads pushed off the end are
 // the ones nearest to it.
 void cap_players(PadLineup& lineup) {
-    if (static_cast<int>(lineup.players.size()) <= kPadPlayers) return;
-    lineup.unused.insert(lineup.unused.begin(), lineup.players.begin() + kPadPlayers,
-                         lineup.players.end());
-    lineup.players.resize(kPadPlayers);
+    if (static_cast<int>(lineup.players.size()) > kPadPlayers) {
+        std::vector<int> over;
+        for (auto it = lineup.players.begin() + kPadPlayers; it != lineup.players.end(); ++it) {
+            if (*it >= 0) over.push_back(*it);
+        }
+        lineup.unused.insert(lineup.unused.begin(), over.begin(), over.end());
+        lineup.players.resize(kPadPlayers);
+    }
+    // No empty places after the last player: only between players.
+    while (!lineup.players.empty() && lineup.players.back() < 0) lineup.players.pop_back();
+}
+
+}  // namespace
+
+int first_free_player(const PadLineup& lineup);
+
+namespace {
+
+// A pad joining the players: the first empty place, or after the last.
+void join_players(PadLineup& lineup, int pad) {
+    for (int& place : lineup.players) {
+        if (place < 0) {
+            place = pad;
+            return;
+        }
+    }
+    lineup.players.push_back(pad);
 }
 
 }  // namespace
@@ -79,8 +102,9 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
     const std::vector<int> natural = default_order(pads);
     std::vector<bool> placed(pads.size(), false);
 
-    if (order.chosen && order.gamepad_here == gamepad_here) {
+    if (order.chosen) {
         const auto find = [&](const std::string& identity) {
+            if (identity.empty()) return -1;
             for (const int index : natural) {
                 if (!placed[static_cast<std::size_t>(index)] &&
                     pad_identity(pads[static_cast<std::size_t>(index)]) == identity) {
@@ -90,11 +114,18 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
             }
             return -1;
         };
-        if (!order.gamepad.empty()) lineup.gamepad = find(order.gamepad);
-        for (const std::string& identity : order.players) {
-            const int index = find(identity);
-            if (index >= 0) lineup.players.push_back(index);
+        // The GamePad's, while it is on the device holding the GamePad: the
+        // GamePad gone over to the other device takes that one's instead.
+        for (const int index : natural) {
+            const KnownPad& pad = pads[static_cast<std::size_t>(index)];
+            if (!order.gamepad.empty() && pad_identity(pad) == order.gamepad &&
+                pad.on_this_device == gamepad_here) {
+                lineup.gamepad = find(order.gamepad);
+            }
         }
+        // A player whose controller has gone leaves its place empty: nobody
+        // moves up into it.
+        for (const std::string& identity : order.players) lineup.players.push_back(find(identity));
         for (const std::string& identity : order.unused) {
             const int index = find(identity);
             if (index >= 0) lineup.unused.push_back(index);
@@ -102,14 +133,16 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
     }
 
     // Whatever is not placed yet -- everything, with nothing chosen -- takes
-    // its default place.
+    // its default place: an empty GamePad, from the device holding it, or
+    // the first empty player.
+    cap_players(lineup);
     for (const int index : natural) {
         if (placed[static_cast<std::size_t>(index)]) continue;
         placed[static_cast<std::size_t>(index)] = true;
         if (lineup.gamepad < 0 && pads[static_cast<std::size_t>(index)].on_this_device == gamepad_here) {
             lineup.gamepad = index;
         } else {
-            lineup.players.push_back(index);
+            join_players(lineup, index);
         }
     }
     cap_players(lineup);
@@ -122,7 +155,7 @@ PadOrder order_of(const std::vector<KnownPad>& pads, const PadLineup& lineup, bo
     order.gamepad_here = gamepad_here;
     const auto identity = [&](int index) { return pad_identity(pads[static_cast<std::size_t>(index)]); };
     if (lineup.gamepad >= 0) order.gamepad = identity(lineup.gamepad);
-    for (const int index : lineup.players) order.players.push_back(identity(index));
+    for (const int index : lineup.players) order.players.push_back(index >= 0 ? identity(index) : std::string());
     for (const int index : lineup.unused) order.unused.push_back(identity(index));
     return order;
 }
@@ -136,6 +169,7 @@ bool move_among_players(PadLineup& lineup, int pad, int direction) {
     const std::ptrdiff_t to = at + (direction < 0 ? -1 : 1);
     if (to < 0 || to >= static_cast<std::ptrdiff_t>(players.size())) return false;
     std::swap(players[static_cast<std::size_t>(at)], players[static_cast<std::size_t>(to)]);
+    cap_players(lineup);
     return true;
 }
 
@@ -143,11 +177,11 @@ bool add_player(PadLineup& lineup, int pad) {
     if (pad < 0) return false;
     std::vector<int>& players = lineup.players;
     const auto in_players = std::find(players.begin(), players.end(), pad);
-    if (in_players == players.end() && static_cast<int>(players.size()) >= kPadPlayers) return false;
+    if (in_players != players.end()) return false;
+    if (first_free_player(lineup) >= kPadPlayers) return false;
     if (lineup.gamepad == pad) lineup.gamepad = -1;
-    if (in_players != players.end()) players.erase(in_players);
     lineup.unused.erase(std::remove(lineup.unused.begin(), lineup.unused.end(), pad), lineup.unused.end());
-    players.push_back(pad);
+    join_players(lineup, pad);
     return true;
 }
 
@@ -252,17 +286,15 @@ bool put_in_slot(PadLineup& lineup, int pad, PadSlot slot) {
         std::swap(*from, *to);
         return true;
     }
-    // An empty GamePad: the pad leaves its place, and the line closes up.
+    // An empty place: the pad leaves its own empty -- a player's is not
+    // closed up -- or, from Not used, leaves it.
     *to = pad;
-    if (from == &lineup.gamepad) {
-        lineup.gamepad = -1;
+    if (from >= lineup.unused.data() && from < lineup.unused.data() + lineup.unused.size()) {
+        lineup.unused.erase(lineup.unused.begin() + (from - lineup.unused.data()));
     } else {
-        std::vector<int>& list =
-            (from >= lineup.players.data() && from < lineup.players.data() + lineup.players.size())
-                ? lineup.players
-                : lineup.unused;
-        list.erase(list.begin() + (from - list.data()));
+        *from = -1;
     }
+    cap_players(lineup);
     return true;
 }
 
@@ -273,16 +305,25 @@ bool take_out_of_play(PadLineup& lineup, int pad) {
     } else {
         const auto at = std::find(lineup.players.begin(), lineup.players.end(), pad);
         if (at == lineup.players.end()) return false;
-        lineup.players.erase(at);
+        *at = -1;
+        cap_players(lineup);
     }
     lineup.unused.insert(lineup.unused.begin(), pad);
     return true;
+}
+
+int first_free_player(const PadLineup& lineup) {
+    for (std::size_t index = 0; index < lineup.players.size(); ++index) {
+        if (lineup.players[index] < 0) return static_cast<int>(index);
+    }
+    return static_cast<int>(lineup.players.size());
 }
 
 std::vector<LineupRow> lineup_rows(const PadLineup& lineup) {
     std::vector<LineupRow> rows;
     rows.push_back(LineupRow{PadSlot::gamepad(), lineup.gamepad});
     for (std::size_t index = 0; index < lineup.players.size(); ++index) {
+        if (lineup.players[index] < 0) continue;
         rows.push_back(LineupRow{PadSlot::player_number(static_cast<int>(index)),
                                  lineup.players[index]});
     }

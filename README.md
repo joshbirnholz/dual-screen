@@ -576,8 +576,10 @@ or with a Nunchuk to its left, or a Classic Controller Pro -- the way
 the back of a Wii U game's box shows them, and the same pictures are beside
 each choice of Controller Type. A Switch Lite has no rumble motor, so its own controls cannot buzz. It all
 works mid-game and from either device's buttons, and lasts until the app
-closes: a controller is recognised for as long as it stays connected, so one
-that is unplugged and plugged back in joins the end of the line.
+closes: a controller is recognised for as long as it stays connected. As on
+a Wii U, one leaving leaves its place empty -- Players 1 and 3 can play with
+no Player 2, and a GamePad whose device has gone has no controller -- and
+nobody moves up into it: a controller arriving takes the first empty place.
 
 A player's rumble goes to its controller, on whichever device it is on. A
 companion older than this needs updating to have its controllers counted one
