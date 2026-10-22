@@ -361,6 +361,14 @@ public:
 
     bool broken() const { return broken_; }
 
+    // Whether a picture has reached the Surface yet. A broken one says yes,
+    // so the draw that follows fails and is counted as failing.
+    bool has_picture() {
+        if (broken_) return true;
+        latch(latched_pts_, 0);
+        return broken_ || latched_pts_ >= 0;
+    }
+
     // Draws what is latched into an ordinary RGBA texture of `width` x
     // `height`, leaving the GL state as it found it.
     bool draw_into(GLuint target, int width, int height) {
@@ -535,6 +543,7 @@ public:
     bool draw_into(unsigned texture, int width, int height) override {
         return output_->draw_into(texture, width, height);
     }
+    bool ready() override { return output_->has_picture(); }
 
 private:
     std::shared_ptr<SurfaceOutput> output_;

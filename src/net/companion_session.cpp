@@ -2923,6 +2923,16 @@ const ScreenTextures& CompanionSession::screens() {
                 buffer->gpu != nullptr) {
                 // Already on the GPU: drawn by the decoder into this texture,
                 // nothing copied -- see DecodedFrame::gpu.
+                //
+                // Not until the picture has reached the decoder's Surface.
+                // Drawn before then, the texture held nothing and the picture
+                // counted as shown, so a still one -- the one frame a host
+                // with its menu up sends someone joining -- stayed black, and
+                // the menu's backdrop was taken from that. Left stale, it is
+                // tried again next frame.
+                if (!buffer->gpu->ready()) {
+                    continue;
+                }
                 buffer->texture.allocate_rgba(buffer->width, buffer->height);
                 if (!buffer->gpu->draw_into(buffer->texture.id(), buffer->width,
                                             buffer->height)) {
