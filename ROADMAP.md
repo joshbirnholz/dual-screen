@@ -19,10 +19,9 @@ numbers can change freely.
   page on both devices, and the right stick's row last (C-Stick, Circle Pad,
   D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Wii U
   games have the same page per player and the GamePad, as Edit Button
-  Mapping on the player's page. Still to
+  Mapping on the player's page, beside Motion and Rumble switches. Still to
   do, in this order, from the mockups
   (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - Wii U: Motion and Rumble rows on the player's page.
   - Mapping profiles for DS, 3DS and each Wii U controller type, saved and
     loaded from the mapping page on the − button (Y is turbo); loading one
     copies it into the game.

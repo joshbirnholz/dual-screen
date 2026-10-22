@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "config/paths.hpp"
@@ -69,6 +70,10 @@ struct GameConfig {
     // A Wii U game's mapping for the GamePad and for each player as each
     // controller, by wii_u_mapping_key(). One never changed is not kept.
     std::map<std::string, WiiUMapping> wii_u_mappings;
+    // The GamePad and players, by wii_u_slot_key(), whose motion or rumble
+    // this game has off; the rest have it on.
+    std::set<std::string> wii_u_motion_off;
+    std::set<std::string> wii_u_rumble_off;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

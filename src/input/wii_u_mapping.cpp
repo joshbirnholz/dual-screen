@@ -20,6 +20,10 @@ WiiUController wii_u_controller_for(const std::string& type) {
     return WiiUController::Pro;
 }
 
+std::string wii_u_slot_key(int player) {
+    return player < 0 ? std::string("gamepad") : "player" + std::to_string(player + 1);
+}
+
 std::string wii_u_mapping_key(int player, WiiUController controller) {
     if (player < 0 || controller == WiiUController::GamePad) return "gamepad";
     return "player" + std::to_string(player + 1) + "." + wii_u_controller_key(controller);

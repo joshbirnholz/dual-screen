@@ -861,6 +861,7 @@ void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<
     put_u8(out, message.adding ? 1u : 0u);
     put_u8(out, message.pending_type);
     put_string(out, message.pending_pad.substr(0, 255));
+    put_u8(out, static_cast<uint8_t>((message.motion ? 1u : 0u) | (message.rumble ? 2u : 0u)));
     finish_message(out, start, MessageType::WiiUPlayerView);
 }
 
@@ -883,6 +884,11 @@ bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerV
     reader.u8(view.pending_type);
     reader.string(view.pending_pad);
     if (!reader.ok() || kind > 2) return false;
+    // Motion and Rumble, from a host new enough to have them.
+    uint8_t switches = 3;
+    if (reader.remaining() >= 1) reader.u8(switches);
+    view.motion = (switches & 1u) != 0;
+    view.rumble = (switches & 2u) != 0;
     view.adding = adding != 0;
     view.open = open != 0;
     view.slot.kind = static_cast<PadSlot::Kind>(kind);

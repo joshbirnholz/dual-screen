@@ -168,6 +168,15 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
             config.wii_u_mappings[key] = mapping;
         }
     }
+    for (auto [name, kept] : {std::make_pair("wii_u_motion_off", &config.wii_u_motion_off),
+                              std::make_pair("wii_u_rumble_off", &config.wii_u_rumble_off)}) {
+        kept->clear();
+        const auto found = document.find(name);
+        if (found == document.end() || !found->is_array()) continue;
+        for (const auto& slot : *found) {
+            if (slot.is_string()) kept->insert(slot.get<std::string>());
+        }
+    }
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -252,6 +261,10 @@ bool GameConfig::save(const AppPaths& paths) const {
         }
         document["wii_u_mappings"][key] = kept;
     }
+    document["wii_u_motion_off"] = json::array();
+    for (const std::string& slot : wii_u_motion_off) document["wii_u_motion_off"].push_back(slot);
+    document["wii_u_rumble_off"] = json::array();
+    for (const std::string& slot : wii_u_rumble_off) document["wii_u_rumble_off"].push_back(slot);
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

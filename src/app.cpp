@@ -1245,6 +1245,11 @@ struct App::Impl {
     // game's mapping for it -- the standard one where none is kept.
     WiiUController wii_u_controller_of(int player) const;
     const WiiUMapping& wii_u_mapping_of(int player) const;
+    // Motion and Rumble on a Wii U game's GamePad (`player` -1) or player:
+    // whether this game has them on, and switching them.
+    bool wii_u_motion_on(int player) const;
+    bool wii_u_rumble_on(int player) const;
+    void set_wii_u_switch(std::set<std::string>& off, int player, bool on, const char* what);
     // The GamePad's buttons this frame, through its mapping -- see
     // route_wii_u_pads().
     uint32_t wii_u_gamepad_buttons = 0;
@@ -2136,8 +2141,10 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
         for (int player = 0; player < kPadPlayers; ++player) {
             const uint32_t buttons = wii_u_buttons(routed.player_controls[player], wii_u_mapping_of(player),
                                                    wii_u_controller_of(player), now_ms);
-            external_source->submit_player_input(player, routed.player_fed[player], routed.players[player],
-                                                 buttons);
+            // How it is held, unless this game has the player's motion off.
+            DsInputState held = routed.players[player];
+            if (!wii_u_motion_on(player)) held.motion.present = false;
+            external_source->submit_player_input(player, routed.player_fed[player], held, buttons);
         }
     }
     // A player with a controller is never a Classic Controller alone -- see
@@ -2200,6 +2207,11 @@ const WiiUMapping& App::Impl::wii_u_mapping_of(int player) const {
 }
 
 int App::Impl::rumble_strength(PadSlot slot) const {
+    // Off for the player, or the GamePad, in this game.
+    if (system == SystemId::WiiU && (slot.kind == PadSlot::Kind::Player || slot.kind == PadSlot::Kind::GamePad) &&
+        !wii_u_rumble_on(slot.kind == PadSlot::Kind::Player ? slot.player : -1)) {
+        return 0;
+    }
     if (slot.kind != PadSlot::Kind::Player) return 100;
     const int option = cemu_player_type_option(slot.player);
     if (option < 0) return 100;
@@ -2402,6 +2414,29 @@ void App::Impl::show_wii_u_player(WiiUPlayerScreen& screen) const {
         }
     }
     screen.set_controllers(wii_u_controller_rows(), std::move(types), current);
+    const int player = screen.slot().kind == PadSlot::Kind::Player ? screen.slot().player : -1;
+    screen.set_switches(wii_u_motion_on(player), wii_u_rumble_on(player));
+}
+
+bool App::Impl::wii_u_motion_on(int player) const {
+    return !have_game_config || game_config.wii_u_motion_off.count(wii_u_slot_key(player)) == 0;
+}
+
+bool App::Impl::wii_u_rumble_on(int player) const {
+    return !have_game_config || game_config.wii_u_rumble_off.count(wii_u_slot_key(player)) == 0;
+}
+
+void App::Impl::set_wii_u_switch(std::set<std::string>& off, int player, bool on, const char* what) {
+    if (!have_game_config) return;
+    const std::string key = wii_u_slot_key(player);
+    if (on) {
+        off.erase(key);
+    } else {
+        off.insert(key);
+    }
+    if (!game_config.save(paths)) log_warn("could not save this game's controller settings");
+    log_info(std::string(what) + " for " + pad_slot_name(player < 0 ? PadSlot::gamepad() : PadSlot::player_number(player)) +
+             (on ? " is on" : " is off"));
 }
 
 void App::Impl::open_wii_u_player(PadSlot slot, bool adding, const std::string& pad) {
@@ -2460,6 +2495,12 @@ void App::Impl::update_wii_u_player_screen(const std::vector<UiAction>& actions,
     if (result.edit_mapping) {
         open_wii_u_mapping();
         return;
+    }
+    const int page_player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
+    if (result.motion) set_wii_u_switch(game_config.wii_u_motion_off, page_player, *result.motion, "motion");
+    if (result.rumble) {
+        set_wii_u_switch(game_config.wii_u_rumble_off, page_player, *result.rumble, "rumble");
+        apply_pad_rumble();
     }
     if (result.added && result.controller_chosen) {
         add_pad_as_player(*result.controller_chosen, result.type_chosen);
@@ -8360,6 +8401,9 @@ int App::run(const AppOptions& options) {
                         log_info("how this device is being held is reaching the game beside it too");
                     }
                     if (wii_u_routed) {
+                        // How the GamePad is held, unless this game has its
+                        // motion off.
+                        if (!impl.wii_u_motion_on(-1)) combined.motion.present = false;
                         impl.external_source->submit_input(combined, impl.wii_u_gamepad_buttons);
                     } else {
                         impl.external_source->submit_input(combined);

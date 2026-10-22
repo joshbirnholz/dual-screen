@@ -430,7 +430,8 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.set_controllers(controller_rows(), types, 0);
     CHECK(page.title() == "Player 1");
     const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
-                                                   WiiUPlayerScreen::Row::Mapping, WiiUPlayerScreen::Row::Remove};
+                                                   WiiUPlayerScreen::Row::Mapping, WiiUPlayerScreen::Row::Motion,
+                                                   WiiUPlayerScreen::Row::Rumble, WiiUPlayerScreen::Row::Remove};
     CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
@@ -475,6 +476,19 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.edit_mapping && page.is_open() && !page.choosing());
 
+    // Motion and Rumble: switched by A, on as they start.
+    CHECK(page.motion() && page.rumble());
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.motion && !*result.motion && !result.rumble && !page.motion());
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.rumble && !*result.rumble && !result.motion && !page.rumble());
+    // The caller says what the game has, and that is what is shown.
+    page.set_switches(true, false);
+    CHECK(page.motion() && !page.rumble());
+    CHECK(ds::wii_u_player_view_of(page).motion && !ds::wii_u_player_view_of(page).rumble);
+
     // Remove Player: out of play, and the page with it.
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
@@ -484,16 +498,15 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     gamepad.open(PadSlot::gamepad());
     gamepad.set_controllers(controller_rows(), types, 0);
     CHECK(gamepad.title() == "GamePad");
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(3));
-    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
-    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(5));
+    for (int step = 0; step < 4; ++step) gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
     result = gamepad.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && !result.close_requested && gamepad.is_open());
     // With none there, nothing to remove.
     std::vector<ds::ControllerRowView> empty = controller_rows();
     empty[0].pad.clear();
     gamepad.set_controllers(empty, types, 0);
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(2));
+    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(4));
 }
 
 // Add Controller's page: the new player's type, what the game had it as
