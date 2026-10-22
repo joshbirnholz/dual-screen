@@ -420,7 +420,16 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             const std::string value = type >= 0 && type < static_cast<int>(types_.size())
                                           ? wii_u_type_name(types_[static_cast<std::size_t>(type)])
                                           : std::string();
-            text.draw(quads, value, right, baseline, row_scale, theme.text_dim, TextAlign::Right);
+            // Drawn as well, at the end of the row, as it is in the list.
+            float value_right = right;
+            if (icons && !value.empty()) {
+                const float size = std::round(row.h * 0.8f);
+                draw_ui_icon(quads, icons_, wii_u_type_icon(types_[static_cast<std::size_t>(type)]),
+                             PixelRect{right - size, std::round(row.y + (row.h - size) * 0.5f), size, size},
+                             theme.text_dim);
+                value_right -= size + std::round(line * 0.4f);
+            }
+            text.draw(quads, value, value_right, baseline, row_scale, theme.text_dim, TextAlign::Right);
             continue;
         }
         text.draw(quads, "Controller", row.x + pad, baseline, row_scale, menu_row_text(focused));
