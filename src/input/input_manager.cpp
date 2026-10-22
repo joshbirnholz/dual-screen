@@ -329,7 +329,20 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
         }
         return std::chrono::steady_clock::now() >= steam_settled_at_ || !launched_by_steam();
     }
-    if (handle_of == nullptr || handle_of(it->second) != 0) {
+    if (handle_of == nullptr) {
+        return true;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (handle_of(it->second) != 0) {
+        steam_handle_seen_[id] = now;
+        return true;
+    }
+    // While another controller connects, Steam takes every pad's handle away
+    // for a second or so and gives it back: one that had a handle a moment
+    // ago is still that controller, not a slot left empty, so it does not
+    // drop out of the game and come back.
+    const auto seen = steam_handle_seen_.find(id);
+    if (seen != steam_handle_seen_.end() && now - seen->second < std::chrono::seconds(3)) {
         return true;
     }
     for (const auto& [other_id, other] : controllers_) {

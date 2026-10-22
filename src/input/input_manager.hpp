@@ -400,6 +400,10 @@ private:
     // When a pad that has just arrived may be read directly, if Steam has
     // presented none of its own by then -- see pad_connected().
     std::chrono::steady_clock::time_point steam_settled_at_{};
+    // When each of Steam's pads was last seen with a Steam handle -- see
+    // pad_connected(): a controller connecting has Steam take the others'
+    // away for a moment, and they are not gone for it.
+    mutable std::map<SDL_JoystickID, std::chrono::steady_clock::time_point> steam_handle_seen_;
     // See single_joycon_in_use(). -1 until anything is pressed.
     SDL_JoystickID last_pad_pressed_ = -1;
     MotionReader motion_;
