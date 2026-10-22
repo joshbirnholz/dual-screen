@@ -23,7 +23,9 @@ numbers can change freely.
   - Wii U: each player's Edit Button Mapping, Motion and Rumble rows, on
     the player's page (Controls lists the GamePad and the players, with
     + Add Controller; A opens a page with Controller Type, Controller and
-    Remove, Y detects; in Controls X identifies, Y moves a player). Josh's
+    Remove, Y detects; in Controls X identifies, Y moves a player). Wii
+    Remote + Classic Controller maps the remote's buttons as well as the
+    Classic Controller's: most games ignore them, but some read them. Josh's
     eleven Controls fixes of 2026-10-22 are in, untested on hardware.
   - Mapping profiles (on hold, Josh 2026-10-21), saved and loaded from the
     page; loading one copies it into the game. The mockups open them with Y,

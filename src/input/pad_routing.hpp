@@ -87,6 +87,31 @@ inline std::string wii_u_type_name(const std::string& cemu) {
     return cemu == "Pro Controller" ? std::string("Wii U Pro Controller") : cemu;
 }
 
+// Whether a player can be Cemu's type `cemu`: not None, which is no player
+// at all, nor a Classic Controller alone, which a Wii U never sees -- one is
+// always plugged into a Wii Remote, and a game can read the remote's
+// buttons too, so it is Wii Remote + Classic Controller.
+inline bool offered_type(const std::string& cemu) {
+    return cemu != "None" && cemu != "Classic Controller";
+}
+
+// What a player Cemu has as `cemu` is made instead, where it is not
+// offered_type(): the index among `choices` of Wii Remote + Classic
+// Controller for a Classic Controller, or of the first offered -- or -1
+// where it is offered, or nothing is.
+inline int offered_instead(const std::string& cemu, const std::vector<std::string>& choices) {
+    if (offered_type(cemu)) return -1;
+    if (cemu == "Classic Controller") {
+        for (std::size_t index = 0; index < choices.size(); ++index) {
+            if (choices[index] == "Wii Remote + Classic Controller") return static_cast<int>(index);
+        }
+    }
+    for (std::size_t index = 0; index < choices.size(); ++index) {
+        if (offered_type(choices[index])) return static_cast<int>(index);
+    }
+    return -1;
+}
+
 // One controller somewhere in the session.
 //
 // Never known by its name. The name Steam hands SDL for a virtual pad is

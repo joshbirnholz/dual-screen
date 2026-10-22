@@ -2097,18 +2097,19 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
                                                  routed.players[player]);
         }
     }
-    // A player with a controller is never None to the game: one this game
-    // has never had is a Pro Controller, and is kept as one -- every other
-    // keeps what the game had it as last.
+    // A player with a controller is never None to the game, nor a Classic
+    // Controller alone -- see offered_type(): one this game has never had
+    // is a Pro Controller, a Classic Controller is one plugged into a Wii
+    // Remote, and either is kept as that -- every other keeps what the game
+    // had it as last.
     for (int player = 0; player < kPadPlayers; ++player) {
         if (!routed.player_fed[player]) continue;
         const int option = cemu_player_type_option(player);
         if (option < 0) continue;
         const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
-        if (type.active >= 0 && type.active < static_cast<int>(type.choices.size()) &&
-            type.choices[static_cast<std::size_t>(type.active)] == "None") {
-            set_cemu_option(option, 0);
-        }
+        if (type.active < 0 || type.active >= static_cast<int>(type.choices.size())) continue;
+        const int instead = offered_instead(type.choices[static_cast<std::size_t>(type.active)], type.choices);
+        if (instead >= 0) set_cemu_option(option, instead);
     }
 
     // The GamePad's buttons are its pads'; its screen is the device showing

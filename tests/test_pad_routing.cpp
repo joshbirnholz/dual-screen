@@ -365,7 +365,8 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
-    // Controller Type: five of Cemu's six, on the one it is.
+    // Controller Type: four of Cemu's six -- not None, nor a Classic
+    // Controller alone -- on the one it is.
     page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(page.choosing());
     CHECK_EQ(page.choice_focus(), 0);
@@ -373,7 +374,7 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK_EQ(result.type_chosen, 3);
+    CHECK_EQ(result.type_chosen, 4);
     CHECK(!page.choosing());
 
     // Controller: on the one it is, past its device's name -- which is
@@ -445,7 +446,7 @@ void test_a_new_players_page_says_what_it_will_be_first() {
     page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.type_chosen == -1 && page.pending_type() == 1);
+    CHECK(result.type_chosen == -1 && page.pending_type() == 2);
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     for (int step = 0; step < 8; ++step) page.update({UiAction::Down}, {}, kWidth, kHeight);
@@ -459,7 +460,7 @@ void test_a_new_players_page_says_what_it_will_be_first() {
 
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.added && result.close_requested && result.type_chosen == 1);
+    CHECK(result.added && result.close_requested && result.type_chosen == 2);
     CHECK(result.controller_chosen && *result.controller_chosen == "companion#2");
 
     // Nothing to add with no controller.
@@ -472,6 +473,16 @@ void test_a_new_players_page_says_what_it_will_be_first() {
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(!result.added && page.is_open());
+
+    // A Classic Controller alone is one plugged into a Wii Remote; None is
+    // the first there is.
+    CHECK(!ds::offered_type("Classic Controller") && !ds::offered_type("None") && ds::offered_type("Wii Remote"));
+    CHECK_EQ(ds::offered_instead("Classic Controller", types), 4);
+    CHECK_EQ(ds::offered_instead("None", types), 0);
+    CHECK_EQ(ds::offered_instead("Wii Remote", types), -1);
+    page.open_adding(PadSlot::player_number(1));
+    page.set_controllers(controller_rows(), types, 1);
+    CHECK_EQ(page.pending_type(), 0);
 
     // A pad made a player after the last, from wherever it was.
     const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2)};

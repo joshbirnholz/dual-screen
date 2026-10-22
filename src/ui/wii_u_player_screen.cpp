@@ -53,7 +53,7 @@ void WiiUPlayerScreen::set_controllers(const std::vector<ControllerRowView>& con
         // never None.
         const auto none = [&](int type) {
             return type < 0 || type >= static_cast<int>(types_.size()) ||
-                   types_[static_cast<std::size_t>(type)] == "None";
+                   !offered_type(types_[static_cast<std::size_t>(type)]);
         };
         if (none(pending_type_)) pending_type_ = none(type_current_) ? (types_.empty() ? -1 : 0) : type_current_;
         // The controller chosen, while it is still here; otherwise the
@@ -144,13 +144,15 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
     choice_pads_.clear();
     std::vector<std::string> labels;
     if (focused_row() == Row::Type) {
-        // Cemu's, but for None: a player with no controller is one taken out
-        // of play, which is Remove Player's.
+        // Cemu's, but for None -- a player with no controller is one taken
+        // out of play, which is Remove Player's -- and a Classic Controller
+        // alone, which a Wii U never sees: one is always plugged into a Wii
+        // Remote, which is Wii Remote + Classic Controller.
         int current = 0;
         const int now = adding_ ? pending_type_ : type_current_;
         std::vector<UiIcon> icons;
         for (std::size_t index = 0; index < types_.size(); ++index) {
-            if (types_[index] == "None") continue;
+            if (!offered_type(types_[index])) continue;
             if (static_cast<int>(index) == now) current = static_cast<int>(labels.size());
             labels.push_back(wii_u_type_name(types_[index]));
             icons.push_back(wii_u_type_icon(types_[index]));
