@@ -1710,17 +1710,19 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const UiTheme& theme = ui_theme();
     const float line = TextRenderer::line_height(scale);
     const float pad = menu_row_pad(line);
-    // A controller in hand is drawn lifted: filled in the accent colour, so
-    // moving it is plainly a different thing from moving the cursor.
+    // A controller in hand is drawn lifted: white, the shape a row takes
+    // under a finger, its words in the accent colour -- so moving it is
+    // plainly a different thing from moving the cursor.
     const bool lifted = focused && moving_controller();
     if (lifted) {
-        quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)), theme.accent);
+        quads.draw_rounded_rect(menu_row_outline(row, scale), std::round(scale * 1.5f),
+                                Color{0.97f, 0.97f, 0.98f, 1.0f});
     } else {
         const int count = static_cast<int>(rows().size());
         draw_menu_row(quads, row, focused, scale, index + 1 == count, on_content_ && index == item_ + 1);
     }
-    const Color ink = lifted ? theme.background : menu_row_text(focused);
-    const Color dim = lifted ? theme.panel : theme.text_dim;
+    const Color ink = lifted ? theme.accent : menu_row_text(focused);
+    const Color dim = lifted ? theme.accent : theme.text_dim;
 
     // The GamePad or the player's lights, in a column of their own; a
     // controller not used has no place, and nothing there.
@@ -1738,10 +1740,17 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const float right = row.x + row.w - pad;
     text.draw(quads, view.place, right, std::round(centre_y - TextRenderer::line_height(place_scale) * 0.5f),
               place_scale, dim, TextAlign::Right);
-    const float name_x = row.x + pad + slot.width + pad;
+    float name_x = row.x + pad + slot.width + pad;
+    const float name_scale = scale * 1.1f;
+    // Up and down before the name of one in hand: it moves along the line.
+    if (lifted && load_ui_icons(ui_icons_, ui_icons_tried_)) {
+        const float size = std::round(TextRenderer::line_height(name_scale) * 1.1f);
+        draw_ui_icon(quads, ui_icons_, UiIcon::Reorder,
+                     PixelRect{name_x, std::round(centre_y - size * 0.5f), size, size}, ink);
+        name_x += size + std::round(line * 0.3f);
+    }
     const float room =
         std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
-    const float name_scale = scale * 1.1f;
     const std::string name = view.pad.empty() ? std::string("No Controller") : view.name;
     const Color& name_ink = view.pad.empty() ? dim : ink;
     text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x,

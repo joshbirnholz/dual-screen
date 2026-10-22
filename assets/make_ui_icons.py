@@ -180,6 +180,13 @@ def in_action(name, x, y):
                 near_segment(x, y, 11, 10, 12.5, 30) <= half or
                 near_segment(x, y, 12.5, 30, 23.5, 30) <= half or
                 near_segment(x, y, 23.5, 30, 25, 10) <= half)
+    if name == "reorder":
+        # Up and down, one triangle over the other with a gap between: what
+        # can be moved up and down the line.
+        width_at = lambda depth: 7.5 * depth / 14.0
+        up = 2 <= y <= 16 and abs(x - 18) <= width_at(y - 2)
+        down = 20 <= y <= 34 and abs(x - 18) <= width_at(34 - y)
+        return up or down
     sys.exit("unknown icon " + name)
 
 
@@ -298,6 +305,7 @@ def main():
     # square rather than the band: a Wii Remote stands up.
     cells += [render_device(name, band=0.96) for name in
               ["wiiu_pro", "wii_classic", "wii_remote", "wii_remote_nunchuk", "wii_classic"]]
+    cells += [render_action("reorder")]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):

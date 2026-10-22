@@ -32,6 +32,8 @@ enum class UiIcon {
     WiiRemote,
     WiiRemoteNunchuk,
     WiiRemoteClassic,
+    // A controller picked up, to be moved up or down the line.
+    Reorder,
     Count
 };
 
