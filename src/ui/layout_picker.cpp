@@ -1935,7 +1935,19 @@ void LayoutPicker::render(QuadRenderer& quads,
                 guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             }
             // A tile is tapped directly, so this names a button nobody has.
-            guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+            // A Wii U's player or GamePad opens its page, which says so; a
+            // controller not used has none.
+            const char* confirm = "OK";
+            if (controller != nullptr) {
+                if (controller->slot.kind == PadSlot::Kind::GamePad) {
+                    confirm = "Edit GamePad";
+                } else if (controller->slot.kind == PadSlot::Kind::Player) {
+                    confirm = "Edit Player";
+                } else {
+                    confirm = nullptr;
+                }
+            }
+            if (confirm != nullptr) guide.push_back({ButtonGlyph::A, confirm, PromptRole::ActsOnSelection});
         }
     }
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
