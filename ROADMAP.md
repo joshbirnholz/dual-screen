@@ -21,10 +21,10 @@ numbers can change freely.
   do, in this order, from the mockups
   (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
   - Wii U: each player's Edit Button Mapping, Motion and Rumble rows, on
-    the player's page (Controls lists every controller, A opens its page
-    with Controller Type and Controller and Detect Controller, X
-    identifies, Y moves it). The player-type fix is the Cemu fork's PR
-    #5, to be tried.
+    the player's page (Controls lists the GamePad and the players, with
+    + Add Controller; A opens a page with Controller Type, Controller and
+    Remove, Y detects; in Controls X identifies, Y moves a player). Josh's
+    eleven Controls fixes of 2026-10-22 are in, untested on hardware.
   - Mapping profiles (on hold, Josh 2026-10-21), saved and loaded from the
     page; loading one copies it into the game. The mockups open them with Y,
     which now toggles turbo: they need another button.
