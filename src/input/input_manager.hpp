@@ -404,6 +404,13 @@ private:
     bool left_stick_is_mic_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
+    // Pads not yet seen at rest -- sticks centred, d-pad up -- since they
+    // arrived, which do not move a menu until they have been: one that
+    // connects reporting a stick pushed or a direction held, and keeps
+    // reporting it, would otherwise send the cursor that way for as long as
+    // it is connected. See emit_navigation_from_axes().
+    std::set<SDL_JoystickID> unrested_pads_;
+    std::set<SDL_JoystickID> said_unrested_pads_;
     // When a pad that has just arrived may be read directly, if Steam has
     // presented none of its own by then -- see pad_connected().
     std::chrono::steady_clock::time_point steam_settled_at_{};

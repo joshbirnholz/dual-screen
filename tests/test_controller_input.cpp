@@ -1195,6 +1195,49 @@ void test_only_the_device_showing_the_gamepad_controls_it() {
     CHECK(shared.motion.gyro_y == 2.0f);
 }
 
+// A pad that arrives with its stick pushed -- and stays so, as one reporting
+// an axis it does not have can -- does not move a menu, until it has been seen
+// centred once; after that it does as any other.
+void test_a_pad_arriving_pushed_does_not_move_the_menu() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        CHECK_MSG(false, "could not attach a virtual pad");
+        return;
+    }
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_LEFTY, -32768);
+    SDL_GameControllerUpdate();
+    InputManager input;
+    input.initialize(Settings());
+    int ups = 0;
+    const auto frame = [&]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::Up) ++ups;
+        }
+    };
+    const uint32_t started = SDL_GetTicks();
+    while (SDL_GetTicks() - started < 600) {
+        frame();
+        SDL_Delay(10);
+    }
+    CHECK_MSG(ups == 0, "a pad that arrived pushed moved the menu: " + std::to_string(ups));
+    // Let go, then pushed: a step.
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_LEFTY, 0);
+    SDL_GameControllerUpdate();
+    frame();
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_LEFTY, -32768);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK_MSG(ups == 1, "a pad let go and pushed again did not move the menu: " + std::to_string(ups));
+    pad.detach();
+}
+
 // Holding a direction keeps moving through a menu: one step for the press,
 // nothing more for a moment -- so a single press is a single step -- and then
 // a steady run until it is let go.
@@ -1220,6 +1263,9 @@ void test_holding_a_direction_keeps_moving() {
         }
     };
 
+    // The pad seen at rest first, as one is that connects before it is
+    // used: one arriving with a direction held does not move a menu.
+    for (int index = 0; index < 5; ++index) frame();
     pad.press(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true);
     const uint32_t pressed = SDL_GetTicks();
     while (SDL_GetTicks() - pressed < 300) {
@@ -1492,6 +1538,7 @@ int main() {
     test_each_pad_is_read_on_its_own_in_order();
     test_a_touch_point_touches_and_turbo_repeats();
     test_holding_a_direction_keeps_moving();
+    test_a_pad_arriving_pushed_does_not_move_the_menu();
     test_steam_input_pads_are_read_as_steam_presents_them();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();

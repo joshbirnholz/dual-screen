@@ -464,6 +464,7 @@ void InputManager::open_controller(int device_index) {
         return;
     }
     controllers_[id] = controller;
+    unrested_pads_.insert(id);
     // A pad arriving -- or Steam's arriving -- gives Steam a moment to say
     // which of its pads is which before a pad it may be presenting is read
     // directly. See pad_connected().
@@ -567,6 +568,8 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
         SDL_GameControllerClose(it->second);
     }
     controllers_.erase(it);
+    unrested_pads_.erase(instance_id);
+    said_unrested_pads_.erase(instance_id);
     log_info("controller disconnected");
 }
 
@@ -1187,13 +1190,52 @@ void InputManager::emit_navigation_from_axes() {
     const SDL_GameControllerAxis sticks[2][2] = {
         {SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY},
         {SDL_CONTROLLER_AXIS_RIGHTX, SDL_CONTROLLER_AXIS_RIGHTY}};
+    const SDL_GameControllerButton dpad[4] = {
+        SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+        SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT};
+    // A pad only moves a menu once it has been seen at rest -- see
+    // unrested_pads_.
+    for (auto pad = unrested_pads_.begin(); pad != unrested_pads_.end();) {
+        const auto found = controllers_.find(*pad);
+        if (found == controllers_.end() || found->second == nullptr) {
+            pad = unrested_pads_.erase(pad);
+            continue;
+        }
+        bool rest = true;
+        for (const auto& stick : sticks) {
+            for (const SDL_GameControllerAxis axis : stick) {
+                if (std::fabs(SDL_GameControllerGetAxis(found->second, axis) / 32767.0f) > settings_.stick_deadzone) {
+                    rest = false;
+                }
+            }
+        }
+        for (const SDL_GameControllerButton button : dpad) {
+            if (SDL_GameControllerGetButton(found->second, button) != 0) rest = false;
+        }
+        if (rest) {
+            pad = unrested_pads_.erase(pad);
+            continue;
+        }
+        if (said_unrested_pads_.insert(*pad).second) {
+            const char* name = SDL_GameControllerName(found->second);
+            log_info(std::string(name != nullptr ? name : "a controller") +
+                     " arrived with a stick pushed or a direction held, so it won't move the menu until "
+                     "that's let go");
+        }
+        ++pad;
+    }
+    const auto at_rest = [&](SDL_JoystickID id) { return unrested_pads_.count(id) == 0; };
+    SDL_GameController* mover = nullptr;
     for (const auto& entry : controllers_) {
-        if (entry.second == nullptr || !reads_pad(entry.first)) continue;
+        if (entry.second == nullptr || !reads_pad(entry.first) || !at_rest(entry.first)) continue;
         for (const auto& stick : sticks) {
             const float axis_x = SDL_GameControllerGetAxis(entry.second, stick[0]) / 32767.0f;
             const float axis_y = SDL_GameControllerGetAxis(entry.second, stick[1]) / 32767.0f;
             if (std::fabs(axis_x) > std::fabs(x)) x = axis_x;
-            if (std::fabs(axis_y) > std::fabs(y)) y = axis_y;
+            if (std::fabs(axis_y) > std::fabs(y)) {
+                y = axis_y;
+                mover = entry.second;
+            }
         }
     }
 
@@ -1212,7 +1254,9 @@ void InputManager::emit_navigation_from_axes() {
     // else is wrong" are the same report until something says which.
     if ((up || down) && !said_axis_navigation_) {
         said_axis_navigation_ = true;
-        log_info("controller: a stick or touch surface is moving the menu");
+        const char* name = mover != nullptr ? SDL_GameControllerName(mover) : nullptr;
+        log_info(std::string("controller: ") + (name != nullptr ? name : "a controller") +
+                 "'s stick or touch surface is moving the menu");
     }
     if (left && !axis_left_) push_action(UiAction::Left);
     if (right && !axis_right_) push_action(UiAction::Right);
@@ -1224,11 +1268,8 @@ void InputManager::emit_navigation_from_axes() {
     // Everything that can be holding a direction down right now, for the
     // repeat below: the stick, as above, any pad's d-pad, and the arrow keys.
     bool held[4] = {up, down, left, right};
-    const SDL_GameControllerButton dpad[4] = {
-        SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
-        SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT};
     for (const auto& entry : controllers_) {
-        if (entry.second == nullptr || !reads_pad(entry.first)) continue;
+        if (entry.second == nullptr || !reads_pad(entry.first) || !at_rest(entry.first)) continue;
         for (int direction = 0; direction < 4; ++direction) {
             if (SDL_GameControllerGetButton(entry.second, dpad[direction]) != 0) {
                 held[direction] = true;
