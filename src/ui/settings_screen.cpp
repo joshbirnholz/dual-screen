@@ -16,7 +16,11 @@ namespace {
 
 // Settings::wii_remote_rumble, as the row says it.
 std::string rumble_label(int percent) {
-    return percent <= 0 ? std::string("Off") : std::to_string(percent) + "%";
+    if (percent <= 0) return "Off";
+    if (percent <= 25) return "Weak";
+    if (percent <= 50) return "Normal";
+    if (percent <= 75) return "Strong";
+    return "Strongest";
 }
 
 // Said under Vsync, which a device that only shows another device's game
