@@ -57,7 +57,9 @@ struct ButtonMappingScreenResult {
 // A Wii U game's Button Mapping, from a player's page or the GamePad's, is
 // the same page for one of its controllers: the console's buttons are that
 // controller's, drawn beside the list, and there is no right stick's row --
-// a stick is a stick on a Wii U.
+// a stick is a stick on a Wii U. A Wii Remote alone has Sideways Wii Remote
+// there instead, a switch: on, the remote is drawn and its D-Pad pressed as
+// held on its side.
 //
 // Mapping Profiles, on -, are mappings kept under a name for any game to load:
 // Save as New Profile..., then the profiles there are for this page's kind of
@@ -138,8 +140,11 @@ public:
     int focus() const { return focus_; }
     static constexpr int kRightStickRow = static_cast<int>(kPadControls);
     static constexpr int kRows = kRightStickRow + 1;
-    // How many rows this page has: a Wii U controller's has no right stick's.
-    int row_count() const { return wii_u_ ? kRightStickRow : kRows; }
+    // How many rows this page has: a Wii U controller's has no right stick's,
+    // but a Wii Remote alone has Sideways Wii Remote's in its place.
+    int row_count() const { return wii_u_ && !has_sideways_row() ? kRightStickRow : kRows; }
+    bool has_sideways_row() const { return wii_u_ && wii_u_controller_ == WiiUController::Remote; }
+    bool on_sideways() const { return has_sideways_row() && focus_ == kRightStickRow; }
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
@@ -246,6 +251,10 @@ private:
     void choose_wii_u(int index, ButtonMappingScreenResult& result);
     void toggle_wii_u_turbo(ButtonMappingScreenResult& result);
     std::string wii_u_caption() const;
+    // Sideways Wii Remote turned on or off.
+    void toggle_sideways(ButtonMappingScreenResult& result);
+    // A on the focused row: its picker, or Sideways Wii Remote's switch.
+    void activate(ButtonMappingScreenResult& result, float output_width, float output_height);
     // Touch Point's page, the spot where the button touches now.
     void start_placing();
     void finish_placing(ButtonMappingScreenResult& result);

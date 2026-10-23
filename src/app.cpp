@@ -2469,7 +2469,7 @@ void App::Impl::update_wii_u_mapping_screen(const std::vector<UiAction>& actions
         if (!have_game_config) return false;
         const std::string key = wii_u_mapping_key(player, controller);
         const bool back_to_standard = mapping.is_standard(controller);
-        if (back_to_standard) {
+        if (back_to_standard && !mapping.sideways) {
             game_config.wii_u_mappings.erase(key);
         } else {
             game_config.wii_u_mappings[key] = mapping;
@@ -2478,10 +2478,16 @@ void App::Impl::update_wii_u_mapping_screen(const std::vector<UiAction>& actions
         return back_to_standard;
     };
     if (result.wii_u_changed && have_game_config) {
+        const bool turned = result.wii_u_changed->sideways != wii_u_mapping_of(player).sideways;
         const bool back_to_standard = keep(*result.wii_u_changed);
         const std::string whose = pad_slot_name(slot) + "'s " + wii_u_controller_name(controller);
-        log_info(back_to_standard ? "button mapping: every button on " + whose + " is back to standard"
-                                  : "button mapping: a button on " + whose + " was given another job");
+        if (turned) {
+            log_info("button mapping: " + whose + (result.wii_u_changed->sideways ? " is held sideways"
+                                                                                  : " is held upright"));
+        } else {
+            log_info(back_to_standard ? "button mapping: every button on " + whose + " is back to standard"
+                                      : "button mapping: a button on " + whose + " was given another job");
+        }
     }
     MappingProfile now;
     now.wii_u = wii_u_mapping_of(player);
@@ -2743,6 +2749,8 @@ std::vector<ControllerRowView> App::Impl::wii_u_controller_rows() const {
                     row.type = wii_u_type_name(type.choices[static_cast<std::size_t>(type.active)]);
                 }
             }
+            row.sideways = wii_u_controller_of(line.slot.player) == WiiUController::Remote &&
+                           wii_u_mapping_of(line.slot.player).sideways;
         }
         rows.push_back(std::move(row));
     }

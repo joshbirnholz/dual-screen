@@ -628,6 +628,26 @@ void test_a_wii_u_controller_is_mapped_as_itself() {
     }
     CHECK_MSG(on > 0 && off > 0, "turbo's button never went up and down");
 
+    // A Wii Remote held sideways: its D-Pad turned a quarter, Up pressing the
+    // remote's Right, and the rest as they were -- a Nunchuk's never turned.
+    ds::WiiUMapping sideways;
+    sideways.sideways = true;
+    CHECK(sideways.is_standard(WiiUController::Remote));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::Up) | bit(PadControl::A), sideways, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteRight) | bit(ExternalButton::RemoteA));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::Right), sideways, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteDown));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::Down), sideways, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteLeft));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::Left), sideways, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteUp));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::Up), sideways, WiiUController::RemoteNunchuk, 0),
+             bit(ExternalButton::RemoteUp));
+    // What a button is chosen as turns too: A on Up presses the remote's Right.
+    sideways[PadControl::A] = WiiUAction::RemoteUp;
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::A), sideways, WiiUController::Remote, 0),
+             bit(ExternalButton::RemoteRight));
+
     // The picker names the remote's own as the remote's only beside a
     // Classic Controller's.
     CHECK(ds::wii_u_action_name(WiiUAction::RemoteA, WiiUController::Remote) == "A Button");

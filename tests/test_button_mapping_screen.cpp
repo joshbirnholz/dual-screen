@@ -578,11 +578,12 @@ int wii_u_choice(WiiUController controller, WiiUAction action) {
 }
 
 void test_a_wii_u_controller_is_mapped_on_the_same_page() {
-    ButtonMappingScreen screen = open_wii_u(WiiUController::Remote);
+    ButtonMappingScreen screen = open_wii_u(WiiUController::Pro);
     CHECK(screen.wii_u());
     CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls));
     for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
     CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) - 1);
+    screen = open_wii_u(WiiUController::Remote);
     CHECK(screen.action_label(PadControl::X) == "1 Button");
     CHECK(screen.action_label(PadControl::A) == "A Button");
     CHECK(screen.action_label(PadControl::Zr) == "Disabled");
@@ -627,6 +628,44 @@ void test_a_wii_u_controller_is_mapped_on_the_same_page() {
     const std::vector<WiiUAction> classic = wii_u_action_choices(WiiUController::RemoteClassic);
     CHECK(std::find(classic.begin(), classic.end(), WiiUAction::RemoteA) != classic.end());
     CHECK(wii_u_action_name(WiiUAction::RemoteA, WiiUController::RemoteClassic) == "Wii Remote A Button");
+}
+
+// A Wii Remote alone has Sideways Wii Remote last, a switch A and a tap
+// turn, which changes nothing a button is chosen as -- and goes with the
+// page to the other device.
+void test_a_wii_remote_can_be_held_sideways() {
+    ButtonMappingScreen screen = open_wii_u(WiiUController::Remote);
+    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls) + 1);
+    for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
+    CHECK(screen.on_sideways());
+    // Not a button: no turbo, no picker.
+    CHECK(!press(screen, UiAction::MenuReset).wii_u_changed.has_value());
+    const ButtonMappingScreenResult on = press(screen, UiAction::Confirm);
+    CHECK(!screen.choosing());
+    CHECK(on.wii_u_changed.has_value() && on.wii_u_changed->sideways);
+    if (on.wii_u_changed) {
+        CHECK(on.wii_u_changed->is_standard(WiiUController::Remote));
+        CHECK(screen.wii_u_mapping().sideways);
+    }
+    CHECK(screen.action_label(PadControl::Up) == "Up Button");
+    CHECK(button_mapping_view_of(screen).wii_u_mapping.sideways);
+    const ButtonMappingScreenResult off = tap_entry(screen, ButtonMappingScreen::kRightStickRow);
+    CHECK(off.wii_u_changed.has_value() && !off.wii_u_changed->sideways);
+
+    // Reset to Default keeps how it is held, as a DS game's keeps its right
+    // stick.
+    WiiUMapping held;
+    held.sideways = true;
+    held[PadControl::A] = WiiUAction::Two;
+    ButtonMappingScreen reset = open_wii_u(WiiUController::Remote, held);
+    press(reset, UiAction::MenuQuit);
+    press(reset, UiAction::Right);
+    const ButtonMappingScreenResult reverted = press(reset, UiAction::Confirm);
+    CHECK(reverted.wii_u_changed.has_value() && reverted.wii_u_changed->sideways &&
+          reverted.wii_u_changed->is_standard(WiiUController::Remote));
+
+    // Only a Wii Remote alone is held so.
+    CHECK_EQ(open_wii_u(WiiUController::RemoteNunchuk).row_count(), static_cast<int>(kPadControls));
 }
 
 // The other device's page is drawn from the view alone: the mapping, the
@@ -734,6 +773,7 @@ int main() {
     test_a_touch_point_is_dragged_and_kept_with_ok();
     test_the_other_device_places_a_touch_point();
     test_a_wii_u_controller_is_mapped_on_the_same_page();
+    test_a_wii_remote_can_be_held_sideways();
     test_the_other_device_shows_a_wii_u_controllers_page();
     test_profiles_are_loaded_saved_and_deleted();
     return test::finish("button-mapping-screen");

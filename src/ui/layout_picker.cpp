@@ -1732,7 +1732,8 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const float slot_x = row.x + pad + slot.width * 0.5f;
     if (view.slot.kind != PadSlot::Kind::NotUsed) {
         const bool icons = load_ui_icons(ui_icons_, ui_icons_tried_);
-        slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink, view.type);
+        slot.draw(quads, text, icons ? &ui_icons_ : nullptr, view.slot, slot_x, centre_y, scale, ink, view.type,
+                  view.sideways);
     }
 
     // Where it is, on the right; the controller between -- what the game has

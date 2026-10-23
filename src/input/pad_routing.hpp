@@ -74,9 +74,12 @@ struct ControllerRowView {
     // same whatever is where: the host's first, then the other device's,
     // each in the order its own system has them.
     int listed = 0;
+    // A Wii Remote the game's Button Mapping has held on its side.
+    bool sideways = false;
     bool operator==(const ControllerRowView& other) const {
         return slot == other.slot && pad == other.pad && name == other.name && type == other.type &&
-               place == other.place && device == other.device && listed == other.listed;
+               place == other.place && device == other.device && listed == other.listed &&
+               sideways == other.sideways;
     }
 };
 

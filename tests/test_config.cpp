@@ -298,6 +298,7 @@ void test_game_config_round_trip() {
     remote[PadControl::B] = WiiUAction::Nothing;
     remote[PadControl::X] = WiiUAction::Turbo;
     remote.turbo(PadControl::X) = WiiUAction::Two;
+    remote.sideways = true;
     fresh.wii_u_mappings[wii_u_mapping_key(0, WiiUController::Remote)] = remote;
     fresh.wii_u_motion_off = {wii_u_slot_key(-1), wii_u_slot_key(2)};
     fresh.wii_u_rumble_off = {wii_u_slot_key(1)};
@@ -420,12 +421,14 @@ void test_mapping_profiles_round_trip() {
     MappingProfile kart;
     kart.name = "Kart";
     kart.wii_u[PadControl::B] = WiiUAction::Two;
+    kart.wii_u.sideways = true;
     CHECK(profiles.add(mapping_profile_kind(WiiUController::Remote), kart));
     CHECK(profiles.save(paths));
 
     const MappingProfiles reloaded = MappingProfiles::load(paths);
     CHECK(reloaded == profiles);
     CHECK(reloaded.of("wii_u.remote").size() == 1 && reloaded.of("wii_u.remote")[0].name == "Kart");
+    CHECK(reloaded.of("wii_u.remote")[0].wii_u.sideways);
     CHECK(mapping_profile_heading("wii_u.nunchuk") == "Wii Remote + Nunchuk Profiles");
     CHECK(mapping_profile_heading("3ds") == "3DS Profiles");
 

@@ -45,9 +45,11 @@ struct PadSlotView {
     // Centred on (`centre_x`, `cy`). `icons` is the menus' icon strip, or null
     // where it would not load, when the GamePad is its name instead. `type`
     // is what the game has a player as -- see wii_u_type_icon() -- drawn
-    // over its lights, the two centred together; empty for none.
+    // over its lights, the two centred together; empty for none. A Wii
+    // Remote held `sideways` is drawn on its side.
     void draw(QuadRenderer& quads, TextRenderer& text, const Texture* icons, PadSlot slot, float centre_x,
-              float cy, float scale, const Color& color, const std::string& type = std::string()) const {
+              float cy, float scale, const Color& color, const std::string& type = std::string(),
+              bool sideways = false) const {
         if (slot.kind == PadSlot::Kind::GamePad) {
             if (icons != nullptr && icons->valid()) {
                 draw_ui_icon(quads, *icons, UiIcon::WiiUGamePad,
@@ -61,7 +63,8 @@ struct PadSlotView {
             return;
         }
         if (slot.kind != PadSlot::Kind::Player) return;
-        const UiIcon icon = wii_u_type_icon(type);
+        UiIcon icon = wii_u_type_icon(type);
+        if (sideways && icon == UiIcon::WiiRemote) icon = UiIcon::WiiRemoteSideways;
         if (icon != UiIcon::Count && icons != nullptr && icons->valid()) {
             const float top = std::round(cy - (type_size + type_gap + light) * 0.5f);
             draw_ui_icon(quads, *icons, icon,

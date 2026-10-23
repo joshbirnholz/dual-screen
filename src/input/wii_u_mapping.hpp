@@ -88,6 +88,11 @@ struct WiiUMapping {
     // For a button that is Turbo, the console button it presses; Standard
     // while none is chosen, which presses nothing.
     std::array<WiiUAction, kPadControls> turbo_of{};
+    // A Wii Remote alone held on its side, as an NES controller is -- the
+    // D-Pad on the left, 1 and 2 on the right: its D-Pad's directions as the
+    // player holds it, so a button on Up presses the remote's Right, which
+    // points up held so. What each button is chosen as is the same either way.
+    bool sideways = false;
 
     WiiUAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     WiiUAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
@@ -95,17 +100,19 @@ struct WiiUMapping {
     WiiUAction turbo(PadControl control) const { return turbo_of[static_cast<std::size_t>(control)]; }
     // What `control` does, Standard looked up.
     WiiUAction resolved(PadControl control, WiiUController controller) const;
+    // Whether every button does what the standard mapping has it do, held
+    // sideways or not.
     bool is_standard(WiiUController controller) const;
 
     bool operator==(const WiiUMapping& other) const {
-        return actions == other.actions && turbo_of == other.turbo_of;
+        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways;
     }
     bool operator!=(const WiiUMapping& other) const { return !(*this == other); }
 };
 
 // The console buttons -- ExternalButton bits -- that `controls` (PadControl
 // bits) press on `controller` under `mapping`, at `ms` milliseconds for a
-// Turbo's beat.
+// Turbo's beat -- a Wii Remote held sideways, its D-Pad turned.
 uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUController controller, uint32_t ms);
 
 // What the picker offers for `controller`, in its order: its buttons, then

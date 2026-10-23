@@ -135,6 +135,25 @@ uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUContro
         unsigned button = 0;
         if (wii_u_action_button(action, button)) buttons |= 1u << button;
     }
+    if (mapping.sideways && controller == WiiUController::Remote) {
+        // Turned a quarter left, its top to the left: what points up held so
+        // is the remote's Right, and so round.
+        const auto bit = [](WiiUAction direction) {
+            unsigned button = 0;
+            wii_u_action_button(direction, button);
+            return 1u << button;
+        };
+        const uint32_t up = bit(WiiUAction::RemoteUp);
+        const uint32_t down = bit(WiiUAction::RemoteDown);
+        const uint32_t left = bit(WiiUAction::RemoteLeft);
+        const uint32_t right = bit(WiiUAction::RemoteRight);
+        const uint32_t held = buttons;
+        buttons &= ~(up | down | left | right);
+        if (held & up) buttons |= right;
+        if (held & right) buttons |= down;
+        if (held & down) buttons |= left;
+        if (held & left) buttons |= up;
+    }
     return buttons;
 }
 

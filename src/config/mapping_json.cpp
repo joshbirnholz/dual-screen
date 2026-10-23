@@ -80,6 +80,7 @@ json wii_u_mapping_json(const WiiUMapping& mapping) {
             kept["turbo"][pad_control_key(control)] = wii_u_action_key(mapping.turbo(control));
         }
     }
+    if (mapping.sideways) kept["sideways"] = true;
     return kept;
 }
 
@@ -99,6 +100,9 @@ WiiUMapping wii_u_mapping_from_json(const json& kept) {
                 mapping.turbo(control) = read;
             }
         }
+    }
+    if (const auto sideways = kept.find("sideways"); sideways != kept.end() && sideways->is_boolean()) {
+        mapping.sideways = sideways->get<bool>();
     }
     return mapping;
 }

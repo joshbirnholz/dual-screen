@@ -583,7 +583,12 @@ included; **Y** puts it on turbo; **X** puts every button back. Each player
 keeps a mapping for each controller type, with the game, so changing a
 player's type and back keeps what it had. Dualscreen does the mapping and
 hands Cemu the controller's own buttons, so Cemu's own input settings for
-these controllers are not used.
+these controllers are not used. A Wii Remote alone has **Sideways Wii
+Remote** last: on, it is drawn on its side, the D-Pad on the left as on an
+NES controller, and the D-Pad's directions are as it is held that way -- a
+button on Up presses the remote's Right, which points up. What each button
+is chosen as stays the same, and a profile keeps whether it is on. The
+Controls page draws a player's Wii Remote on its side too.
 
 **−** on that page, or on a DS or 3DS game's Change Controls, opens
 **Mapping Profiles**: mappings kept under a name, for any game to load.

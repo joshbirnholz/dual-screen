@@ -322,6 +322,19 @@ void ButtonMappingScreen::open_wii_u_choice(const PixelRect& row) {
     choice_.open(std::move(labels), std::max(0, current), row);
 }
 
+void ButtonMappingScreen::toggle_sideways(ButtonMappingScreenResult& result) {
+    wii_u_mapping_.sideways = !wii_u_mapping_.sideways;
+    result.wii_u_changed = wii_u_mapping_;
+}
+
+void ButtonMappingScreen::activate(ButtonMappingScreenResult& result, float output_width, float output_height) {
+    if (on_sideways()) {
+        toggle_sideways(result);
+        return;
+    }
+    open_choice(output_width, output_height);
+}
+
 void ButtonMappingScreen::choose_wii_u(int index, ButtonMappingScreenResult& result) {
     if (index < 0 || index >= static_cast<int>(choice_wii_u_.size())) return;
     const PadControl control = focused_control();
@@ -586,6 +599,7 @@ bool ButtonMappingScreen::is_turbo_button(PadAction action) const {
 
 bool ButtonMappingScreen::can_toggle_turbo() const {
     if (wii_u_) {
+        if (on_sideways()) return false;
         const WiiUAction action = wii_u_mapping_.resolved(focused_control(), wii_u_controller_);
         return action == WiiUAction::Turbo || is_wii_u_turbo_button(action);
     }
@@ -632,7 +646,10 @@ void ButtonMappingScreen::answer_revert(int button, ButtonMappingScreenResult& r
     }
     if (button != 1) return;
     if (wii_u_) {
+        // Every button, but not how the remote is held.
+        const bool sideways = wii_u_mapping_.sideways;
         wii_u_mapping_ = WiiUMapping();
+        wii_u_mapping_.sideways = sideways;
         result.wii_u_changed = wii_u_mapping_;
         return;
     }
@@ -806,7 +823,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             // No going round: the list stops at its ends.
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
             case UiAction::Down: focus_ = std::min(last, focus_ + 1); break;
-            case UiAction::Confirm: open_choice(output_width, output_height); break;
+            case UiAction::Confirm: activate(result, output_width, output_height); break;
             // B a step back, to the menu; the menu's own button out of
             // everything.
             case UiAction::Cancel: result.close_requested = true; break;
@@ -899,7 +916,7 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
     }
     if (choice_.is_open() || confirming_ || entry >= row_count()) return;
     // A tap chooses.
-    if (tap_chooses(focus_, entry)) open_choice(output_width, output_height);
+    if (tap_chooses(focus_, entry)) activate(result, output_width, output_height);
 }
 
 std::string ButtonMappingScreen::caption() const {
@@ -1092,6 +1109,14 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         const bool focused = static_cast<int>(index) == focus_;
         draw_menu_row(quads, row, focused, scale, index + 1 == rows,
                       static_cast<int>(index) == focus_ + 1);
+        // Sideways Wii Remote: its name and its switch -- the remote drawn
+        // on its side says what it does.
+        if (has_sideways_row() && static_cast<int>(index) == kRightStickRow) {
+            const float baseline = page_row_text_y(row, scale);
+            text.draw(quads, "Sideways Wii Remote", row.x + pad, baseline, scale, menu_row_text(focused));
+            draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, wii_u_mapping_.sideways, line);
+            continue;
+        }
         // The button as its icon alone, and what it does on the right; the
         // right stick, what it is.
         const bool stick_row = static_cast<int>(index) == kRightStickRow;
@@ -1114,9 +1139,12 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
 
     // The console, what the highlighted button presses picked out on it.
     if (wii_u_) {
-        const WiiUAction resolved = wii_u_mapping_.resolved(focused_control(), wii_u_controller_);
+        // Sideways Wii Remote's row picks out nothing.
+        const WiiUAction resolved = on_sideways() ? WiiUAction::Standard
+                                                  : wii_u_mapping_.resolved(focused_control(), wii_u_controller_);
         draw_wii_u_controller(quads, geometry.diagram, wii_u_controller_,
-                              resolved == WiiUAction::Turbo ? wii_u_mapping_.turbo(focused_control()) : resolved);
+                              resolved == WiiUAction::Turbo ? wii_u_mapping_.turbo(focused_control()) : resolved,
+                              wii_u_mapping_.sideways);
     } else {
         draw_console(quads, geometry.diagram, focused_control());
     }
@@ -1127,8 +1155,9 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     const float icon_width = glyphs.width_for(icon_height);
     std::string stand_in;
     while (TextRenderer::measure_width(stand_in, caption_scale) < icon_width) stand_in += "M";
-    std::vector<std::string> words =
-        TextRenderer::wrap(stand_in + " " + caption(), geometry.diagram.w, caption_scale);
+    // Sideways Wii Remote's row is no button: nothing said.
+    std::vector<std::string> words;
+    if (!on_sideways()) words = TextRenderer::wrap(stand_in + " " + caption(), geometry.diagram.w, caption_scale);
     if (words.size() > 2) {
         words[1] = TextRenderer::elide_right(words[1] + " " + words[2], geometry.diagram.w, caption_scale);
         words.resize(2);
@@ -1163,7 +1192,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         guide.push_back({ButtonGlyph::X, "Reset to Default"});
         if (can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-        guide.push_back({ButtonGlyph::A, "Change", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::A, on_sideways() ? "OK" : "Change", PromptRole::ActsOnSelection});
     }
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
@@ -1407,6 +1436,10 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, wii_u_ ? 1u : 0u);
     for (const WiiUAction action : wii_u_mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
     for (const WiiUAction action : wii_u_mapping_.turbo_of) mix_sound_state(view.rest, static_cast<uint64_t>(action));
+    mix_sound_state(view.rest, wii_u_mapping_.sideways ? 1u : 0u);
+    if (on_sideways() && !choice_.is_open() && !confirming_ && !naming_.is_open()) {
+        view.toggle = wii_u_mapping_.sideways ? 1 : 0;
+    }
 }
 
 net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& screen) {

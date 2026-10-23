@@ -34,6 +34,9 @@ The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
     wii-remote-classic             (both Classic Controller cells),
                                    wii_remote.png, wii_remote_nunchuk.png,
                                    each fitted to its whole cell
+    reorder                        a controller picked up
+    wii-remote-sideways            flanx's Wii Remote turned on its side,
+                                   for one a game has held sideways
 
 A Switch and a Switch Lite are drawn alike. New cells go on the end, so the
 ones before them keep their places.
@@ -230,6 +233,11 @@ def android_alpha():
 def device_alpha(name):
     if name == "android":
         return android_alpha()
+    if name == "wii_remote_sideways":
+        # The Wii Remote a quarter turn left, its top to the left: held on
+        # its side, the D-Pad under the left thumb.
+        w, h, alpha = device_alpha("wii_remote")
+        return h, w, [[alpha[x][w - 1 - y] for x in range(h)] for y in range(w)]
     w, h, alpha = read_png_alpha(f"assets/ui_icons/{name}.png")
     if name in REMOTE_BUTTONS:
         # The 1 and 2 buttons, cut out where a Wii Remote has them: a game
@@ -306,6 +314,7 @@ def main():
     cells += [render_device(name, band=0.96) for name in
               ["wiiu_pro", "wii_classic", "wii_remote", "wii_remote_nunchuk", "wii_classic"]]
     cells += [render_action("reorder")]
+    cells += [render_device("wii_remote_sideways", band=0.96)]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):

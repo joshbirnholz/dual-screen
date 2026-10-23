@@ -449,13 +449,17 @@ void test_welcome_and_session_round_trip() {
         player.place = "Steam Deck  P2";
         player.device = "Steam Deck";
         player.listed = 3;
+        player.sideways = true;
         state.wii_u_controllers = {gamepad, player};
         buffer.clear();
         encode_session_state(state, buffer);
         CHECK(one_message(buffer, type, payload));
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK(received_state.wii_u_controllers == state.wii_u_controllers);
-        const std::size_t rows = 1 + (3 + 5 * 2 + 13) + (3 + 5 * 2 + 11 + 29 + 20 + 14 + 10);
+        // From a host from before sideways, the rows all upright.
+        CHECK(decode_session_state(payload.data(), payload.size() - 4, received_state));
+        CHECK(received_state.wii_u_controllers.size() == 2 && !received_state.wii_u_controllers[1].sideways);
+        const std::size_t rows = 4 + 1 + (3 + 5 * 2 + 13) + (3 + 5 * 2 + 11 + 29 + 20 + 14 + 10);
         CHECK(decode_session_state(payload.data(), payload.size() - rows, received_state));
         CHECK(received_state.wii_u_controllers.empty());
         state.wii_u_controllers.clear();
@@ -2201,6 +2205,7 @@ void test_button_mapping_view_round_trip() {
     sent.wii_u_detail = "Player 3 \u00b7 Wii Classic Controller";
     sent.wii_u_mapping[PadControl::Y] = WiiUAction::Turbo;
     sent.wii_u_mapping.turbo(PadControl::Y) = WiiUAction::RemoteA;
+    sent.wii_u_mapping.sideways = true;
     buffer.clear();
     encode_button_mapping_view(sent, buffer);
     CHECK(one_message(buffer, type, payload));

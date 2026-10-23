@@ -369,6 +369,13 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
         put_string(out, row.device.substr(0, 255));
         put_u8(out, static_cast<uint8_t>(std::clamp(row.listed, 0, 255)));
     }
+    // Which of them are Wii Remotes held sideways, a bit each -- left off
+    // while none is.
+    uint32_t sideways = 0;
+    for (std::size_t index = 0; index < rows; ++index) {
+        if (message.wii_u_controllers[index].sideways) sideways |= 1u << index;
+    }
+    if (sideways != 0) put_u32(out, sideways);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -910,7 +917,8 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     put_u16(out, touch_spot_u16(message.spot_v));
     put_u16(out, touch_spot_u16(message.stick_radius));
     // And a Wii U controller's page, after everything a DS game's has.
-    put_u8(out, message.wii_u ? 1u : 0u);
+    // 2 on top of 1: a Wii Remote held sideways.
+    put_u8(out, message.wii_u ? (message.wii_u_mapping.sideways ? 3u : 1u) : 0u);
     if (message.wii_u) {
         put_u8(out, message.wii_u_controller);
         put_string(out, message.wii_u_detail);
@@ -984,6 +992,7 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
                 return false;
             }
             view.wii_u = true;
+            view.wii_u_mapping.sideways = (wii_u & 2u) != 0;
         }
         // From a host new enough to have Mapping Profiles.
         if (reader.remaining() > 0) {
@@ -1934,6 +1943,13 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             out.wii_u_controllers.push_back(row);
         }
         if (!reader.ok()) return false;
+        // From a host new enough to hold a Wii Remote sideways.
+        uint32_t sideways = 0;
+        if (reader.remaining() >= 4 && reader.u32(sideways)) {
+            for (std::size_t index = 0; index < out.wii_u_controllers.size(); ++index) {
+                out.wii_u_controllers[index].sideways = (sideways & (1u << index)) != 0;
+            }
+        }
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

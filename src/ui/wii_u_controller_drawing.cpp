@@ -8,7 +8,7 @@
 namespace ds {
 
 void draw_wii_u_controller(QuadRenderer& quads, const PixelRect& box, WiiUController controller,
-                           WiiUAction picked) {
+                           WiiUAction picked, bool sideways) {
     const UiTheme& theme = ui_theme();
     // Drawn on a grid of 460 by 520, as the DS and 3DS are, scaled to fit.
     constexpr float kWidth = 460.0f;
@@ -88,6 +88,29 @@ void draw_wii_u_controller(QuadRenderer& quads, const PixelRect& box, WiiUContro
             quads.draw_solid(at(x(-21 + light * 12.0f), yy(450), 6 * s, 6 * s), dim);
         }
     };
+    // The same on its side, a quarter turn left: its top on the left, its
+    // right side up. Drawn a little smaller, to fit across; the D-Pad as held.
+    const auto sideways_remote = [&]() {
+        constexpr float s = 0.9f;
+        constexpr float cy = 260.0f;
+        // Across, from the remote's top; up, from its middle.
+        const auto across = [&](float dy) { return 14.0f + dy * s; };
+        const auto up = [&](float dx) { return cy - dx * s; };
+        shell(across(0), up(40), 480 * s, 80 * s, 30 * s);
+        faint_circle(across(30), up(-22), 6 * s);
+        dpad(across(95), up(0), 22 * s, WiiUAction::RemoteUp, WiiUAction::RemoteDown, WiiUAction::RemoteLeft,
+             WiiUAction::RemoteRight);
+        circle(WiiUAction::RemoteA, across(170), up(0), 17 * s);
+        part(WiiUAction::RemoteB, at(across(140), up(56), 60 * s, 12 * s), std::round(6 * s * unit));
+        circle(WiiUAction::RemoteMinus, across(250), up(-24), 7 * s);
+        circle(WiiUAction::RemoteHome, across(250), up(0), 8 * s);
+        circle(WiiUAction::RemotePlus, across(250), up(24), 7 * s);
+        circle(WiiUAction::One, across(350), up(0), 13 * s);
+        circle(WiiUAction::Two, across(395), up(0), 13 * s);
+        for (int light = 0; light < 4; ++light) {
+            quads.draw_solid(at(across(450), up(-15 + light * 12.0f), 6 * s, 6 * s), dim);
+        }
+    };
 
     switch (controller) {
         case WiiUController::GamePad: {
@@ -115,7 +138,13 @@ void draw_wii_u_controller(QuadRenderer& quads, const PixelRect& box, WiiUContro
             circle(WiiUAction::Plus, 260, 245, 6);
             break;
         }
-        case WiiUController::Remote: remote(230, 20, 1.0f); break;
+        case WiiUController::Remote:
+            if (sideways) {
+                sideways_remote();
+            } else {
+                remote(230, 20, 1.0f);
+            }
+            break;
         case WiiUController::RemoteNunchuk: {
             remote(330, 20, 1.0f);
             // The Nunchuk, its C and Z on the end towards the player's hand.

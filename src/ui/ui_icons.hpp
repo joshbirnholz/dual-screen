@@ -34,6 +34,8 @@ enum class UiIcon {
     WiiRemoteClassic,
     // A controller picked up, to be moved up or down the line.
     Reorder,
+    // A Wii Remote a game has held on its side -- see WiiUMapping::sideways.
+    WiiRemoteSideways,
     Count
 };
 
