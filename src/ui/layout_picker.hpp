@@ -493,6 +493,7 @@ public:
     // Standard tile draws, which layouts fit at all, and which one leads the
     // menu -- see rebuild_tiles().
     void set_screens(const SystemScreens& screens, SystemId system = SystemId::Ds);
+    SystemId system() const { return system_; }
     // Which hand `layout_id` is drawn for.
     Handedness handedness_of(const std::string& layout_id) const;
     // The host can change the layout under a companion's open menu.

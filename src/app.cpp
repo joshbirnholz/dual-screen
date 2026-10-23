@@ -8139,6 +8139,9 @@ int App::run(const AppOptions& options) {
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
                     impl.apply_system();
+                    // A menu up already -- opened as this device joined -- is
+                    // that console's menu now.
+                    if (impl.picker) impl.picker->set_screens(impl.screens_geometry(), impl.system);
                     log_info(std::string("following the host: ") +
                              system_profile(impl.system).name);
                 }

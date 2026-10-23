@@ -97,6 +97,7 @@ extern "C" {
 #include "ui/system_keyboard.hpp"
 #include "ui/menu_actions.hpp"
 #include "ui/mirrored_game_dialog.hpp"
+#include "ui/menu_cursor_sync.hpp"
 #include "ui/menu_scroll_sync.hpp"
 #include "ui/stylus_cursor_view.hpp"
 #include "ui/menu_entrance.hpp"
@@ -542,6 +543,9 @@ private:
     // The host's page drawn here, scrolled where the host has it -- see
     // MenuScrollSync.
     MenuScrollSync scroll_sync_{/*host=*/false};
+    // And its cursor: the ring and a finger's fill the same on both -- see
+    // MenuCursorSync.
+    MenuCursorSync cursor_sync_{/*host=*/false};
     // The quick menu coming up here as it does on the host -- see
     // MenuEntrance.
     MenuEntrance menu_entrance_;
@@ -1222,6 +1226,13 @@ void Client::sync_scroll() {
                               static_cast<float>(output_height_))) {
         session_.send_menu_scroll(*said);
     }
+    net::MenuCursorMessage host_cursor;
+    const bool cursor_arrived = session_.take_host_menu_cursor(host_cursor);
+    if (const std::optional<net::MenuCursorMessage> said =
+            cursor_sync_.sync(page, shown, cursor_arrived ? &host_cursor : nullptr,
+                              static_cast<float>(output_width_), static_cast<float>(output_height_))) {
+        session_.send_menu_cursor(*said);
+    }
 }
 
 void Client::route_guide_taps(std::vector<UiAction>& actions,
@@ -1271,7 +1282,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         input_.set_text_entry(mirrored_game_dialog_.typing_here());
         return;
     }
-    if (state_ == State::Playing && input_.text_entry() && !mirrored_game_dialog_.is_open()) {
+    // Nor while a profile's name is typed into the host's Button Mapping.
+    const bool naming = session_.host_settings_open() && session_.host_button_mapping_view().open &&
+                        session_.host_button_mapping_view().naming;
+    if (state_ == State::Playing && input_.text_entry() && !mirrored_game_dialog_.is_open() && !naming) {
         input_.set_text_entry(false);
     }
     // The host's Settings or Controllers are up. This device is not drawing
@@ -1337,6 +1351,12 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             // host's as it goes -- the pad smoothly, so its directions are
             // not sent as steps too.
             const net::ButtonMappingViewMessage& host_view = session_.host_button_mapping_view();
+            // A new profile's name typed here goes to the host as it is typed.
+            input_.set_text_entry(host_view.naming);
+            if (host_view.naming &&
+                mirrored_button_mapping_.type_mirrored(input_.typed_text(), input_.backspaces())) {
+                session_.request_profile_name(mirrored_button_mapping_.name_text());
+            }
             const uint32_t now = SDL_GetTicks();
             const float seconds =
                 spot_steer_ticks_ == 0 ? 0.0f : static_cast<float>(now - spot_steer_ticks_) / 1000.0f;
@@ -1882,6 +1902,11 @@ void Client::run() {
                 if (menu_open_) {
                     // Every frame, all of it: this device shows the host's
                     // menu and holds no copy of its own to drift.
+                    // A game of another console started on the host while
+                    // it was up: that console's menu, sections and all.
+                    if (picker_.system() != session_.system()) {
+                        picker_.set_screens(session_.screens_geometry(), session_.system());
+                    }
                     picker_.set_smoothing(session_.host_filtering());
                     picker_.show(menu_state_from_host(), session_.host_menu_focus(),
                                  static_cast<MenuConfirm>(session_.host_menu_confirm()),
@@ -2000,6 +2025,12 @@ void Client::run() {
         follow_favorite_color_accent(kDsDefaultFavoriteColor, session_.host_favorite_color());
 #endif
         route_guide_taps(actions, pointers);
+        // A finger going down hides the cursor, and the pad's next press in
+        // a menu only brings it back -- see menu_cursor_input(). Playing,
+        // with nothing of the host's up, every press is the game's.
+        const bool in_menu = !(state_ == State::Playing && !menu_open_ && !session_.host_settings_open());
+        actions = menu_cursor_input(actions, pointers, in_menu);
+        begin_menu_frame();
         const bool tapped = std::any_of(pointers.begin(), pointers.end(),
                                         [](const PointerEvent& pointer) { return pointer.released; });
         const double now_seconds = static_cast<double>(net::monotonic_millis() - started_ms) / 1000.0;
@@ -2227,9 +2258,17 @@ void Client::draw_scene() {
                 mirrored_amiibo_.set_over_game(true);
                 mirrored_amiibo_.render(quads_, text_, button_glyphs_, width, height);
             } else if (mapping.open) {
-                mirrored_button_mapping_.set_mapping(
-                    session_.host_button_mapping(), session_.system(),
-                    pad_console_for(session_.system(), session_.host_right_stick_mode()));
+                // The host's game's mapping -- or a Wii U controller's, which
+                // the page carries, controller and all.
+                if (mapping.wii_u) {
+                    mirrored_button_mapping_.set_wii_u_mapping(mapping.wii_u_mapping,
+                                                               static_cast<WiiUController>(mapping.wii_u_controller),
+                                                               mapping.wii_u_detail);
+                } else {
+                    mirrored_button_mapping_.set_mapping(
+                        session_.host_button_mapping(), session_.system(),
+                        pad_console_for(session_.system(), session_.host_right_stick_mode()));
+                }
                 mirrored_button_mapping_.set_touch_screen(session_.screens().bottom);
                 mirrored_button_mapping_.show_mirrored(mapping, width, height);
                 mirrored_button_mapping_.set_over_game(true);

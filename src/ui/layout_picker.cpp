@@ -32,8 +32,12 @@ LayoutPicker::LayoutPicker(const LayoutRegistry& registry) : registry_(&registry
 
 void LayoutPicker::set_screens(const SystemScreens& screens, SystemId system) {
     screens_ = screens;
+    const bool console_changed = system != system_;
     system_ = system;
     rebuild_tiles();
+    // Another console's menu has other sections: a menu opened before the
+    // console was known -- a companion's, as it joins -- has them now.
+    if (console_changed) rebuild_footer();
 }
 
 void LayoutPicker::rebuild_tiles() {

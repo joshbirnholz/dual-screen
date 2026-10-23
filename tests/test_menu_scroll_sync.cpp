@@ -189,8 +189,31 @@ void test_the_cursor_is_the_same_on_both() {
     CHECK(menu_cursor_shown());
 }
 
+// The host's word on its page can come before that page is up on the
+// companion: it is kept for when it is.
+void test_the_cursor_said_before_the_page_is_up_is_kept() {
+    GameBrowser host;
+    GameBrowser companion;
+    host.set_amiibo(true);
+    companion.set_amiibo(true);
+    host.show_mirrored("/amiibo", amiibo(20), 0);
+    companion.show_mirrored("/amiibo", amiibo(20), 0);
+    MenuCursorSync host_sync(true);
+    MenuCursorSync companion_sync(false);
+    const net::MirroredPage page = net::MirroredPage::AmiiboBrowser;
+
+    set_menu_cursor_shown(true);
+    const auto said = host_sync.sync(&host, page, nullptr, kHostWidth, kHostHeight);
+    CHECK(said.has_value() && said->shown);
+    set_menu_cursor_shown(false);
+    companion_sync.sync(nullptr, net::MirroredPage::None, said ? &*said : nullptr, kCompanionWidth, kCompanionHeight);
+    companion_sync.sync(&companion, page, nullptr, kCompanionWidth, kCompanionHeight);
+    CHECK_MSG(menu_cursor_shown(), "the host's cursor was lost while its page was coming up");
+}
+
 int main() {
     test_the_cursor_is_the_same_on_both();
+    test_the_cursor_said_before_the_page_is_up_is_kept();
     test_the_host_scrolls_and_the_companion_follows();
     test_the_companion_scrolls_and_the_host_follows();
     return test::finish("menu-scroll-sync");

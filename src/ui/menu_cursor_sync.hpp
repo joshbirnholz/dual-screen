@@ -27,6 +27,9 @@ public:
     std::optional<net::MenuCursorMessage> sync(const MenuPage* page, net::MirroredPage shown,
                                                const net::MenuCursorMessage* theirs, float output_width,
                                                float output_height) {
+        // Kept until there is a page to take it to: the host's word can come
+        // before the page it is about is up here.
+        if (theirs != nullptr) theirs_ = *theirs;
         if (page == nullptr || shown == net::MirroredPage::None) {
             if (!on_page_) return std::nullopt;
             set_remote_held(false, 0.0f, 0.0f);
@@ -44,14 +47,15 @@ public:
             said_ = mine;
             if (host_) return mine;
         }
-        if (theirs != nullptr && theirs->page == shown) {
-            set_menu_cursor_shown(theirs->shown);
-            mine.shown = theirs->shown;
-            said_.shown = theirs->shown;
+        if (theirs_ && theirs_->page == shown) {
+            set_menu_cursor_shown(theirs_->shown);
+            mine.shown = theirs_->shown;
+            said_.shown = theirs_->shown;
             float x = 0.0f;
             float y = 0.0f;
-            const bool held = theirs->held >= 0 && entry_point(*page, theirs->held, output_width, output_height, x, y);
+            const bool held = theirs_->held >= 0 && entry_point(*page, theirs_->held, output_width, output_height, x, y);
             set_remote_held(held, x, y);
+            theirs_.reset();
         }
         if (mine == said_) return std::nullopt;
         said_ = mine;
@@ -97,6 +101,7 @@ private:
     bool host_;
     bool on_page_ = false;
     net::MenuCursorMessage said_;
+    std::optional<net::MenuCursorMessage> theirs_;
 };
 
 }  // namespace ds
