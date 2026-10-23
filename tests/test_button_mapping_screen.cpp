@@ -561,7 +561,7 @@ void test_the_touch_analog_stick_touches_where_it_is_pushed() {
 
 // A Wii U controller's page: its rows are the pad's buttons alone, what each
 // presses is that controller's -- a Wii Remote's held upright -- and the
-// picker offers its buttons, HOME and Disabled.
+// picker offers its buttons, this app's own and Disabled -- never HOME.
 ButtonMappingScreen open_wii_u(WiiUController controller, const WiiUMapping& mapping = WiiUMapping()) {
     ButtonMappingScreen screen;
     screen.set_wii_u_mapping(mapping, controller, "Player 2 \u00b7 Wii Remote");
@@ -588,17 +588,22 @@ void test_a_wii_u_controller_is_mapped_on_the_same_page() {
     CHECK(screen.action_label(PadControl::A) == "A Button");
     CHECK(screen.action_label(PadControl::Zr) == "Disabled");
 
-    // X made HOME, which the pad's own HOME cannot be.
+    // No HOME: a pad's own reaches the menu. X made Open Menu.
+    for (const WiiUController controller : {WiiUController::GamePad, WiiUController::Pro, WiiUController::Remote,
+                                            WiiUController::RemoteNunchuk, WiiUController::RemoteClassic}) {
+        CHECK(wii_u_choice(controller, WiiUAction::Home) < 0 && wii_u_choice(controller, WiiUAction::RemoteHome) < 0);
+        CHECK(wii_u_choice(controller, WiiUAction::Peek) >= 0);
+    }
     move_to(screen, PadControl::X);
     press(screen, UiAction::Confirm);
     CHECK(screen.choosing());
     CHECK_EQ(screen.choice_focus(), wii_u_choice(WiiUController::Remote, WiiUAction::One));
     CHECK(wii_u_choice(WiiUController::Remote, WiiUAction::Turbo) < 0);
     const ButtonMappingScreenResult home = tap_entry(
-        screen, ButtonMappingScreen::kChoiceEntryBase + wii_u_choice(WiiUController::Remote, WiiUAction::RemoteHome));
+        screen, ButtonMappingScreen::kChoiceEntryBase + wii_u_choice(WiiUController::Remote, WiiUAction::OpenMenu));
     CHECK(home.wii_u_changed.has_value() && !home.changed.has_value());
-    if (home.wii_u_changed) CHECK((*home.wii_u_changed)[PadControl::X] == WiiUAction::RemoteHome);
-    CHECK(screen.action_label(PadControl::X) == "HOME Button");
+    if (home.wii_u_changed) CHECK((*home.wii_u_changed)[PadControl::X] == WiiUAction::OpenMenu);
+    CHECK(screen.action_label(PadControl::X) == "Open Menu");
 
     // Back to 1, its standard, kept as Standard.
     press(screen, UiAction::Confirm);

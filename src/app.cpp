@@ -1261,6 +1261,15 @@ struct App::Impl {
     // The GamePad's buttons this frame, through its mapping -- see
     // route_wii_u_pads().
     uint32_t wii_u_gamepad_buttons = 0;
+    // A Wii U controller's buttons given this app's own jobs -- see
+    // WiiUAction::OpenMenu: which were held last frame, the menu or a swap
+    // to act on when one is pressed, and whether Peek is held, which shows
+    // each device the other screen until it is let go.
+    bool wii_u_functions_held[3] = {false, false, false};
+    std::vector<UiAction> wii_u_function_actions;
+    bool wii_u_swap_pressed = false;
+    bool wii_u_peeking = false;
+    void apply_wii_u_functions(const RoutedPads& routed);
     // Stops every motor this app turned on for a slot, as when the game ends.
     void stop_pad_rumble();
     // True while two devices are in a session, whichever end this is.
@@ -2153,6 +2162,7 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
                                                  buttons);
         }
     }
+    apply_wii_u_functions(routed);
     // A player with a controller is never a Classic Controller alone -- see
     // offered_type() -- but one plugged into a Wii Remote, kept as that.
     // Nor None: a controller only becomes a player with a type -- see
@@ -2203,6 +2213,35 @@ WiiUController App::Impl::wii_u_controller_of(int player) const {
     const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
     if (type.active < 0 || type.active >= static_cast<int>(type.choices.size())) return WiiUController::Pro;
     return wii_u_controller_for(type.choices[static_cast<std::size_t>(type.active)]);
+}
+
+void App::Impl::apply_wii_u_functions(const RoutedPads& routed) {
+    static constexpr WiiUAction kFunctions[3] = {WiiUAction::OpenMenu, WiiUAction::SwapScreens, WiiUAction::Peek};
+    // Only while the game is played: in the menu the pads move the menu.
+    const bool playing = state == State::Playing;
+    bool held[3] = {false, false, false};
+    for (int function = 0; function < 3 && playing; ++function) {
+        const WiiUAction which = kFunctions[function];
+        held[function] = wii_u_function_held(routed.gamepad_controls, wii_u_mapping_of(-1), WiiUController::GamePad,
+                                             which);
+        for (int player = 0; player < kPadPlayers && !held[function]; ++player) {
+            held[function] = wii_u_function_held(routed.player_controls[player], wii_u_mapping_of(player),
+                                                 wii_u_controller_of(player), which);
+        }
+    }
+    if (held[0] && !wii_u_functions_held[0]) {
+        log_info("a controller's Open Menu button was pressed");
+        wii_u_function_actions.push_back(UiAction::OpenMenu);
+    }
+    if (held[1] && !wii_u_functions_held[1]) {
+        log_info("a controller's Swap Screens button was pressed");
+        wii_u_swap_pressed = true;
+    }
+    if (held[2] != wii_u_peeking) {
+        wii_u_peeking = held[2];
+        log_info(wii_u_peeking ? "peeking at the other screen" : "done peeking at the other screen");
+    }
+    for (int function = 0; function < 3; ++function) wii_u_functions_held[function] = held[function];
 }
 
 const WiiUMapping& App::Impl::wii_u_mapping_of(int player) const {
@@ -7705,9 +7744,14 @@ int App::run(const AppOptions& options) {
             // makes not running this app alongside Cemu at all a perfectly
             // normal way to just play the game.
             if (impl.system == SystemId::WiiU && impl.external_source) {
+                // Peek: each device shown the other's screen while it is held,
+                // nothing else about either changed.
+                const auto peeked = [&](ScreenId screen) {
+                    return impl.wii_u_peeking ? (screen == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top) : screen;
+                };
                 const std::optional<ScreenId> wanted =
                     host_now_has_companion
-                        ? std::optional<ScreenId>(impl.host_session->companion_screen())
+                        ? std::optional<ScreenId>(peeked(impl.host_session->companion_screen()))
                         : std::nullopt;
                 const bool external_now_running = impl.external_source->running();
                 // A companion can decide what is wanted before Cemu has even
@@ -7745,7 +7789,7 @@ int App::run(const AppOptions& options) {
                 const ScreenId shown =
                     wanted.has_value()
                         ? (*wanted == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top)
-                        : impl.solo_screen;
+                        : peeked(impl.solo_screen);
                 if (freshly_connected || wanted != impl.external_requested_screen ||
                     wanted_width != impl.external_requested_width ||
                     wanted_height != impl.external_requested_height ||
@@ -7781,7 +7825,9 @@ int App::run(const AppOptions& options) {
                 // own record of which screen it is being -- kept in step for
                 // the same reason, so that a companion connecting later does
                 // not find a stale one waiting for it.
-                const ScreenId here = wanted.value_or(impl.solo_screen);
+                // Kept as it is under a peek, which changes no setting.
+                const ScreenId here =
+                    host_now_has_companion ? impl.host_session->companion_screen() : impl.solo_screen;
                 const std::string& single_id =
                     (here == ScreenId::Top) ? "tv_only" : "gamepad_only";
                 const std::string& resolved_id = impl.registry.resolve(single_id).id;
@@ -8243,6 +8289,19 @@ int App::run(const AppOptions& options) {
             // Tab or F1 pressed in Cemu's window, which has the keyboard
             // while a Wii U game plays in it: the same as pressing it here.
             std::vector<UiAction> ui_actions = impl.input.ui_actions();
+            // A Wii U controller's Open Menu, and Swap Screens -- as the
+            // menu's own Swap Screens does.
+            ui_actions.insert(ui_actions.end(), impl.wii_u_function_actions.begin(),
+                              impl.wii_u_function_actions.end());
+            impl.wii_u_function_actions.clear();
+            if (impl.wii_u_swap_pressed) {
+                impl.wii_u_swap_pressed = false;
+                if (impl.paired()) {
+                    impl.swap_separate_screens();
+                } else {
+                    impl.toggle_solo_screen_swap();
+                }
+            }
             if (impl.external_source && impl.external_source->take_menu_key()) {
                 log_info("the menu key was pressed in Cemu's window");
                 ui_actions.push_back(UiAction::ToggleMenu);

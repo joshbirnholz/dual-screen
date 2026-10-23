@@ -64,6 +64,12 @@ enum class WiiUAction : uint8_t {
     // Another of the controller's buttons pressed over and over while this
     // is held -- which, WiiUMapping::turbo_of says.
     Turbo,
+    // This app's own, which no controller's standard mapping has: the quick
+    // menu opened; the screens swapped, as the menu's Swap Screens does; and
+    // the other screen shown while it is held -- see wii_u_function_held().
+    OpenMenu,
+    SwapScreens,
+    Peek,
     Count,
 };
 
@@ -112,8 +118,14 @@ struct WiiUMapping {
 // Turbo's beat -- a Wii Remote held sideways, its D-Pad turned.
 uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUController controller, uint32_t ms);
 
-// What the picker offers for `controller`, in its order: its buttons, then
-// Disabled.
+// Whether `controls` (PadControl bits) hold `function` -- OpenMenu,
+// SwapScreens or Peek -- under `mapping`.
+bool wii_u_function_held(uint32_t controls, const WiiUMapping& mapping, WiiUController controller,
+                         WiiUAction function);
+
+// What the picker offers for `controller`, in its order: its buttons, this
+// app's own, then Disabled. Not HOME, which the menu and the game's own
+// HOME menu are reached by on a pad.
 std::vector<WiiUAction> wii_u_action_choices(WiiUController controller);
 // What Turbo can press: the controller's buttons.
 std::vector<WiiUAction> wii_u_turbo_choices(WiiUController controller);

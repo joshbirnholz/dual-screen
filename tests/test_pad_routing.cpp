@@ -610,10 +610,19 @@ void test_a_wii_u_controller_is_mapped_as_itself() {
     for (uint32_t ms = 0; ms < 200; ms += 5) {
         const uint32_t buttons = ds::wii_u_buttons(held, changed, WiiUController::RemoteClassic, ms);
         CHECK(buttons & bit(ExternalButton::RemoteHome));
+        CHECK(!ds::wii_u_function_held(held, changed, WiiUController::RemoteClassic, WiiUAction::Peek));
         CHECK(!(buttons & bit(ExternalButton::R)));
         (buttons & bit(ExternalButton::A) ? on : off) += 1;
     }
     CHECK_MSG(on > 0 && off > 0, "turbo's button never went up and down");
+
+    // This app's own: Peek held on R, nothing sent to the game for it.
+    ds::WiiUMapping peek;
+    peek[PadControl::R] = WiiUAction::Peek;
+    CHECK(ds::wii_u_function_held(bit(PadControl::R), peek, WiiUController::Pro, WiiUAction::Peek));
+    CHECK(!ds::wii_u_function_held(bit(PadControl::L), peek, WiiUController::Pro, WiiUAction::Peek));
+    CHECK_EQ(ds::wii_u_buttons(bit(PadControl::R), peek, WiiUController::Pro, 0), 0u);
+    CHECK(ds::wii_u_action_from_key(ds::wii_u_action_key(WiiUAction::Peek)) == WiiUAction::Peek);
 
     // A Wii Remote held sideways: its D-Pad turned a quarter, Up pressing the
     // remote's Right, and the rest as they were -- a Nunchuk's never turned.

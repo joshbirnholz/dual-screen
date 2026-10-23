@@ -443,8 +443,8 @@ Three things are different about a Wii U session:
   change once it is reset. It needs this project's Cemu build.
 
 - **Wii Remote Rumble Strength**, in Settings, is how hard a controller
-  rumbles while a game has it as a Wii Remote -- **Off**, **25%**, **50%**
-  (the default), **75%** or **100%** -- for every game and every Wii Remote.
+  rumbles while a game has it as a Wii Remote -- **Off**, **Weak**, **Normal**
+  (the default), **Strong** or **Strongest** -- for every game and every Wii Remote.
   A real one's motor is a small one; a pad's at full strength is far louder.
   Not on Android, whose controllers rumble at one strength.
 
@@ -576,8 +576,11 @@ what it presses on that controller, and the controller drawn beside the
 list with that button filled in. A Wii Remote is held upright -- A and B as
 they are, 1 on X and 2 on Y, the Nunchuk's C and Z on L and ZL -- and the
 GamePad, a Pro Controller and a Classic Controller have their buttons
-straight across. **A** picks another button for one, **HOME** and Disabled
-included; **Y** puts it on turbo; **X** puts every button back. Each player
+straight across. **A** picks another button for one, or one of
+Dualscreen's own -- **Open Menu**, **Swap Screens** (as the menu's), or
+**Peek**, which shows each device the other screen while it is held and
+changes nothing else -- or Disabled; HOME is not offered, as a pad's own
+reaches the menu; **Y** puts it on turbo; **X** puts every button back. Each player
 keeps a mapping for each controller type, with the game, so changing a
 player's type and back keeps what it had. Dualscreen does the mapping and
 hands Cemu the controller's own buttons, so Cemu's own input settings for

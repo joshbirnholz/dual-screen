@@ -179,19 +179,20 @@ std::vector<WiiUAction> wii_u_turbo_choices(WiiUController controller) {
             WiiUAction::Plus,  WiiUAction::Minus,     WiiUAction::LeftStick, WiiUAction::RightStick};
 }
 
+bool wii_u_function_held(uint32_t controls, const WiiUMapping& mapping, WiiUController controller,
+                         WiiUAction function) {
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        if ((controls & (1u << index)) == 0) continue;
+        if (mapping.resolved(static_cast<PadControl>(index), controller) == function) return true;
+    }
+    return false;
+}
+
 std::vector<WiiUAction> wii_u_action_choices(WiiUController controller) {
     std::vector<WiiUAction> choices = wii_u_turbo_choices(controller);
-    // HOME, which a pad's own button cannot be -- that one is Steam's -- after
-    // the rest, as it sits apart on the controller: the remote's for a Wii
-    // Remote, the Classic Controller's and then the remote's beside one.
-    if (controller == WiiUController::RemoteClassic) {
-        choices.insert(choices.begin() + 14, WiiUAction::Home);
-        choices.push_back(WiiUAction::RemoteHome);
-    } else if (is_remote(controller)) {
-        choices.push_back(WiiUAction::RemoteHome);
-    } else {
-        choices.push_back(WiiUAction::Home);
-    }
+    choices.push_back(WiiUAction::OpenMenu);
+    choices.push_back(WiiUAction::SwapScreens);
+    choices.push_back(WiiUAction::Peek);
     choices.push_back(WiiUAction::Nothing);
     return choices;
 }
@@ -237,6 +238,9 @@ std::string wii_u_action_name(WiiUAction action, WiiUController controller) {
         case WiiUAction::RemoteRight: return remote("Right Button");
         case WiiUAction::Nothing: return "Disabled";
         case WiiUAction::Turbo: return "Turbo";
+        case WiiUAction::OpenMenu: return "Open Menu";
+        case WiiUAction::SwapScreens: return "Swap Screens";
+        case WiiUAction::Peek: return "Peek";
         case WiiUAction::Count: break;
     }
     return "?";
@@ -248,6 +252,7 @@ constexpr const char* kActionKeys[] = {
     "standard", "a", "b", "x", "y", "l", "r", "zl", "zr", "plus", "minus", "up", "down", "left", "right",
     "left_stick", "right_stick", "home", "one", "two", "c", "z", "remote_a", "remote_b", "remote_plus",
     "remote_minus", "remote_home", "remote_up", "remote_down", "remote_left", "remote_right", "nothing", "turbo",
+    "open_menu", "swap_screens", "peek",
 };
 static_assert(sizeof(kActionKeys) / sizeof(kActionKeys[0]) == static_cast<std::size_t>(WiiUAction::Count),
               "every action has a key");

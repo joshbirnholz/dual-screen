@@ -405,6 +405,9 @@ std::string ButtonMappingScreen::wii_u_caption() const {
         return said;
     };
     if (action == WiiUAction::Nothing) return "is disabled in this game.";
+    if (action == WiiUAction::OpenMenu) return "opens the menu.";
+    if (action == WiiUAction::SwapScreens) return "swaps the screens.";
+    if (action == WiiUAction::Peek) return "shows the other screen while it's held.";
     if (action == WiiUAction::Turbo) {
         const WiiUAction of = wii_u_mapping_.turbo(control);
         if (of == WiiUAction::Standard) return "does nothing until Turbo has a button.";
