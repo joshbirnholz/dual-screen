@@ -31,9 +31,6 @@ enum class WiiUController : uint8_t {
 // player as `controller`: "gamepad", "player1.remote" -- a player's own for
 // each thing it is, so one changed and back keeps what it had.
 std::string wii_u_mapping_key(int player, WiiUController controller);
-// Where a game config keeps what is the GamePad's (`player` -1) or a
-// player's whatever it is: "gamepad", "player1".
-std::string wii_u_slot_key(int player);
 
 // What a player Cemu has as `type` -- its name for it, or the menus' --
 // is.

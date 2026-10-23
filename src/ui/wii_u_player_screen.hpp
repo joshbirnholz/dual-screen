@@ -39,9 +39,6 @@ struct WiiUPlayerScreenResult {
     bool added = false;
     // Edit Button Mapping: its page, for what the game has this one as.
     bool edit_mapping = false;
-    // Motion or Rumble switched: on or off as it now is.
-    std::optional<bool> motion;
-    std::optional<bool> rumble;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
@@ -50,8 +47,7 @@ struct WiiUPlayerScreenResult {
 // controller another player has trading places -- and Disconnect, which
 // takes the player's controller out of play; Edit Button Mapping opens what
 // each of its buttons presses, for the controller the game has it as -- see
-// ButtonMappingScreen -- and Motion and Rumble, whether how the controller
-// is held and its motor reach the game. Detect Controller, Y, takes
+// ButtonMappingScreen. Detect Controller, Y, takes
 // whichever controller a button is pressed on next, for ten seconds. B goes
 // back to the menu.
 //
@@ -110,17 +106,10 @@ public:
     void detected(const std::string& pad = std::string());
 
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Controller, Edit Button Mapping, Motion, Rumble, then Disconnect where
-    // there is a controller to take out of play. A new player's has Add
-    // instead of all after Controller.
-    enum class Row { Type, Controller, Remove, Add, Mapping, Motion, Rumble };
-    // Motion's and Rumble's switches, as the game has them, every frame.
-    void set_switches(bool motion, bool rumble) {
-        motion_ = motion;
-        rumble_ = rumble;
-    }
-    bool motion() const { return motion_; }
-    bool rumble() const { return rumble_; }
+    // Controller, Edit Button Mapping, then Disconnect where there is a
+    // controller to take out of play. A new player's has Add instead of the
+    // last two.
+    enum class Row { Type, Controller, Remove, Add, Mapping };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -185,8 +174,6 @@ private:
     std::vector<std::string> choice_pads_;
     bool detecting_ = false;
     float detect_left_ = 0.0f;
-    bool motion_ = true;
-    bool rumble_ = true;
     Texture icons_;
     bool icons_tried_ = false;
     std::vector<GuideHit> guide_hits_;

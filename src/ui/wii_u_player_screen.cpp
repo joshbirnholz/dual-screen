@@ -89,8 +89,6 @@ std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
         return rows;
     }
     rows.push_back(Row::Mapping);
-    rows.push_back(Row::Motion);
-    rows.push_back(Row::Rumble);
     if (removable()) rows.push_back(Row::Remove);
     return rows;
 }
@@ -246,14 +244,6 @@ void WiiUPlayerScreen::act(WiiUPlayerScreenResult& result, float output_width, f
         remove(result);
     } else if (focused_row() == Row::Mapping) {
         result.edit_mapping = true;
-    } else if (focused_row() == Row::Motion) {
-        // Switched here and said, so a second press before the caller has
-        // taken it on switches it back rather than again.
-        motion_ = !motion_;
-        result.motion = motion_;
-    } else if (focused_row() == Row::Rumble) {
-        rumble_ = !rumble_;
-        result.rumble = rumble_;
     } else if (focused_row() == Row::Add) {
         // Nothing to add until there is a controller to be it.
         if (pending_pad_.empty()) return;
@@ -425,12 +415,6 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             text.draw(quads, "Edit Button Mapping", row.x + pad, baseline, row_scale, menu_row_text(focused));
             continue;
         }
-        if (all[index] == Row::Motion || all[index] == Row::Rumble) {
-            const bool motion = all[index] == Row::Motion;
-            text.draw(quads, motion ? "Motion" : "Rumble", row.x + pad, baseline, row_scale, menu_row_text(focused));
-            draw_toggle(quads, right, row.y + row.h * 0.5f, motion ? motion_ : rumble_, line);
-            continue;
-        }
         if (all[index] == Row::Add) {
             Color color = menu_row_text(focused);
             if (pending_pad_.empty()) color.a *= 0.45f;
@@ -483,7 +467,7 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             guide.push_back({ButtonGlyph::A,
                              focused == Row::Remove    ? "Disconnect"
                              : focused == Row::Add     ? "Add"
-                             : focused == Row::Mapping || focused == Row::Motion || focused == Row::Rumble ? "OK"
+                             : focused == Row::Mapping ? "Open"
                                                        : "Change",
                              PromptRole::ActsOnSelection});
         }
@@ -538,8 +522,6 @@ void WiiUPlayerScreen::show_mirrored(const net::WiiUPlayerViewMessage& view, flo
     }
     detecting_ = view.detecting;
     detect_left_ = static_cast<float>(view.detect_seconds);
-    motion_ = view.motion;
-    rumble_ = view.rumble;
 }
 
 bool WiiUPlayerScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width, float output_height) {
@@ -582,7 +564,6 @@ void WiiUPlayerScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(type_current_));
     mix_sound_state(view.rest, static_cast<uint64_t>(pending_type_ + 1));
     mix_sound_state(view.rest, pending_pad_);
-    mix_sound_state(view.rest, (motion_ ? 1u : 0u) | (rumble_ ? 2u : 0u));
     if (const ControllerRowView* own = own_row()) mix_sound_state(view.rest, own->pad);
 }
 
@@ -596,8 +577,6 @@ net::WiiUPlayerViewMessage wii_u_player_view_of(const WiiUPlayerScreen& screen) 
     view.detecting = screen.detecting();
     view.detect_seconds = static_cast<uint8_t>(screen.detect_seconds());
     view.adding = screen.adding();
-    view.motion = screen.motion();
-    view.rumble = screen.rumble();
     if (view.adding) {
         view.pending_type = static_cast<uint8_t>(std::clamp(screen.pending_type() + 1, 0, 255));
         view.pending_pad = screen.pending_pad();

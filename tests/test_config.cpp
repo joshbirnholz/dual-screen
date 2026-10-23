@@ -300,8 +300,6 @@ void test_game_config_round_trip() {
     remote.turbo(PadControl::X) = WiiUAction::Two;
     remote.sideways = true;
     fresh.wii_u_mappings[wii_u_mapping_key(0, WiiUController::Remote)] = remote;
-    fresh.wii_u_motion_off = {wii_u_slot_key(-1), wii_u_slot_key(2)};
-    fresh.wii_u_rumble_off = {wii_u_slot_key(1)};
     fresh.lcd_filter = true;
     fresh.custom_textures = true;
     CHECK(fresh.button_mapping == ButtonMapping());
@@ -330,8 +328,6 @@ void test_game_config_round_trip() {
     const std::map<std::string, int> kept{{"upscale_filter", 3}};
     CHECK(reloaded.wii_u_options == kept);
     CHECK(reloaded.wii_u_mappings == fresh.wii_u_mappings);
-    CHECK(reloaded.wii_u_motion_off == fresh.wii_u_motion_off);
-    CHECK(reloaded.wii_u_rumble_off == fresh.wii_u_rumble_off);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.

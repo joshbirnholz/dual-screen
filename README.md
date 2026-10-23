@@ -566,9 +566,7 @@ can be mapped as well, though few games want them.
 the GamePad's or a player's page: **Controller Type**, above, and
 **Controller**, which is any controller on either device, this device's
 listed first -- picking one another player has swaps the two --
-**Edit Button Mapping**, **Motion** and **Rumble** -- switches for whether
-how the controller is held reaches the game and whether its motor runs, kept
-with the game -- and **Disconnect**, which takes it out of play.
+**Edit Button Mapping** and **Disconnect**, which takes it out of play.
 **Y** there, **Detect Controller**, takes whichever controller a button
 is pressed on in the next ten seconds.
 

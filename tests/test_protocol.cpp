@@ -2133,7 +2133,6 @@ void test_wii_u_player_view_round_trip() {
     sent.adding = true;
     sent.pending_type = 4;
     sent.pending_pad = "companion#3";
-    sent.motion = false;
     std::vector<uint8_t> buffer;
     encode_wii_u_player_view(sent, buffer);
     MessageType type = MessageType::Ping;
@@ -2144,9 +2143,6 @@ void test_wii_u_player_view_round_trip() {
     CHECK(decode_wii_u_player_view(payload.data(), payload.size(), received));
     CHECK(received == sent);
     CHECK(!decode_wii_u_player_view(payload.data(), 3, received));
-    // From a host without Motion and Rumble: both on.
-    CHECK(decode_wii_u_player_view(payload.data(), payload.size() - 1, received));
-    CHECK(received.motion && received.rumble);
     // Closed, too, which is how the other device learns to put it away.
     buffer.clear();
     encode_wii_u_player_view(WiiUPlayerViewMessage(), buffer);

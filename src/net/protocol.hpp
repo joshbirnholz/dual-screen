@@ -849,16 +849,12 @@ struct WiiUPlayerViewMessage {
     bool adding = false;
     uint8_t pending_type = 0;
     std::string pending_pad;
-    // Motion's and Rumble's switches.
-    bool motion = true;
-    bool rumble = true;
 
     bool operator==(const WiiUPlayerViewMessage& other) const {
         return open == other.open && slot == other.slot && focus == other.focus &&
                choice_focus == other.choice_focus && detecting == other.detecting &&
                detect_seconds == other.detect_seconds && adding == other.adding &&
-               pending_type == other.pending_type && pending_pad == other.pending_pad &&
-               motion == other.motion && rumble == other.rumble;
+               pending_type == other.pending_type && pending_pad == other.pending_pad;
     }
 };
 
