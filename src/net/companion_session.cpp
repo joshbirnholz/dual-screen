@@ -157,6 +157,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_button_mapping_ = ButtonMapping();
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
+    host_controller_notices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -338,6 +339,7 @@ void CompanionSession::disconnect() {
     host_button_mapping_ = ButtonMapping();
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
+    host_controller_notices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -463,6 +465,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_button_mapping_ = ButtonMapping();
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
+    host_controller_notices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -643,6 +646,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_button_mapping_ = state.button_mapping;
             host_favorite_color_ = state.favorite_color;
             host_corner_notice_ = state.corner_notice;
+            host_controller_notices_ = state.controller_notices;
             host_amiibo_ = state.amiibo;
             host_amiibo_folder_ = state.amiibo_folder;
             host_max_render_scale_ = state.max_render_scale;

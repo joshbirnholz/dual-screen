@@ -511,6 +511,10 @@ struct SessionStateMessage {
     // A Wii U game's Controls tab: every controller, as the host lines them
     // up. A count, then each row; last, and optional.
     std::vector<ControllerRowView> wii_u_controllers;
+    // A Wii U game's corner alerts about a controller -- a mapping profile
+    // it switched to -- shown under corner_notice, oldest first. A count,
+    // then each; last, and optional.
+    std::vector<ControllerNotice> controller_notices;
 };
 
 struct FrameMessage {
@@ -816,6 +820,10 @@ struct ButtonMappingViewMessage {
     uint8_t naming_focus = 0;
     uint8_t asking = 0;
     int asking_profile = -1;
+    // When Held's picker is the one up -- see ButtonMappingScreen. The
+    // profiles held buttons switch to are wii_u_mapping's, carried at the
+    // end: a count, then each button's number and the name.
+    bool holding = false;
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
@@ -827,7 +835,7 @@ struct ButtonMappingViewMessage {
                profiles == other.profiles && profile_names == other.profile_names &&
                profile_current == other.profile_current && profile_heading == other.profile_heading &&
                naming == other.naming && name_text == other.name_text && naming_focus == other.naming_focus &&
-               asking == other.asking && asking_profile == other.asking_profile;
+               asking == other.asking && asking_profile == other.asking_profile && holding == other.holding;
     }
 };
 

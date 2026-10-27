@@ -435,6 +435,12 @@ struct App::Impl {
     // A few words in the top right corner, until `corner_notice_until`.
     std::string corner_notice;
     std::chrono::steady_clock::time_point corner_notice_until;
+    // Under it, one about each controller that switched mapping profile,
+    // each until its own time -- see show_controller_notice().
+    std::vector<std::pair<ControllerNotice, std::chrono::steady_clock::time_point>> controller_notices;
+    // The menus' icons, for those.
+    Texture notice_icons;
+    bool notice_icons_tried = false;
     // The game's icon for the quick menu's header: this device's game's, read
     // from its save store as Data Management shows it, or on a companion the
     // one the host sent. `game_icon_for` says whose it is.
@@ -1237,6 +1243,13 @@ struct App::Impl {
     bool wants_menu_overlay() const;
     bool corner_notice_up() const;
     void show_corner_notice(const std::string& message);
+    // A corner alert about the controller in `slot`, drawn as it, under any
+    // others still up.
+    void show_controller_notice(PadSlot slot, const std::string& message);
+    // Those still up, oldest first.
+    std::vector<ControllerNotice> shown_controller_notices() const;
+    // Every corner alert up, here or -- on a companion -- the host's.
+    void render_corner_alerts(float width, float height);
     // What the corner says now, if anything: a notice for its moment, or
     // while an amiibo is on its way to the game with the menu closed,
     // "Scanning...".
@@ -1279,6 +1292,11 @@ struct App::Impl {
     // What the game has the GamePad (`player` -1) or a player as, and this
     // game's mapping for it -- the standard one where none is kept.
     WiiUController wii_u_controller_of(int player) const;
+    // Each controller's buttons that switch profile when held, the GamePad's
+    // first -- see ProfileHold -- and the profile `name` loaded into the
+    // GamePad's (-1) or a player's mapping, said in the corner.
+    std::array<ProfileHold, kPadPlayers + 1> profile_holds;
+    void switch_wii_u_profile(int player, const std::string& name);
     const WiiUMapping& wii_u_mapping_of(int player) const;
     // The GamePad's buttons this frame, through its mapping -- see
     // route_wii_u_pads().
@@ -1556,6 +1574,8 @@ void App::Impl::destroy_window() {
     controllers_screen.release_textures();
     wii_u_player_screen.release_textures();
     mirrored_wii_u_player.release_textures();
+    notice_icons.destroy();
+    notice_icons_tried = false;
     mirrored_controllers.release_textures();
     if (data_screen) data_screen->release_textures();
     // The game's icon, which is kept while it is the same game: kept across
@@ -2170,10 +2190,20 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
         log_info("controllers: " + (said.empty() ? std::string("none") : said));
     }
 
-    const RoutedPads routed = route_pads(known_pads, pad_slots);
+    RoutedPads routed = route_pads(known_pads, pad_slots);
+    const uint32_t now_ms = SDL_GetTicks();
+    // A button that switches profile when held is held back from the game
+    // until it is plainly a tap -- see ProfileHold.
+    for (int slot = -1; slot < kPadPlayers; ++slot) {
+        uint32_t& controls = slot < 0 ? routed.gamepad_controls : routed.player_controls[slot];
+        const WiiUMapping& mapping = wii_u_mapping_of(slot);
+        int switched = -1;
+        controls = profile_holds[static_cast<std::size_t>(slot + 1)].update(controls, mapping.hold_controls(), now_ms,
+                                                                              switched);
+        if (switched >= 0) switch_wii_u_profile(slot, mapping.hold_profile[static_cast<std::size_t>(switched)]);
+    }
     // Each controller's buttons as the game has it, through this game's
     // mapping for it -- see WiiUMapping.
-    const uint32_t now_ms = SDL_GetTicks();
     wii_u_gamepad_buttons =
         wii_u_buttons(routed.gamepad_controls, wii_u_mapping_of(-1), WiiUController::GamePad, now_ms);
     if (external_source) {
@@ -2226,6 +2256,29 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
 
     apply_pad_rumble();
     return gamepad;
+}
+
+void App::Impl::switch_wii_u_profile(int player, const std::string& name) {
+    const PadSlot slot = player < 0 ? PadSlot::gamepad() : PadSlot::player_number(player);
+    const WiiUController controller = wii_u_controller_of(player);
+    profiles();
+    for (const MappingProfile& profile : mapping_profiles.of(mapping_profile_kind(controller))) {
+        if (profile.name != name) continue;
+        if (have_game_config) {
+            const std::string key = wii_u_mapping_key(player, controller);
+            if (profile.wii_u.is_standard(controller) && !profile.wii_u.sideways) {
+                game_config.wii_u_mappings.erase(key);
+            } else {
+                game_config.wii_u_mappings[key] = profile.wii_u;
+            }
+            if (!game_config.save(paths)) log_warn("could not save this game's button mapping");
+        }
+        show_controller_notice(slot, name);
+        log_info(pad_slot_name(slot) + " switched to the profile " + name);
+        return;
+    }
+    show_controller_notice(slot, "The profile \u201c" + name + "\u201d isn't saved.");
+    log_info(pad_slot_name(slot) + " can't switch to the profile " + name + ": it isn't saved");
 }
 
 WiiUController App::Impl::wii_u_controller_of(int player) const {
@@ -3737,7 +3790,8 @@ bool App::Impl::wants_menu_overlay() const {
         external_source->running() && external_source->overlay_supported() && MenuOverlay::supported()) {
         return true;
     }
-    return !shown_corner_notice().empty() && system == SystemId::WiiU && !is_companion() && external_source &&
+    return (!shown_corner_notice().empty() || !shown_controller_notices().empty()) && system == SystemId::WiiU &&
+           !is_companion() && external_source &&
            external_source->running() && external_source->overlay_supported() &&
            MenuOverlay::supported();
 }
@@ -3755,6 +3809,55 @@ std::string App::Impl::shown_corner_notice() const {
 void App::Impl::show_corner_notice(const std::string& message) {
     corner_notice = message;
     corner_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+}
+
+void App::Impl::show_controller_notice(PadSlot slot, const std::string& message) {
+    ControllerNotice notice;
+    notice.slot = slot;
+    if (slot.kind == PadSlot::Kind::GamePad) {
+        notice.type = "Wii U GamePad";
+    } else if (slot.kind == PadSlot::Kind::Player) {
+        const int option = cemu_player_type_option(slot.player);
+        if (option >= 0) {
+            const ExternalOption& type = cemu_options[static_cast<std::size_t>(option)];
+            if (type.active >= 0 && type.active < static_cast<int>(type.choices.size())) {
+                notice.type = wii_u_type_name(type.choices[static_cast<std::size_t>(type.active)]);
+            }
+        }
+        notice.sideways = wii_u_controller_of(slot.player) == WiiUController::Remote &&
+                          wii_u_mapping_of(slot.player).sideways;
+    }
+    notice.text = message;
+    const auto now = std::chrono::steady_clock::now();
+    // One controller's newest in place of its last.
+    controller_notices.erase(std::remove_if(controller_notices.begin(), controller_notices.end(),
+                                            [&](const auto& shown) {
+                                                return shown.first.slot == slot || shown.second <= now;
+                                            }),
+                             controller_notices.end());
+    controller_notices.emplace_back(std::move(notice), now + std::chrono::milliseconds(2500));
+}
+
+std::vector<ControllerNotice> App::Impl::shown_controller_notices() const {
+    std::vector<ControllerNotice> shown;
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& [notice, until] : controller_notices) {
+        if (now < until) shown.push_back(notice);
+    }
+    return shown;
+}
+
+void App::Impl::render_corner_alerts(float width, float height) {
+    std::string notice = shown_corner_notice();
+    std::vector<ControllerNotice> notices = shown_controller_notices();
+    if (notice.empty() && notices.empty() && state == State::Companion && companion_session) {
+        // The host's, shown here as well while it shows them.
+        notice = companion_session->host_corner_notice();
+        if (notice.empty() && companion_session->host_menu_unavailable_notice()) notice = kMenuUnavailableNotice;
+        notices = companion_session->host_controller_notices();
+    }
+    if (notice.empty() && notices.empty()) return;
+    render_corner_notices(quads, text, notice_icons, notice_icons_tried, width, height, notice, notices);
 }
 
 bool App::Impl::pauses_wii_u_for_menu() const {
@@ -4046,8 +4149,7 @@ void App::Impl::render_menu_overlay() {
 
     if (!begin_picture()) return cannot_draw();
     if (menu_over) draw_entering(w, h, draw_backdrop, draw_menu);
-    const std::string notice = shown_corner_notice();
-    if (!notice.empty()) render_corner_notice(quads, text, w, h, notice);
+    render_corner_alerts(w, h);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
     // A notice alone, the game running under it and refused the pause, keeps
@@ -7109,16 +7211,7 @@ void App::Impl::render() {
             menu_backdrop.forget();
         }
     }, [&] { render_pages(width, height, show_menu_backdrop || quick_menu_leaving(), frames); });
-    if (const std::string notice = shown_corner_notice(); !notice.empty()) {
-        render_corner_notice(quads, text, width, height, notice);
-    } else if (state == State::Companion && companion_session &&
-               !companion_session->host_corner_notice().empty()) {
-        // The host's, shown here as well while it shows it.
-        render_corner_notice(quads, text, width, height, companion_session->host_corner_notice());
-    } else if (state == State::Companion && companion_session &&
-               companion_session->host_menu_unavailable_notice()) {
-        render_corner_notice(quads, text, width, height, kMenuUnavailableNotice);
-    }
+    render_corner_alerts(width, height);
     if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&
                 companion_session->host_resume_notice())) {
@@ -7804,6 +7897,7 @@ int App::run(const AppOptions& options) {
             shared.favorite_color = impl.settings.ds_favorite_color;
             // Whatever is in this device's corner is in the other's too.
             shared.corner_notice = impl.shown_corner_notice();
+            shared.controller_notices = impl.shown_controller_notices();
             if (impl.picker && impl.system == SystemId::WiiU) {
                 shared.producer_options = impl.picker->state().producer_options;
                 shared.producer_choices = impl.picker->state().producer_choices;

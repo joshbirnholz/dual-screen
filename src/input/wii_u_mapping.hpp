@@ -102,6 +102,10 @@ struct WiiUMapping {
     // player holds it, so a button on Up presses the remote's Right, which
     // points up held so. What each button is chosen as is the same either way.
     bool sideways = false;
+    // A mapping profile to switch to when a button is held -- see
+    // ProfileHold -- by its name; empty for none. The button still does what
+    // it does when tapped.
+    std::array<std::string, kPadControls> hold_profile{};
 
     WiiUAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     WiiUAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
@@ -109,14 +113,45 @@ struct WiiUMapping {
     WiiUAction turbo(PadControl control) const { return turbo_of[static_cast<std::size_t>(control)]; }
     // What `control` does, Standard looked up.
     WiiUAction resolved(PadControl control, WiiUController controller) const;
+    std::string& held(PadControl control) { return hold_profile[static_cast<std::size_t>(control)]; }
+    const std::string& held(PadControl control) const { return hold_profile[static_cast<std::size_t>(control)]; }
+    // Which buttons switch profile when held, as PadControl bits.
+    uint32_t hold_controls() const;
     // Whether every button does what the standard mapping has it do, held
-    // sideways or not.
+    // sideways or not, and none switches profile.
     bool is_standard(WiiUController controller) const;
 
     bool operator==(const WiiUMapping& other) const {
-        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways;
+        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways &&
+               hold_profile == other.hold_profile;
     }
     bool operator!=(const WiiUMapping& other) const { return !(*this == other); }
+};
+
+// A controller's buttons that switch profile when held, as Steam Input's long
+// press is: each one's press held back from the game until it is let go --
+// a tap reaching it then, as a press kTapMs long -- or held kHoldMs, when it
+// switches instead and the game never sees it. One for each controller.
+class ProfileHold {
+public:
+    static constexpr uint32_t kHoldMs = 500;
+    static constexpr uint32_t kTapMs = 100;
+    // `controls`, the PadControl bits held now, and `holding`, which of them
+    // switch: what the game is to see instead. `switched` is the control
+    // held long enough just now, or -1. Not called for a while -- a menu
+    // up -- it starts afresh.
+    uint32_t update(uint32_t controls, uint32_t holding, uint32_t now_ms, int& switched);
+
+private:
+    // Down and held back; of those, switched already; tapped, passed on
+    // until their time.
+    uint32_t down_ = 0;
+    uint32_t switched_ = 0;
+    uint32_t tapping_ = 0;
+    std::array<uint32_t, kPadControls> since_{};
+    std::array<uint32_t, kPadControls> tap_until_{};
+    uint32_t last_ms_ = 0;
+    bool started_ = false;
 };
 
 // The console buttons -- ExternalButton bits -- that `controls` (PadControl

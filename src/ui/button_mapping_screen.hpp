@@ -61,6 +61,10 @@ struct ButtonMappingScreenResult {
 // there instead, a switch: on, the remote is drawn and its D-Pad pressed as
 // held on its side.
 //
+// A Wii U controller's button can also switch to a profile when held, as
+// well as doing its job when tapped: When Held..., last in its picker, then
+// the profile -- see ProfileHold.
+//
 // Mapping Profiles, on -, are mappings kept under a name for any game to load:
 // Save as New Profile..., then the profiles there are for this page's kind of
 // mapping -- a DS game's, a Wii Remote + Nunchuk's -- the one the mapping is
@@ -96,6 +100,9 @@ public:
     // over them -- "DS Profiles". Every frame, from whoever keeps them.
     void set_profiles(std::vector<std::string> names, int current, std::string heading);
     bool profiles_open() const { return profiles_up_ && choice_.is_open(); }
+    // When Held's picker, beside a Wii U controller's button: Nothing, then
+    // the profiles, one to switch to while the button is held.
+    bool hold_choice_open() const { return holding_up_ && choice_.is_open(); }
     // A new profile being named, and what has been typed: the keyboard is to
     // type into it -- see InputManager::set_text_entry() -- what it typed
     // coming in through type(), before update().
@@ -250,6 +257,8 @@ private:
     void open_wii_u_choice(const PixelRect& row);
     void choose_wii_u(int index, ButtonMappingScreenResult& result);
     void toggle_wii_u_turbo(ButtonMappingScreenResult& result);
+    void open_hold_choice();
+    void choose_hold(int index, ButtonMappingScreenResult& result);
     std::string wii_u_caption() const;
     // Sideways Wii Remote turned on or off.
     void toggle_sideways(ButtonMappingScreenResult& result);
@@ -300,8 +309,10 @@ private:
     WiiUController wii_u_controller_ = WiiUController::Pro;
     std::string detail_;
     std::vector<WiiUAction> choice_wii_u_;
-    // Mapping Profiles, in choice_ while profiles_up_.
+    // Mapping Profiles, in choice_ while profiles_up_; When Held's picker
+    // while holding_up_.
     bool profiles_up_ = false;
+    bool holding_up_ = false;
     std::vector<std::string> profile_names_;
     int profile_current_ = -1;
     std::string profile_heading_;

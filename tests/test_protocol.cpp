@@ -2151,6 +2151,35 @@ void test_wii_u_player_view_round_trip() {
     CHECK(!received.open);
 }
 
+// Corner alerts about a controller go to the other device with the menu's
+// state, after everything else.
+void test_controller_notices_travel_with_the_session_state() {
+    SessionStateMessage sent;
+    ControllerNotice notice;
+    notice.slot = PadSlot::player_number(1);
+    notice.type = "Wii Remote";
+    notice.sideways = true;
+    notice.text = "Kart";
+    sent.controller_notices = {notice, notice};
+    sent.controller_notices[1].slot = PadSlot::gamepad();
+    sent.controller_notices[1].type = "Wii U GamePad";
+    sent.controller_notices[1].sideways = false;
+    std::vector<uint8_t> buffer;
+    encode_session_state(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    SessionStateMessage received;
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.controller_notices == sent.controller_notices);
+    // None, from a host that has none to say.
+    buffer.clear();
+    encode_session_state(SessionStateMessage(), buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.controller_notices.empty());
+}
+
 void test_button_mapping_view_round_trip() {
     ButtonMappingViewMessage sent;
     sent.open = true;
@@ -2229,6 +2258,17 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.profile_current == 1 && received.profile_heading == sent.profile_heading);
     CHECK(received.naming && received.name_text == "Kart" && received.naming_focus == 1);
     CHECK(received.asking == 2 && received.asking_profile == 0);
+    // When Held's picker, and the profiles held buttons switch to.
+    sent.profiles = false;
+    sent.naming = false;
+    sent.holding = true;
+    sent.wii_u_mapping.held(PadControl::Minus) = "Kart";
+    sent.wii_u_mapping.held(PadControl::RightStick) = "Menus";
+    buffer.clear();
+    encode_button_mapping_view(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received.holding && received.wii_u_mapping == sent.wii_u_mapping);
 
     // Closed is a message too.
     buffer.clear();
@@ -2398,6 +2438,7 @@ void test_menu_scroll_and_amiibo_browser_round_trip() {
 }
 
 int main() {
+    test_controller_notices_travel_with_the_session_state();
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
     test_a_bye_can_say_quit_too();

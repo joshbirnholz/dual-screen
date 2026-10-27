@@ -418,6 +418,7 @@ void test_mapping_profiles_round_trip() {
     kart.name = "Kart";
     kart.wii_u[PadControl::B] = WiiUAction::Two;
     kart.wii_u.sideways = true;
+    kart.wii_u.held(PadControl::Minus) = "Kart Two";
     CHECK(profiles.add(mapping_profile_kind(WiiUController::Remote), kart));
     CHECK(profiles.save(paths));
 
@@ -425,6 +426,8 @@ void test_mapping_profiles_round_trip() {
     CHECK(reloaded == profiles);
     CHECK(reloaded.of("wii_u.remote").size() == 1 && reloaded.of("wii_u.remote")[0].name == "Kart");
     CHECK(reloaded.of("wii_u.remote")[0].wii_u.sideways);
+    CHECK(reloaded.of("wii_u.remote")[0].wii_u.held(PadControl::Minus) == "Kart Two");
+    CHECK(reloaded.of("wii_u.remote")[0].wii_u.held(PadControl::Plus).empty());
     CHECK(mapping_profile_heading("wii_u.nunchuk") == "Wii Remote + Nunchuk Profiles");
     CHECK(mapping_profile_heading("3ds") == "3DS Profiles");
 

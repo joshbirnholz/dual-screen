@@ -589,6 +589,53 @@ void test_removing_a_player_moves_the_rest_up() {
 }
 
 uint32_t bit(ds::PadControl control) { return 1u << static_cast<unsigned>(control); }
+
+// A button that switches profile when held is Steam Input's long press: held
+// back until let go, a tap then reaching the game as a short press; held
+// half a second, a switch, and the game never sees it -- not even as it is
+// let go. Every other button goes straight through.
+void test_a_held_button_switches_and_a_tap_still_presses() {
+    using ds::PadControl;
+    using ds::ProfileHold;
+    const uint32_t minus = bit(PadControl::Minus);
+    const uint32_t a = bit(PadControl::A);
+    ProfileHold hold;
+    int switched = -1;
+    uint32_t ms = 1000;
+    CHECK_EQ(hold.update(a | minus, minus, ms, switched), a);
+    CHECK_EQ(switched, -1);
+    ms += 100;
+    CHECK_EQ(hold.update(minus, minus, ms, switched), 0u);
+    // Let go: a tap, for a moment.
+    ms += 16;
+    CHECK_EQ(hold.update(0, minus, ms, switched), minus);
+    ms += 50;
+    CHECK_EQ(hold.update(0, minus, ms, switched), minus);
+    ms += 60;
+    CHECK_EQ(hold.update(0, minus, ms, switched), 0u);
+    CHECK_EQ(switched, -1);
+
+    // Held: switched once, at half a second, and nothing on letting go.
+    for (int frame = 0; frame < 40; ++frame) {
+        ms += 16;
+        CHECK_EQ(hold.update(minus, minus, ms, switched), 0u);
+        if (frame == 32) CHECK_EQ(switched, static_cast<int>(PadControl::Minus));
+        if (frame != 32) CHECK_EQ(switched, -1);
+    }
+    // The profile switched to has nothing on it: still held back until
+    // let go.
+    ms += 16;
+    CHECK_EQ(hold.update(minus, 0, ms, switched), 0u);
+    ms += 16;
+    CHECK_EQ(hold.update(0, 0, ms, switched), 0u);
+    ms += 16;
+    CHECK_EQ(hold.update(minus, 0, ms, switched), minus);
+
+    // Away a while, under a menu: nothing is still down.
+    ProfileHold paused;
+    paused.update(minus, minus, 5000, switched);
+    CHECK_EQ(paused.update(0, minus, 9000, switched), 0u);
+}
 uint32_t bit(ds::ExternalButton button) { return 1u << static_cast<unsigned>(button); }
 
 // Each controller a Wii U game has is mapped as itself: the GamePad's and a Pro
@@ -692,6 +739,7 @@ int main() {
     test_a_new_players_page_says_what_it_will_be_first();
     test_change_order_lets_go_and_takes_each_in_turn();
     test_removing_a_player_moves_the_rest_up();
+    test_a_held_button_switches_and_a_tap_still_presses();
     test_a_wii_u_controller_is_mapped_as_itself();
     return test::finish("pad-routing");
 }

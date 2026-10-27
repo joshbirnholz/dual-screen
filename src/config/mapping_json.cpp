@@ -81,6 +81,10 @@ json wii_u_mapping_json(const WiiUMapping& mapping) {
         }
     }
     if (mapping.sideways) kept["sideways"] = true;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        if (mapping.hold_profile[index].empty()) continue;
+        kept["hold_profile"][pad_control_key(static_cast<PadControl>(index))] = mapping.hold_profile[index];
+    }
     return kept;
 }
 
@@ -103,6 +107,12 @@ WiiUMapping wii_u_mapping_from_json(const json& kept) {
     }
     if (const auto sideways = kept.find("sideways"); sideways != kept.end() && sideways->is_boolean()) {
         mapping.sideways = sideways->get<bool>();
+    }
+    if (const auto held = kept.find("hold_profile"); held != kept.end() && held->is_object()) {
+        for (const auto& [control_key, name] : held->items()) {
+            PadControl control = PadControl::A;
+            if (name.is_string() && pad_control_from_key(control_key, control)) mapping.held(control) = name;
+        }
     }
     return mapping;
 }

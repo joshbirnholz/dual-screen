@@ -83,6 +83,20 @@ struct ControllerRowView {
     }
 };
 
+// A corner alert about one of a game's controllers: which, drawn as its
+// lights or the GamePad with what the game has it as over them -- see
+// ControllerRowView -- and a few words: the mapping profile it switched to.
+// The host's, told to the other device so both show it.
+struct ControllerNotice {
+    PadSlot slot;
+    std::string type;
+    bool sideways = false;
+    std::string text;
+    bool operator==(const ControllerNotice& other) const {
+        return slot == other.slot && type == other.type && sideways == other.sideways && text == other.text;
+    }
+};
+
 // What a Wii U game is handed for a player, from Cemu's name for it, as the
 // menus say it: Cemu's "Pro Controller" is a "Wii U Pro Controller", its
 // "Wii Remote + Classic Controller" a "Wii Classic Controller" -- the remote

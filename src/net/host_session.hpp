@@ -197,6 +197,8 @@ public:
         int favorite_color = -1;
         // See SessionStateMessage::corner_notice.
         std::string corner_notice;
+        // See SessionStateMessage::controller_notices.
+        std::vector<ControllerNotice> controller_notices;
         std::vector<std::string> amiibo;
         std::string amiibo_folder;
         // The settings screen, which is this device's own rather than shared:

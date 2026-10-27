@@ -122,7 +122,62 @@ WiiUAction WiiUMapping::resolved(PadControl control, WiiUController controller) 
     return action == WiiUAction::Standard ? standard_wii_u_action(control, controller) : action;
 }
 
+uint32_t WiiUMapping::hold_controls() const {
+    uint32_t controls = 0;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        if (!hold_profile[index].empty()) controls |= 1u << index;
+    }
+    return controls;
+}
+
+uint32_t ProfileHold::update(uint32_t controls, uint32_t holding, uint32_t now_ms, int& switched) {
+    switched = -1;
+    // Away a while -- the game paused under a menu -- nothing is still down.
+    if (!started_ || now_ms - last_ms_ > 250) {
+        down_ = switched_ = tapping_ = 0;
+        started_ = true;
+    }
+    last_ms_ = now_ms;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const uint32_t bit = 1u << index;
+        const bool pressed = (controls & bit) != 0;
+        if ((down_ & bit) == 0) {
+            if (pressed && (holding & bit) != 0) {
+                down_ |= bit;
+                since_[index] = now_ms;
+            }
+            continue;
+        }
+        if (pressed) {
+            if ((switched_ & bit) == 0 && now_ms - since_[index] >= kHoldMs) {
+                switched_ |= bit;
+                if (switched < 0) switched = static_cast<int>(index);
+            }
+            continue;
+        }
+        // Let go: a tap is passed on now.
+        if ((switched_ & bit) == 0) {
+            tapping_ |= bit;
+            tap_until_[index] = now_ms + kTapMs;
+        }
+        down_ &= ~bit;
+        switched_ &= ~bit;
+    }
+    uint32_t taps = 0;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const uint32_t bit = 1u << index;
+        if ((tapping_ & bit) == 0) continue;
+        if (static_cast<int32_t>(now_ms - tap_until_[index]) >= 0) {
+            tapping_ &= ~bit;
+        } else {
+            taps |= bit;
+        }
+    }
+    return (controls & ~down_) | taps;
+}
+
 bool WiiUMapping::is_standard(WiiUController controller) const {
+    if (hold_controls() != 0) return false;
     for (std::size_t index = 0; index < kPadControls; ++index) {
         const PadControl control = static_cast<PadControl>(index);
         if (resolved(control, controller) != standard_wii_u_action(control, controller)) return false;

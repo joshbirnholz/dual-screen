@@ -590,6 +590,16 @@ button on Up presses the remote's Right, which points up. What each button
 is chosen as stays the same, and a profile keeps whether it is on. The
 Controls page draws a player's Wii Remote on its side too.
 
+**When Held…**, last in a Wii U button's list, makes holding that button
+switch the controller to one of its saved profiles, as Steam Input's long
+press does: a tap still does the button's job, reaching the game as the
+button is let go, and holding it half a second switches instead, the game
+never seeing it. Each profile keeps its own, so two can switch back and
+forth on one button. The button's row says so after its job: **· Hold: Kart**.
+Switching puts an alert in the corner, as a Switch's own do: the
+controller, its player lights and the profile's name -- several at once
+stacked down the side, on both devices.
+
 **−** on that page, or on a DS or 3DS game's Change Controls, opens
 **Mapping Profiles**: mappings kept under a name, for any game to load.
 **Save as New Profile…** names the mapping as it is now and keeps it. Over

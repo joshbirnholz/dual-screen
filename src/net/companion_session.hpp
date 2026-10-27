@@ -585,6 +585,8 @@ public:
     // SessionStateMessage::corner_notice: what to show in this device's
     // corner while the host shows it in its own, or empty.
     const std::string& host_corner_notice() const { return host_corner_notice_; }
+    // SessionStateMessage::controller_notices, the same way.
+    const std::vector<ControllerNotice>& host_controller_notices() const { return host_controller_notices_; }
     const std::vector<std::vector<std::string>>& host_producer_choices() const {
         return host_producer_choices_;
     }
@@ -1181,6 +1183,7 @@ private:
     ButtonMapping host_button_mapping_;
     int host_favorite_color_ = -1;
     std::string host_corner_notice_;
+    std::vector<ControllerNotice> host_controller_notices_;
     std::vector<std::string> host_amiibo_;
     std::string host_amiibo_folder_;
     int host_max_render_scale_ = 1;

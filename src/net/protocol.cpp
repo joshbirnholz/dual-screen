@@ -375,7 +375,19 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     for (std::size_t index = 0; index < rows; ++index) {
         if (message.wii_u_controllers[index].sideways) sideways |= 1u << index;
     }
-    if (sideways != 0) put_u32(out, sideways);
+    const std::size_t notices = std::min<std::size_t>(message.controller_notices.size(), 8);
+    if (sideways != 0 || notices > 0) put_u32(out, sideways);
+    if (notices > 0) {
+        put_u8(out, static_cast<uint8_t>(notices));
+        for (std::size_t index = 0; index < notices; ++index) {
+            const ControllerNotice& notice = message.controller_notices[index];
+            put_u8(out, static_cast<uint8_t>(notice.slot.kind));
+            put_u8(out, static_cast<uint8_t>(std::clamp(notice.slot.player, 0, 255)));
+            put_string(out, notice.type.substr(0, 255));
+            put_u8(out, notice.sideways ? 1u : 0u);
+            put_string(out, notice.text.substr(0, 255));
+        }
+    }
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -920,7 +932,8 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
         for (const WiiUAction action : message.wii_u_mapping.turbo_of) put_u8(out, static_cast<uint8_t>(action));
     }
     // And Mapping Profiles.
-    put_u8(out, static_cast<uint8_t>((message.profiles ? 1u : 0u) | (message.naming ? 2u : 0u)));
+    put_u8(out, static_cast<uint8_t>((message.profiles ? 1u : 0u) | (message.naming ? 2u : 0u) |
+                                     (message.holding ? 4u : 0u)));
     put_u8(out, message.asking);
     put_u16(out, static_cast<uint16_t>(std::clamp(message.asking_profile + 1, 0, 65535)));
     put_u8(out, message.naming_focus);
@@ -930,6 +943,18 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     const std::size_t names = std::min<std::size_t>(message.profile_names.size(), 255);
     put_u8(out, static_cast<uint8_t>(names));
     for (std::size_t index = 0; index < names; ++index) put_string(out, message.profile_names[index].substr(0, 255));
+    // And the profiles a Wii U controller's held buttons switch to.
+    uint8_t held = 0;
+    for (const std::string& name : message.wii_u_mapping.hold_profile) {
+        if (!name.empty()) ++held;
+    }
+    if (held > 0) put_u8(out, held);
+    for (std::size_t index = 0; index < kPadControls && held > 0; ++index) {
+        const std::string& name = message.wii_u_mapping.hold_profile[index];
+        if (name.empty()) continue;
+        put_u8(out, static_cast<uint8_t>(index));
+        put_string(out, name.substr(0, 255));
+    }
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -1010,8 +1035,21 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
             if (!reader.ok()) return false;
             view.profiles = (flags & 1u) != 0;
             view.naming = (flags & 2u) != 0;
+            view.holding = (flags & 4u) != 0;
             view.asking_profile = static_cast<int>(asking_profile) - 1;
             view.profile_current = static_cast<int>(current) - 1;
+        }
+        // From a host new enough to switch profile on a held button.
+        uint8_t held = 0;
+        if (reader.remaining() > 0 && reader.u8(held)) {
+            for (uint8_t at = 0; at < held && reader.ok(); ++at) {
+                uint8_t control = 0;
+                std::string name;
+                reader.u8(control);
+                reader.string(name);
+                if (control < kPadControls) view.wii_u_mapping.hold_profile[control] = std::move(name);
+            }
+            if (!reader.ok()) return false;
         }
     }
     out = view;
@@ -1914,6 +1952,7 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         out.button_mapping.stick_radius = clamp_stick_radius(radius / 65536.0f);
     }
     out.wii_u_controllers.clear();
+    out.controller_notices.clear();
     if (reader.remaining() > 0) {
         uint8_t rows = 0;
         reader.u8(rows);
@@ -1942,6 +1981,26 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         if (reader.remaining() >= 4 && reader.u32(sideways)) {
             for (std::size_t index = 0; index < out.wii_u_controllers.size(); ++index) {
                 out.wii_u_controllers[index].sideways = (sideways & (1u << index)) != 0;
+            }
+        }
+        // And its corner alerts about a controller.
+        uint8_t notices = 0;
+        if (reader.remaining() > 0 && reader.u8(notices)) {
+            for (uint8_t index = 0; index < notices && reader.ok(); ++index) {
+                ControllerNotice notice;
+                uint8_t kind = 0;
+                uint8_t player = 0;
+                uint8_t held_sideways = 0;
+                reader.u8(kind);
+                reader.u8(player);
+                reader.string(notice.type);
+                reader.u8(held_sideways);
+                reader.string(notice.text);
+                if (!reader.ok() || kind > 2) return false;
+                notice.slot.kind = static_cast<PadSlot::Kind>(kind);
+                notice.slot.player = player;
+                notice.sideways = held_sideways != 0;
+                out.controller_notices.push_back(std::move(notice));
             }
         }
     }

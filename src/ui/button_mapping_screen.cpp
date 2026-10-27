@@ -74,6 +74,7 @@ void ButtonMappingScreen::open() {
     placing_stick_ = false;
     mirrored_focus_ = -1;
     profiles_up_ = false;
+    holding_up_ = false;
     naming_.close();
 }
 
@@ -151,6 +152,7 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     choice_modes_.clear();
     choice_wii_u_.clear();
     profiles_up_ = false;
+    holding_up_ = false;
     if (wii_u_) {
         open_wii_u_choice(geometry.rows[static_cast<std::size_t>(focus_)]);
         return;
@@ -259,6 +261,7 @@ void ButtonMappingScreen::choose_profile(int line, ButtonMappingScreenResult& re
 void ButtonMappingScreen::start_naming() {
     choice_.close();
     profiles_up_ = false;
+    holding_up_ = false;
     // A name not taken yet, to keep or type over.
     std::string name;
     for (int number = static_cast<int>(profile_names_.size()) + 1;; ++number) {
@@ -290,6 +293,7 @@ void ButtonMappingScreen::ask_about_profile(Asking asking) {
     asking_profile_ = profile;
     choice_.close();
     profiles_up_ = false;
+    holding_up_ = false;
     asking_ = asking;
     confirming_ = true;
     confirm_cursor_.reset(2, 1);
@@ -319,7 +323,35 @@ void ButtonMappingScreen::open_wii_u_choice(const PixelRect& row) {
         labels.push_back(wii_u_action_name(action, wii_u_controller_));
         choice_wii_u_.push_back(action);
     }
+    // Last, what it does when held, on to a picker of its own -- Count
+    // standing for it among the actions.
+    labels.push_back("When Held\u2026");
+    choice_wii_u_.push_back(WiiUAction::Count);
     choice_.open(std::move(labels), std::max(0, current), row);
+}
+
+void ButtonMappingScreen::open_hold_choice() {
+    const Geometry geometry = compute_geometry(last_width_, last_height_);
+    const std::string& now = wii_u_mapping_.held(focused_control());
+    std::vector<std::string> labels{"Nothing"};
+    int current = 0;
+    for (const std::string& name : profile_names_) {
+        if (name == now) current = static_cast<int>(labels.size());
+        labels.push_back("Switch to " + name);
+    }
+    choice_wii_u_.clear();
+    choice_.open(std::move(labels), current, geometry.rows[static_cast<std::size_t>(focus_)]);
+    holding_up_ = true;
+}
+
+void ButtonMappingScreen::choose_hold(int index, ButtonMappingScreenResult& result) {
+    holding_up_ = false;
+    if (index < 0 || index > static_cast<int>(profile_names_.size())) return;
+    const std::string name = index == 0 ? std::string() : profile_names_[static_cast<std::size_t>(index - 1)];
+    std::string& held = wii_u_mapping_.held(focused_control());
+    if (held == name) return;
+    held = name;
+    result.wii_u_changed = wii_u_mapping_;
 }
 
 void ButtonMappingScreen::toggle_sideways(ButtonMappingScreenResult& result) {
@@ -339,6 +371,10 @@ void ButtonMappingScreen::choose_wii_u(int index, ButtonMappingScreenResult& res
     if (index < 0 || index >= static_cast<int>(choice_wii_u_.size())) return;
     const PadControl control = focused_control();
     const WiiUAction action = choice_wii_u_[static_cast<std::size_t>(index)];
+    if (action == WiiUAction::Count) {
+        open_hold_choice();
+        return;
+    }
     // A button on turbo stays on it for another of the controller's buttons.
     if (wii_u_mapping_[control] == WiiUAction::Turbo && is_wii_u_turbo_button(action)) {
         if (wii_u_mapping_.turbo(control) == action) return;
@@ -543,7 +579,10 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
             return of == WiiUAction::Standard ? std::string("Turbo")
                                               : wii_u_action_name(of, wii_u_controller_) + " (turbo)";
         }
-        return wii_u_action_name(action, wii_u_controller_);
+        std::string label = wii_u_action_name(action, wii_u_controller_);
+        // And the profile it switches to when held.
+        if (!wii_u_mapping_.held(control).empty()) label += " \u00b7 Hold: " + wii_u_mapping_.held(control);
+        return label;
     }
     const PadAction action = mapping_.resolved(control, console_);
     if (action == PadAction::Turbo) {
@@ -556,6 +595,10 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
 void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
     if (profiles_up_) {
         choose_profile(index, result);
+        return;
+    }
+    if (holding_up_) {
+        choose_hold(index, result);
         return;
     }
     if (wii_u_) {
@@ -738,6 +781,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
                 if (action == UiAction::MenuMinus) {
                     choice_.close();
                     profiles_up_ = false;
+    holding_up_ = false;
                 } else if (action == UiAction::MenuQuit) {
                     ask_about_profile(Asking::Delete);
                 } else if (action == UiAction::MenuReset) {
@@ -884,6 +928,7 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         }
         choice_.close();
         profiles_up_ = false;
+    holding_up_ = false;
         confirming_ = false;
         return;
     }
@@ -1316,11 +1361,15 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     if (view.choice_focus == 0) {
         choice_.close();
         profiles_up_ = false;
+    holding_up_ = false;
     } else if (view.profiles) {
         if (!profiles_open()) open_profiles(view.choice_focus - 1);
         if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
+    } else if (view.holding) {
+        if (!hold_choice_open()) open_hold_choice();
+        if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
     } else {
-        if (!choice_.is_open() || profiles_up_) open_choice(output_width, output_height);
+        if (!choice_.is_open() || profiles_up_ || holding_up_) open_choice(output_width, output_height);
         if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
     }
     // A new profile's name, as the other device has it -- unless typed here
@@ -1453,6 +1502,7 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.confirm_focus = screen.confirming() ? static_cast<uint8_t>(screen.confirm_focus() + 1) : 0;
     view.profiles = screen.profiles_open();
+    view.holding = screen.hold_choice_open();
     view.profile_names = screen.profile_names();
     view.profile_current = screen.profile_current();
     view.profile_heading = screen.profile_heading();

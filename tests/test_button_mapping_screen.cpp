@@ -673,6 +673,48 @@ void test_a_wii_remote_can_be_held_sideways() {
     CHECK_EQ(open_wii_u(WiiUController::RemoteNunchuk).row_count(), static_cast<int>(kPadControls));
 }
 
+// When Held..., last in a Wii U button's picker: Nothing, then each
+// profile, the one chosen switched to while the button is held -- the
+// button keeping its job -- shown beside its job, and on the other device.
+void test_a_held_button_can_switch_profile() {
+    ButtonMappingScreen screen = open_wii_u(WiiUController::Pro);
+    screen.set_profiles({"Kart", "Menus"}, -1, "Wii U Pro Controller Profiles");
+    move_to(screen, PadControl::Minus);
+    press(screen, UiAction::Confirm);
+    const int when_held = static_cast<int>(wii_u_action_choices(WiiUController::Pro).size());
+    ButtonMappingScreenResult result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + when_held);
+    CHECK(!result.wii_u_changed.has_value());
+    CHECK(screen.hold_choice_open() && screen.choice_focus() == 0);
+    CHECK(button_mapping_view_of(screen).holding);
+    result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 2);
+    CHECK(result.wii_u_changed.has_value() && !screen.choosing());
+    if (result.wii_u_changed) {
+        CHECK(result.wii_u_changed->held(PadControl::Minus) == "Menus");
+        CHECK((*result.wii_u_changed)[PadControl::Minus] == WiiUAction::Standard);
+        CHECK(result.wii_u_changed->hold_controls() == 1u << static_cast<unsigned>(PadControl::Minus));
+        CHECK(!result.wii_u_changed->is_standard(WiiUController::Pro));
+    }
+    CHECK(screen.action_label(PadControl::Minus) ==
+          wii_u_action_name(standard_wii_u_action(PadControl::Minus, WiiUController::Pro), WiiUController::Pro) +
+              " \u00b7 Hold: Menus");
+
+    // On the one it is, and the other device's drawn the same.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Up);
+    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + when_held);
+    CHECK(screen.hold_choice_open() && screen.choice_focus() == 2);
+    const net::ButtonMappingViewMessage view = button_mapping_view_of(screen);
+    ButtonMappingScreen mirrored;
+    mirrored.set_wii_u_mapping(view.wii_u_mapping, WiiUController::Pro, view.wii_u_detail);
+    mirrored.show_mirrored(view, kWidth, kHeight);
+    CHECK(mirrored.hold_choice_open() && mirrored.choice_focus() == 2);
+
+    // Nothing takes it off.
+    result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 0);
+    CHECK(result.wii_u_changed.has_value() && result.wii_u_changed->hold_controls() == 0);
+    if (result.wii_u_changed) CHECK(result.wii_u_changed->is_standard(WiiUController::Pro));
+}
+
 // The other device's page is drawn from the view alone: the mapping, the
 // controller and the words at the heading's right all go with it.
 void test_the_other_device_shows_a_wii_u_controllers_page() {
@@ -780,6 +822,7 @@ int main() {
     test_a_wii_u_controller_is_mapped_on_the_same_page();
     test_a_wii_remote_can_be_held_sideways();
     test_the_other_device_shows_a_wii_u_controllers_page();
+    test_a_held_button_can_switch_profile();
     test_profiles_are_loaded_saved_and_deleted();
     return test::finish("button-mapping-screen");
 }

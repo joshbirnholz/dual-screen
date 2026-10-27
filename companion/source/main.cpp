@@ -536,6 +536,9 @@ private:
     // And the game's Button Mapping.
     ButtonMappingScreen mirrored_button_mapping_;
     WiiUPlayerScreen mirrored_wii_u_player_;
+    // The menus' icons, for the host's corner alerts about a controller.
+    Texture notice_icons_;
+    bool notice_icons_tried_ = false;
     // The host's game dialog -- an error, its keyboard -- shown here too.
     MirroredGameDialog mirrored_game_dialog_;
     // The host's amiibo browser, drawn here while it is up.
@@ -2312,8 +2315,9 @@ void Client::draw_scene() {
 #else
     const bool update_shown = false;
 #endif
+    const std::vector<ControllerNotice>& controller_notices = session_.host_controller_notices();
     router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty() &&
-                   !update_shown);
+                   controller_notices.empty() && !update_shown);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2391,8 +2395,11 @@ void Client::draw_scene() {
         }
     }
     if (game_dialog && !menu_open_) mirrored_game_dialog_.render(quads_, text_, width, height);
-    // For as long as the host shows it.
-    if (!corner_notice.empty()) render_corner_notice(quads_, text_, width, height, corner_notice);
+    // For as long as the host shows them.
+    if (!corner_notice.empty() || !controller_notices.empty()) {
+        render_corner_notices(quads_, text_, notice_icons_, notice_icons_tried_, width, height, corner_notice,
+                              controller_notices);
+    }
 }
 
 #ifdef __SWITCH__
