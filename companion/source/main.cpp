@@ -2051,12 +2051,13 @@ void Client::run() {
             if (sound && host_decides) ui_sounds_.play(*sound);
         }
 
-        // And while the host's Detect Controller waits for a press on one of
-        // them, which may be one of these.
-        const bool host_detecting = session_.host_settings_open() && session_.host_wii_u_player_view().open &&
-                                    session_.host_wii_u_player_view().detecting;
-        if (state_ == State::Playing && !menu_open_ &&
-            (!session_.host_settings_open() || host_detecting) && !session_.host_resume_notice()) {
+        // And while the host's Change Order waits for a press on each of
+        // them, which may be one of these -- the host's menu up, which the
+        // game hears nothing through.
+        const bool host_ordering = menu_open_ && static_cast<MenuConfirm>(session_.host_menu_confirm()) ==
+                                                     MenuConfirm::Ordering;
+        if (state_ == State::Playing && (!menu_open_ || host_ordering) && !session_.host_settings_open() &&
+            !session_.host_resume_notice()) {
             // Each pad on its own as well, so a Wii U host can make them
             // different players.
             const std::vector<net::ReportedPad> pads = net::reported_pads(input_.pad_readings());

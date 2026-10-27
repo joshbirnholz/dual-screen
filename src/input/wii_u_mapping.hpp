@@ -32,6 +32,12 @@ enum class WiiUController : uint8_t {
 // each thing it is, so one changed and back keeps what it had.
 std::string wii_u_mapping_key(int player, WiiUController controller);
 
+// A key kept for a player -- a mapping's, "player3.pro", or Cemu's option
+// for its type, "player3_type" -- once player `removed` (from 0) is gone and
+// every player after it has moved one place up: the same for any other
+// player's or for none, empty for the one removed.
+std::string player_key_after_removing(const std::string& key, int removed);
+
 // What a player Cemu has as `type` -- its name for it, or the menus' --
 // is.
 WiiUController wii_u_controller_for(const std::string& type);

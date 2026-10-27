@@ -254,6 +254,17 @@ bool put_in_slot(PadLineup& lineup, int pad, PadSlot slot);
 // Returns whether anything moved.
 bool take_out_of_play(PadLineup& lineup, int pad);
 
+// Change Order's start: every pad out of play, at the top of Not used in
+// the order they stood -- but the GamePad's, where `keep_gamepad`, for a
+// GamePad another device is holding.
+void unassign_all(PadLineup& lineup, bool keep_gamepad);
+// Pad `pad`, from Not used, made player `player`: an empty place, or one past
+// the last, the places between left empty. Returns whether it was.
+bool assign_player(PadLineup& lineup, int pad, int player);
+// Player `player` gone, as Remove Controller has it: its pad, if any, at the
+// top of Not used, and every player after it one place up.
+void remove_player(PadLineup& lineup, int player);
+
 // One line of the line as shown: its slot, and its pad, or -1 for an empty
 // GamePad. An empty player has no line.
 struct LineupRow {

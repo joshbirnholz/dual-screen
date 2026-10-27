@@ -833,7 +833,7 @@ struct ButtonMappingViewMessage {
 
 // The host's page for one of a Wii U game's players, or its GamePad, for the
 // companion to draw the same: whose it is, the row the cursor is on, the
-// popup up beside it, and Detect Controller counting down. The controllers it
+// popup up beside it, and what Add Controller will make a new one. The controllers it
 // shows are the session state's -- see SessionStateMessage::wii_u_controllers.
 struct WiiUPlayerViewMessage {
     bool open = false;
@@ -841,7 +841,8 @@ struct WiiUPlayerViewMessage {
     uint8_t focus = 0;
     // The popup's cursor plus one, or 0 when none is up.
     uint8_t choice_focus = 0;
-    // Detect Controller up, and how many seconds it has left.
+    // Once Detect Controller up, and how many seconds it had left: a page
+    // that no longer has it says false, but the bytes stay where they were.
     bool detecting = false;
     uint8_t detect_seconds = 0;
     // Add Controller's new player, and what Add will make it: Cemu's type

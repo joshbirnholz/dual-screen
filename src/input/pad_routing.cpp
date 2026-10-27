@@ -335,6 +335,38 @@ bool take_out_of_play(PadLineup& lineup, int pad) {
     return true;
 }
 
+void unassign_all(PadLineup& lineup, bool keep_gamepad) {
+    std::vector<int> out;
+    if (!keep_gamepad && lineup.gamepad >= 0) out.push_back(lineup.gamepad);
+    if (!keep_gamepad) lineup.gamepad = -1;
+    for (const int pad : lineup.players) {
+        if (pad >= 0) out.push_back(pad);
+    }
+    lineup.players.clear();
+    lineup.unused.insert(lineup.unused.begin(), out.begin(), out.end());
+}
+
+bool assign_player(PadLineup& lineup, int pad, int player) {
+    if (pad < 0 || player < 0 || player >= kPadPlayers) return false;
+    const auto from = std::find(lineup.unused.begin(), lineup.unused.end(), pad);
+    if (from == lineup.unused.end()) return false;
+    if (player < static_cast<int>(lineup.players.size()) && lineup.players[static_cast<std::size_t>(player)] >= 0) {
+        return false;
+    }
+    lineup.unused.erase(from);
+    if (player >= static_cast<int>(lineup.players.size())) lineup.players.resize(static_cast<std::size_t>(player) + 1, -1);
+    lineup.players[static_cast<std::size_t>(player)] = pad;
+    return true;
+}
+
+void remove_player(PadLineup& lineup, int player) {
+    if (player < 0 || player >= static_cast<int>(lineup.players.size())) return;
+    const int pad = lineup.players[static_cast<std::size_t>(player)];
+    lineup.players.erase(lineup.players.begin() + player);
+    if (pad >= 0) lineup.unused.insert(lineup.unused.begin(), pad);
+    cap_players(lineup);
+}
+
 int first_free_player(const PadLineup& lineup) {
     for (std::size_t index = 0; index < lineup.players.size(); ++index) {
         if (lineup.players[index] < 0) return static_cast<int>(index);

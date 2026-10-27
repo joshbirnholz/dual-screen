@@ -1247,11 +1247,12 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
     CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and plus");
 }
 
-// A Wii U's Controls: the GamePad, then each player, then each controller
-// not used, which A adds as a new player -- rather than Controller Order and
-// Cemu's types. A opens a player's page, X buzzes a controller, Y picks a
-// player's up to move it -- Up and Down along the players, A, B or Y
-// putting it down -- and the GamePad's is not picked up.
+// A Wii U's Controls: the GamePad, then each player -- one with no
+// controller too -- then Add Controller, rather than Controller Order and
+// Cemu's types. A opens a player's page or a new one's, X buzzes a
+// controller, and Y is Change Order: the list let go of until the caller
+// says it is over, B asking for the old order back and A, once a controller
+// has been taken, for the new one.
 void test_wii_u_controls_list_every_controller() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -1269,13 +1270,8 @@ void test_wii_u_controls_list_every_controller() {
     first.type = "Wii U Pro Controller";
     ControllerRowView second;
     second.slot = PadSlot::player_number(1);
-    second.pad = "this#5";
-    second.name = "8BitDo Pro 2";
     second.type = "Wii Remote";
-    ControllerRowView spare;
-    spare.pad = "this#7";
-    spare.name = "DualSense Wireless Controller";
-    state.wii_u_controllers = {gamepad, first, second, spare};
+    state.wii_u_controllers = {gamepad, first, second};
 
     LayoutPicker picker(registry);
     picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
@@ -1285,88 +1281,79 @@ void test_wii_u_controls_list_every_controller() {
     // only its graphics and Hide Cursor.
     CHECK_EQ(picker.items_in(MenuSection::Options), 2);
 
-    // The GamePad, with no controller: nothing to buzz or pick up.
+    // The GamePad, with no controller: nothing to buzz, but its page.
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
     LayoutPickerResult result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
     CHECK_EQ(result.controller_identified, -1);
-    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller());
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK_EQ(result.controller_opened, 0);
-
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
     result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
     CHECK_EQ(result.controller_identified, 1);
-    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK_EQ(result.controller_picked_up, 1);
-    CHECK(picker.moving_controller());
-    CHECK(!picker.awaiting_confirmation());
-    result = picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    CHECK_EQ(result.controller_moved, 1);
-    // The line moved, and the controller in hand with it.
-    std::vector<ControllerRowView> moved = state.wii_u_controllers;
-    std::swap(moved[1].pad, moved[2].pad);
-    std::swap(moved[1].name, moved[2].name);
-    picker.set_wii_u_controllers(moved);
-    CHECK(picker.focus() == LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
-    // A, B and Y each put it down where it is, and the menu stays.
-    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller());
-    for (const UiAction drop : {UiAction::Cancel, UiAction::Confirm, UiAction::MenuReset}) {
-        picker.set_wii_u_controllers(state.wii_u_controllers);
-        picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
-        picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-        CHECK(picker.moving_controller());
-        result = picker.update({drop}, {}, kWidth, kHeight);
-        CHECK(!picker.moving_controller() && result.controller_opened == -1 && result.controller_picked_up == -1);
-        CHECK(picker.is_open());
-    }
-
-    // A controller not used: a new player's page to add it, and nothing to
-    // pick up.
-    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
-    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller() && result.controller_picked_up == -1);
+    // A player with no controller has a page all the same.
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 2));
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.controller_adding == 3 && result.controller_opened == -1);
-    // The GamePad's controller is picked up, when it has one, to trade
-    // places with Player 1.
-    std::vector<ControllerRowView> held = state.wii_u_controllers;
-    held[0].pad = "this#6";
-    held[0].name = "Steam Deck";
-    picker.set_wii_u_controllers(held);
-    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 0));
-    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK(picker.moving_controller() && result.controller_picked_up == 0);
-    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
-    CHECK(!picker.moving_controller());
-    // Four players, as many as a Wii U pairs: nothing to add one as.
-    std::vector<ControllerRowView> full = state.wii_u_controllers;
-    for (int player = 2; player < 4; ++player) {
-        ControllerRowView more = second;
-        more.slot = PadSlot::player_number(player);
-        more.pad = "this#" + std::to_string(10 + player);
-        full.push_back(more);
-    }
-    picker.set_wii_u_controllers(full);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 6);
+    CHECK_EQ(result.controller_opened, 2);
+    // Add Controller: the page of the player after the last.
     picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK_EQ(result.controller_adding, -1);
-    picker.set_wii_u_controllers(state.wii_u_controllers);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
-    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
-    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK_EQ(result.controller_picked_up, 1);
-    CHECK(picker.moving_controller());
+    CHECK(result.controller_adding == 2 && result.controller_opened == -1);
 
-    // The other device, told so.
+    // Change Order, from anywhere in the list: Add Controller goes, and the
+    // list does nothing.
+    result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK(result.change_order_started);
+    CHECK(picker.ordering_controllers() && !picker.awaiting_confirmation());
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
+    result = picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK_EQ(result.controller_identified, -1);
+    // A is nothing until a controller has been taken.
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!result.change_order_done && result.controller_opened == -1);
+    picker.set_ordering(0, false);
+    CHECK_EQ(picker.confirm_focus_wire(), 1);
+    picker.set_ordering(2, true);
+    CHECK_EQ(picker.confirm_focus_wire(), 3 | LayoutPicker::kOrderingAssigned);
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.change_order_done && picker.ordering_controllers());
+    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(result.change_order_cancelled && picker.ordering_controllers() && picker.is_open());
+
+    // The other device, told so: the row waiting, and that A is Done.
     LayoutPicker other(registry);
     other.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
     other.open(state);
     other.show(state, picker.focus(), picker.confirmation(), picker.confirm_focus_wire());
-    CHECK(other.moving_controller());
+    CHECK(other.ordering_controllers());
+    CHECK(other.ordering_waiting() == 2 && other.ordering_assigned());
+    CHECK_EQ(other.items_in(MenuSection::ControllerOrder), 3);
+
+    // Over: the list as it was, the cursor where it was.
+    picker.end_ordering();
+    CHECK(!picker.ordering_controllers());
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
+    CHECK(picker.focus() == LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
+    other.show(state, picker.focus(), picker.confirmation(), picker.confirm_focus_wire());
+    CHECK(!other.ordering_controllers());
     CHECK_EQ(other.items_in(MenuSection::ControllerOrder), 4);
+    // The menu's own button closes it, keeping what was taken.
+    picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    result = picker.update({UiAction::ToggleMenu}, {}, kWidth, kHeight);
+    CHECK(result.change_order_done && result.close_requested && !picker.ordering_controllers());
+
+    // Eight players, as many as there can be: no Add Controller.
+    std::vector<ControllerRowView> full = state.wii_u_controllers;
+    for (int player = 2; player < ds::kPadPlayers; ++player) {
+        ControllerRowView more = second;
+        more.slot = PadSlot::player_number(player);
+        full.push_back(more);
+    }
+    picker.open(state);
+    picker.set_wii_u_controllers(full);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 9);
+    picker.set_wii_u_controllers(state.wii_u_controllers);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 4);
 
     // From a host that lists no controllers: Controller Order and Cemu's rows.
     LayoutPickerState older = state;

@@ -9,6 +9,18 @@ static_assert(static_cast<unsigned>(WiiUAction::RemoteRight) - 1 ==
                   static_cast<unsigned>(ExternalButton::RemoteRight),
               "the console's buttons are ExternalButton's, one on");
 
+std::string player_key_after_removing(const std::string& key, int removed) {
+    static const std::string kPlayer = "player";
+    if (key.compare(0, kPlayer.size(), kPlayer) != 0) return key;
+    std::size_t end = kPlayer.size();
+    while (end < key.size() && key[end] >= '0' && key[end] <= '9') ++end;
+    if (end == kPlayer.size()) return key;
+    const int player = std::stoi(key.substr(kPlayer.size(), end - kPlayer.size())) - 1;
+    if (player < removed) return key;
+    if (player == removed) return std::string();
+    return kPlayer + std::to_string(player) + key.substr(end);
+}
+
 WiiUController wii_u_controller_for(const std::string& type) {
     if (type == "Wii U GamePad") return WiiUController::GamePad;
     if (type == "Wii Remote") return WiiUController::Remote;

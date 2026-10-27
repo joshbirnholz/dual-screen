@@ -2093,7 +2093,7 @@ void test_graphic_packs_view_round_trip() {
 }
 
 // What each of a companion's pads has down, heard by its game or not, after
-// the sequence number -- for the host's Detect Controller -- and nothing from
+// the sequence number -- for the host's Change Order -- and nothing from
 // a companion before it.
 void test_a_companions_pads_say_what_is_pressed() {
     InputMessage sent;

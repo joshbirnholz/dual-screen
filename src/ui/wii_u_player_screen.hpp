@@ -26,16 +26,9 @@ struct WiiUPlayerScreenResult {
     bool close_everything = false;
     // Controller Type chosen: its index among Cemu's choices for the player.
     int type_chosen = -1;
-    // A controller chosen to be this one, by pad_identity(), trading places
-    // with the one here -- or, empty, none here at all.
-    std::optional<std::string> controller_chosen;
-    // Disconnect: the controller here out of play.
+    // Remove Controller: the player gone, and every one after it a place up.
     bool removed = false;
-    // Detect Controller, Y, put up: the caller watches every controller for
-    // a press until it is put away -- see detected().
-    bool detect_started = false;
-    // Add Controller's page, added: controller_chosen made the new player,
-    // as type_chosen.
+    // Add Controller's page, added: the new player, as type_chosen.
     bool added = false;
     // Edit Button Mapping: its page, for what the game has this one as.
     bool edit_mapping = false;
@@ -43,34 +36,27 @@ struct WiiUPlayerScreenResult {
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
 // menu: what the game has the player as -- Controller Type, Cemu's -- and
-// which controller is the one -- Controller, any of them on either device, a
-// controller another player has trading places -- and Disconnect, which
-// takes the player's controller out of play; Edit Button Mapping opens what
-// each of its buttons presses, for the controller the game has it as -- see
-// ButtonMappingScreen. Detect Controller, Y, takes
-// whichever controller a button is pressed on next, for ten seconds. B goes
-// back to the menu.
+// Edit Button Mapping, which opens what each of its buttons presses, for the
+// controller the game has it as -- see ButtonMappingScreen -- and for a
+// player, Remove Controller. Which controller is which is Change Order's, in
+// Controls. B goes back to the menu.
 //
-// A controller not used opens the page of the first player with none, yet to
-// be: its type and controller are chosen first, and Add makes it one -- so a
-// player is never there with nothing said about it.
+// Add Controller opens the page of the player after the last, yet to be: its
+// type is chosen first, and Add makes it one -- so a player is never there
+// with nothing said about it.
 //
 // Everything on it is the host's, which sees every controller: the page shows
 // what it is handed and says what was chosen. With two devices it is one
 // page on both.
 class WiiUPlayerScreen : public MenuPage {
 public:
-    static constexpr float kDetectSeconds = 10.0f;
-
     void open(PadSlot slot);
-    // A new player's page, for a controller not used: `pad`, by
-    // pad_identity(), or the first not used where empty.
-    void open_adding(PadSlot slot, const std::string& pad = std::string());
+    // A new player's page.
+    void open_adding(PadSlot slot);
     bool adding() const { return adding_; }
     // On a new player's page, what Add will make it: an index into Cemu's
-    // types, -1 for none, and a controller by pad_identity().
+    // types, -1 for none.
     int pending_type() const { return pending_type_; }
-    const std::string& pending_pad() const { return pending_pad_; }
     // Lets go of its icons before the GL context they live in does.
     void release_textures() {
         icons_.destroy();
@@ -79,14 +65,14 @@ public:
     void close() {
         open_ = false;
         choice_.close();
-        detecting_ = false;
     }
     bool is_open() const { return open_; }
     PadSlot slot() const { return slot_; }
     void set_over_game(bool over_game) { over_game_ = over_game; }
     // What the page shows, every frame: every controller as Controls lists
     // them, and for a player the types Cemu has for it, in Cemu's words, with
-    // the one it is now -- none where Cemu has no type for the player.
+    // the one it is now -- none where Cemu has no type for the player. A new
+    // player's is the one it starts as.
     void set_controllers(const std::vector<ControllerRowView>& controllers, std::vector<std::string> types,
                          int type_current);
 
@@ -96,20 +82,10 @@ public:
                 float output_height);
     void describe_for_sound(UiSoundView& view) const;
 
-    // Detect Controller: counted down by the caller's clock, and put away
-    // when a controller was found or the time is up.
-    bool detecting() const { return detecting_; }
-    int detect_seconds() const;
-    void tick(float seconds);
-    // Found on a controller, `pad`: chosen for a new player here, and put
-    // away. On any other page the caller puts it in the slot.
-    void detected(const std::string& pad = std::string());
-
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Controller, Edit Button Mapping, then Disconnect where there is a
-    // controller to take out of play. A new player's has Add instead of the
-    // last two.
-    enum class Row { Type, Controller, Remove, Add, Mapping };
+    // Edit Button Mapping, then for a player Remove Controller. A new
+    // player's has Add instead of the last two.
+    enum class Row { Type, Remove, Add, Mapping };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -144,36 +120,23 @@ private:
     void open_choice(float output_width, float output_height);
     void choose(int index, WiiUPlayerScreenResult& result);
     void handle_tap(int entry, WiiUPlayerScreenResult& result, float output_width, float output_height);
-    void remove(WiiUPlayerScreenResult& result);
-    void start_detecting(WiiUPlayerScreenResult& result);
-    // A on the row in focus: its popup, or Remove.
+    // A on the row in focus: its popup, Remove or Add.
     void act(WiiUPlayerScreenResult& result, float output_width, float output_height);
-    std::string remove_label() const;
     bool removable() const;
-    PopupText detect_text() const;
-    PopupGeometry detect_popup(float output_width, float output_height) const;
     Row focused_row() const;
 
     bool open_ = false;
     bool over_game_ = false;
     bool adding_ = false;
     int pending_type_ = -1;
-    std::string pending_pad_;
-    // Whether a controller was chosen for the new player, rather than the
-    // first not used being taken for it.
-    bool pending_chosen_ = false;
     PadSlot slot_ = PadSlot::gamepad();
     std::vector<ControllerRowView> controllers_;
     std::vector<std::string> types_;
     int type_current_ = -1;
     int focus_ = 0;
     ChoicePopup choice_;
-    // What each of the popup's lines is: an index into Cemu's types, or for
-    // Controller a controller's identity -- empty for a device's heading.
+    // What each of the popup's lines is: an index into Cemu's types.
     std::vector<int> choice_types_;
-    std::vector<std::string> choice_pads_;
-    bool detecting_ = false;
-    float detect_left_ = 0.0f;
     Texture icons_;
     bool icons_tried_ = false;
     std::vector<GuideHit> guide_hits_;

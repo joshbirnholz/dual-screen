@@ -408,7 +408,7 @@ Three things are different about a Wii U session:
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
-- **Controller Type**, on Player 1 to Player 4's pages in Controls, is
+- **Controller Type**, on each player's page in Controls, is
   what each player's controller is to the game -- **Wii U Pro Controller**,
   **Wii Remote**, **Wii Remote + Nunchuk** or **Wii Classic Controller** --
   kept for each game and set as it starts, so a game that wants Wii Remotes and one that wants Pro
@@ -418,7 +418,7 @@ Three things are different about a Wii U session:
   gets what Cemu started with.
 
   A player's controller is only plugged in while a pad is feeding it: unplug
-  the pad, or move it off the player in Controls, and the game sees
+  the pad, or leave it out of Change Order in Controls, and the game sees
   that controller disconnect, as a real one's would; it comes back, as the
   type this game wants, when a pad does. So a game never counts controllers
   nobody is holding.
@@ -548,27 +548,26 @@ change what this device is called there. The name is only shown: a virtual pad's
 when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
-The quick menu's **Controls** lists the line: the GamePad, then each player,
-each with its name, what the game has it as (**Wii U GamePad**, **Wii Remote
-+ Nunchuk**) and where it is, then any controller not used, with no place of
-its own. **A** (Add) on one of those opens the first empty player's page to
-choose its type first, and **Add Controller** there makes it that player.
-A controller arriving takes the first empty player by itself: as what
-this game had that player as before -- never **None** -- or, for a player
-this game has not had, as a **Wii U Pro Controller** mapped the way Cemu
-maps a new one. With four players already, as many as a Wii U pairs, it
-waits, not used, to be added. A player is never a Classic
+The quick menu's **Controls** lists the GamePad, then every player this game
+has, each with the name of its controller and where it is. A player with no
+controller is still listed, dimmed and **Not Connected**: it can be set up,
+but the game is not told it is there. **Add Controller**, after the last
+player while there are fewer than eight, opens the new player's page to
+choose its **Controller Type** first -- the same as the player before it, or
+a **Wii U Pro Controller** for Player 1 -- and **Add Controller** there makes
+it. A controller arriving takes the first player with none by itself: as
+what this game had that player as before -- never **None** -- or, for a
+player this game has not had, as the player before it is, mapped the way
+Cemu maps a new one. Past the four players a Wii U pairs, it waits to be
+taken in Change Order. A player is never a Classic
 Controller alone either, which a Wii U never sees -- it is always plugged
 into a Wii Remote, whose buttons a game can read too -- so it is a **Wii
 Classic Controller**, a Wii Remote with one plugged in: the remote's buttons
 can be mapped as well, though few games want them.
-**A** (Edit) opens
-the GamePad's or a player's page: **Controller Type**, above, and
-**Controller**, which is any controller on either device, this device's
-listed first -- picking one another player has swaps the two --
-**Edit Button Mapping** and **Disconnect**, which takes it out of play.
-**Y** there, **Detect Controller**, takes whichever controller a button
-is pressed on in the next ten seconds.
+**A** (Edit) opens the GamePad's or a player's page: **Controller Type**,
+above, **Edit Button Mapping** and, for a player, **Remove Controller**,
+which takes the player away and moves every player after it up a place,
+types and mappings with them.
 
 **Edit Button Mapping** is the same page as a DS game's Change Controls,
 for the controller the game has the player as: each of the pad's buttons,
@@ -602,12 +601,15 @@ is copied into the game, so changing the game's mapping afterwards leaves
 the profile as it was. They are kept by the device running the games, in
 `mapping_profiles.json` beside its settings.
 
-In Controls itself, **X** (Identify)
-buzzes the highlighted controller and **Y** (Change Order) picks a player's
-or the GamePad's up -- drawn white, its words in the accent colour, with
-arrows before its name: move it up or down the line, up from Player 1 to be
-the GamePad, and **A**, **B** or **Y** put it down where it is. Any
-controller can be the GamePad, on either device.
+In Controls itself, **X** (Identify) buzzes the highlighted controller, and
+**Y** is **Change Order**, as on a Switch: every controller is let go of, and
+a button pressed on each takes the next place -- the GamePad first, then
+Player 1 onward -- with a click and a short buzz on that controller. The row
+waiting for a press is filled in and says **Press a button**. A press after
+every player has a controller adds another, up to eight, as the one before
+it. **A** on a controller already taken is **Done**; **B** puts the old order
+back. A GamePad the other device is holding stays with it, and the order
+starts at Player 1. Any controller can be the GamePad, on either device.
 
 Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it

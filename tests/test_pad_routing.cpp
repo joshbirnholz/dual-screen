@@ -414,11 +414,10 @@ std::vector<ds::ControllerRowView> controller_rows() {
     return {gamepad, first, spare};
 }
 
-// A player's page: Controller Type, Cemu's but for None; Controller, every
-// controller under its device, in the order they are listed rather than the
-// order they play in; and Remove Player, taking the player out of play. Y
-// is Detect Controller. The GamePad's has no type to choose.
-void test_a_players_page_chooses_a_type_and_a_controller() {
+// A player's page: Controller Type, Cemu's but for None; Edit Button Mapping;
+// and Remove Controller, the player gone. Which controller it has is Change
+// Order's. The GamePad's has no type to choose, and is never removed.
+void test_a_players_page_chooses_a_type_and_removes_it() {
     using ds::UiAction;
     using ds::WiiUPlayerScreen;
     constexpr float kWidth = 1280.0f;
@@ -429,8 +428,8 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     page.open(PadSlot::player_number(0));
     page.set_controllers(controller_rows(), types, 0);
     CHECK(page.title() == "Player 1");
-    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
-                                                   WiiUPlayerScreen::Row::Mapping, WiiUPlayerScreen::Row::Remove};
+    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Mapping,
+                                                   WiiUPlayerScreen::Row::Remove};
     CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
@@ -446,59 +445,31 @@ void test_a_players_page_chooses_a_type_and_a_controller() {
     CHECK_EQ(result.type_chosen, 4);
     CHECK(!page.choosing());
 
-    // Controller: on the one it is, past its device's name -- which is
-    // listed first, though the GamePad's plays first.
-    page.update({UiAction::Down}, {}, kWidth, kHeight);
-    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(page.choosing());
-    CHECK_EQ(page.choice_focus(), 1);
-    // The spare, under it.
-    result = page.update({UiAction::Down}, {}, kWidth, kHeight);
-    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.controller_chosen && *result.controller_chosen == "companion#3");
-
-    // Detect Controller, on Y, which runs out.
-    result = page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK(result.detect_started && page.detecting() && !page.choosing());
-    CHECK_EQ(page.detect_seconds(), 10);
-    // Nothing but B, while it waits.
-    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(page.detecting() && !page.choosing());
-    for (int step = 0; step < 50; ++step) page.tick(0.25f);
-    CHECK(!page.detecting());
-    page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    page.update({UiAction::Cancel}, {}, kWidth, kHeight);
-    CHECK(!page.detecting() && page.is_open());
-
     // Edit Button Mapping: its page, asked for.
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.edit_mapping && page.is_open() && !page.choosing());
 
-    // Remove Player: out of play, and the page with it.
+    // Remove Controller: the player gone, and the page with it -- with a
+    // controller or without.
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && result.close_requested && !page.is_open());
+    std::vector<ds::ControllerRowView> empty = controller_rows();
+    empty[1].pad.clear();
+    page.open(PadSlot::player_number(0));
+    page.set_controllers(empty, types, 0);
+    CHECK(page.rows() == rows);
 
     WiiUPlayerScreen gamepad;
     gamepad.open(PadSlot::gamepad());
     gamepad.set_controllers(controller_rows(), types, 0);
     CHECK(gamepad.title() == "GamePad");
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(3));
-    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
-    gamepad.update({UiAction::Down}, {}, kWidth, kHeight);
-    result = gamepad.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(result.removed && !result.close_requested && gamepad.is_open());
-    // With none there, nothing to remove.
-    std::vector<ds::ControllerRowView> empty = controller_rows();
-    empty[0].pad.clear();
-    gamepad.set_controllers(empty, types, 0);
-    CHECK_EQ(gamepad.rows().size(), static_cast<std::size_t>(2));
+    CHECK(gamepad.rows() == std::vector<WiiUPlayerScreen::Row>{WiiUPlayerScreen::Row::Mapping});
 }
 
-// Add Controller's page: the new player's type, what the game had it as
-// last but never None, and its controller, the first not used -- and Add,
-// which says both. Detect Controller only chooses one here.
+// Add Controller's page: the new player's type, what it starts as but never
+// None -- and Add, which makes it one with no controller yet.
 void test_a_new_players_page_says_what_it_will_be_first() {
     using ds::UiAction;
     using ds::WiiUPlayerScreen;
@@ -511,43 +482,27 @@ void test_a_new_players_page_says_what_it_will_be_first() {
     page.set_controllers(controller_rows(), types, 5);
     CHECK(page.adding());
     CHECK(page.title() == "Player 2");
-    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Controller,
-                                                   WiiUPlayerScreen::Row::Add};
+    const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Add};
     CHECK(page.rows() == rows);
     CHECK_EQ(page.pending_type(), 0);
-    CHECK(page.pending_pad() == "companion#3");
+    CHECK(page.own_row() == nullptr);
 
     // Chosen, but nothing done until Add.
     page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.type_chosen == -1 && page.pending_type() == 2);
-    page.update({UiAction::Down}, {}, kWidth, kHeight);
-    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    for (int step = 0; step < 8; ++step) page.update({UiAction::Down}, {}, kWidth, kHeight);
-    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(!result.controller_chosen && page.pending_pad() == "this#1");
-    page.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    page.detected("companion#2");
-    CHECK(!page.detecting() && page.pending_pad() == "companion#2");
-    page.set_controllers(controller_rows(), types, 5);
-    CHECK(page.pending_pad() == "companion#2");
+    page.set_controllers(controller_rows(), types, 0);
+    CHECK_EQ(page.pending_type(), 2);
 
     page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.added && result.close_requested && result.type_chosen == 2);
-    CHECK(result.controller_chosen && *result.controller_chosen == "companion#2");
 
-    // Nothing to add with no controller.
-    std::vector<ds::ControllerRowView> none = controller_rows();
-    none.pop_back();
+    // Starting as the one it is handed: a Wii Remote, as the player before.
     page.open_adding(PadSlot::player_number(1));
-    page.set_controllers(none, types, 2);
-    CHECK(page.pending_pad().empty() && page.pending_type() == 2);
-    page.update({UiAction::Down}, {}, kWidth, kHeight);
-    page.update({UiAction::Down}, {}, kWidth, kHeight);
-    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(!result.added && page.is_open());
+    page.set_controllers(controller_rows(), types, 2);
+    CHECK_EQ(page.pending_type(), 2);
 
     // A Classic Controller alone is one plugged into a Wii Remote; None is
     // the first there is.
@@ -570,6 +525,67 @@ void test_a_new_players_page_says_what_it_will_be_first() {
     CHECK(ds::add_player(lineup, 0));
     CHECK_EQ(lineup.gamepad, -1);
     CHECK_EQ(lineup.players[2], 0);
+}
+
+// Change Order: every pad let go of -- but a GamePad another device holds --
+// then taken in the order pressed, a player at a time, holes left where
+// nobody was taken.
+void test_change_order_lets_go_and_takes_each_in_turn() {
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(false, 0), pad(false, 1)};
+    PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
+    CHECK_EQ(lineup.gamepad, 0);
+    CHECK_EQ(lineup.players.size(), static_cast<std::size_t>(3));
+    ds::unassign_all(lineup, false);
+    CHECK_EQ(lineup.gamepad, -1);
+    CHECK(lineup.players.empty());
+    CHECK(lineup.unused == (std::vector<int>{0, 1, 2, 3}));
+    // The GamePad first, then the players.
+    CHECK(ds::put_in_slot(lineup, 3, PadSlot::gamepad()));
+    CHECK_EQ(lineup.gamepad, 3);
+    CHECK(ds::assign_player(lineup, 1, 0));
+    CHECK(!ds::assign_player(lineup, 2, 0));
+    CHECK(!ds::assign_player(lineup, 1, 1));
+    CHECK(ds::assign_player(lineup, 0, 2));
+    CHECK(lineup.players == (std::vector<int>{1, -1, 0}));
+    CHECK(lineup.unused == (std::vector<int>{2}));
+    CHECK(!ds::assign_player(lineup, 2, ds::kPadPlayers));
+    // Kept, it stands as taken.
+    const PadOrder order = ds::order_of(pads, lineup, true);
+    const PadLineup again = ds::line_up_pads(pads, order, true);
+    CHECK_EQ(again.gamepad, 3);
+    CHECK(again.players == lineup.players);
+    CHECK(again.unused == lineup.unused);
+
+    // A GamePad another device holds stays.
+    PadLineup held = ds::line_up_pads(pads, PadOrder(), false);
+    const int gamepad = held.gamepad;
+    CHECK(gamepad >= 0);
+    ds::unassign_all(held, true);
+    CHECK_EQ(held.gamepad, gamepad);
+    CHECK_EQ(held.unused.size(), static_cast<std::size_t>(3));
+}
+
+// Remove Controller: the player gone, its controller with nothing to be, and
+// every player after it a place up -- its mapping and type with it.
+void test_removing_a_player_moves_the_rest_up() {
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(true, 2), pad(true, 3)};
+    PadLineup lineup = ds::line_up_pads(pads, PadOrder(), true);
+    CHECK(lineup.players == (std::vector<int>{1, 2, 3}));
+    ds::remove_player(lineup, 0);
+    CHECK(lineup.players == (std::vector<int>{2, 3}));
+    CHECK(lineup.unused == (std::vector<int>{1}));
+    ds::remove_player(lineup, 5);
+    CHECK(lineup.players == (std::vector<int>{2, 3}));
+    lineup.players = {2, -1, 3};
+    ds::remove_player(lineup, 2);
+    CHECK(lineup.players == (std::vector<int>{2}));
+
+    CHECK(ds::player_key_after_removing("player1.pro", 0).empty());
+    CHECK(ds::player_key_after_removing("player2.remote", 0) == "player1.remote");
+    CHECK(ds::player_key_after_removing("player3_type", 1) == "player2_type");
+    CHECK(ds::player_key_after_removing("player1_type", 1) == "player1_type");
+    CHECK(ds::player_key_after_removing("gamepad", 0) == "gamepad");
+    CHECK(ds::player_key_after_removing("players", 0) == "players");
 }
 
 uint32_t bit(ds::PadControl control) { return 1u << static_cast<unsigned>(control); }
@@ -672,8 +688,10 @@ int main() {
     test_each_slot_gets_its_own_pads_presses();
     test_the_controllers_screen_moves_a_pad_like_steam_does();
     test_a_controller_chosen_for_a_place_trades_with_the_one_there();
-    test_a_players_page_chooses_a_type_and_a_controller();
+    test_a_players_page_chooses_a_type_and_removes_it();
     test_a_new_players_page_says_what_it_will_be_first();
+    test_change_order_lets_go_and_takes_each_in_turn();
+    test_removing_a_player_moves_the_rest_up();
     test_a_wii_u_controller_is_mapped_as_itself();
     return test::finish("pad-routing");
 }
