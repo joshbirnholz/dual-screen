@@ -14,12 +14,10 @@ jobs:
         run: |
           mkdir -p pages
           get() { curl -sSL -A "Mozilla/5.0" -o "pages/$1" -w "$1 %{http_code} %{size_download} %{url_effective}\n" "$2" >> pages/log.txt 2>&1 || echo "$1 failed" >> pages/log.txt; }
-          get dsscene-releases.html "https://www.ds-scene.net/?s=releases"
-          get advanscene-index.html "https://www.advanscene.com/html/index.php"
-          get advanscene-nds.html "https://www.advanscene.com/html/Releases/index.php?gt=nds"
-          get advanscene-rel1.html "https://www.advanscene.com/html/Releases/dbrelds.php?id=1"
-          get advanscene-rel3000.html "https://www.advanscene.com/html/Releases/dbrelds.php?id=3000"
-          get dsscene-rel1.html "https://www.ds-scene.net/?s=viewrelease&id=1"
+          get dats.html "https://www.advanscene.com/html/dats.php"
+          get ndslist.html "https://www.advanscene.com/html/dbndslst.php"
+          get dsscene-releases.xml "https://www.ds-scene.net/releases.xml"
+          get dsscene-topic.html "https://www.ds-scene.net/?s=viewtopic&nid=13522"
       - name: Keep
         run: |
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
