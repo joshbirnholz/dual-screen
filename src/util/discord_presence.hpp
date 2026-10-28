@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -21,9 +22,14 @@ struct DiscordActivity {
     std::string state;
     // When the game started, for Discord's "elapsed" clock.
     std::time_t started = 0;
+    // The game's own icon, as a web address -- see discord_game_icon_url().
+    // Shown only once it is known to be there, with this app's icon small
+    // in its corner; this app's icon alone otherwise.
+    std::string image;
 
     bool operator==(const DiscordActivity& other) const {
-        return details == other.details && state == other.state && started == other.started;
+        return details == other.details && state == other.state && started == other.started &&
+               image == other.image;
     }
     bool operator!=(const DiscordActivity& other) const { return !(*this == other); }
 };
@@ -44,7 +50,10 @@ class DiscordPresence {
 public:
     // `application_id` is the Discord application whose name heads the status
     // ("Playing Dualscreen"). Empty turns the whole thing off.
-    explicit DiscordPresence(std::string application_id);
+    // `image_exists` says whether an activity's image is really there, from
+    // the talking thread; by default curl asks the server.
+    using ImageCheck = std::function<bool(const std::string& url)>;
+    explicit DiscordPresence(std::string application_id, ImageCheck image_exists = ImageCheck());
     ~DiscordPresence();
 
     DiscordPresence(const DiscordPresence&) = delete;
@@ -62,6 +71,7 @@ private:
     void run();
 
     std::string application_id_;
+    ImageCheck image_exists_;
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     DiscordActivity wanted_;
@@ -75,8 +85,13 @@ private:
 // A frame is an opcode and a length, both 32-bit little-endian, and then that
 // many bytes of JSON.
 std::string discord_frame(uint32_t opcode, const std::string& json);
+// Where a game's own icon is kept for Discord to show: the icons branch of
+// this app's repository, filled once from Nintendo's own icon servers (see
+// tools/build_icons.py there). `key` is "3ds/<title ID>" or "wiiu/<title ID>".
+std::string discord_game_icon_url(const std::string& key);
+
 // The SET_ACTIVITY command for `activity`, or the one that clears it when its
-// details are empty.
+// details are empty. Its image is used as given: the caller has checked it.
 std::string discord_activity_command(const DiscordActivity& activity, long process_id, const std::string& nonce);
 // Where Discord's socket can be, most likely first: discord-ipc-0 to -9 under
 // $XDG_RUNTIME_DIR, $TMPDIR and /tmp, including where the Flatpak and Snap

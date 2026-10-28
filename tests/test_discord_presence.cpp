@@ -109,6 +109,17 @@ void test_the_activity_names_the_game_and_clearing_sends_none() {
     activity.details = "bad \xff name";
     CHECK(nlohmann::json::parse(discord_activity_command(activity, 42, "8"), nullptr, false).is_object());
 
+    // With the game's own icon: that, large, and this app's small in its corner.
+    activity.details = "Mario Kart 7";
+    activity.image = discord_game_icon_url("3ds/0004000000030800");
+    CHECK(activity.image.find("/icons/3ds/0004000000030800.png") != std::string::npos);
+    const nlohmann::json pictured = nlohmann::json::parse(discord_activity_command(activity, 42, "10"));
+    const nlohmann::json& assets = pictured["args"]["activity"]["assets"];
+    CHECK(assets["large_image"] == activity.image);
+    CHECK(assets["large_text"] == "Mario Kart 7");
+    CHECK(assets["small_image"] == shown["assets"]["large_image"]);
+    CHECK(discord_game_icon_url("").empty());
+
     const nlohmann::json cleared = nlohmann::json::parse(discord_activity_command(DiscordActivity(), 42, "9"));
     CHECK(cleared["cmd"] == "SET_ACTIVITY");
     CHECK(!cleared["args"].contains("activity"));
@@ -139,8 +150,12 @@ void test_discord_is_told_and_told_again_after_it_restarts() {
 
     int client = -1;
     std::thread closer;
+    std::vector<std::string> asked;
     {
-        DiscordPresence presence("1234567890");
+        DiscordPresence presence("1234567890", [&](const std::string& url) {
+            asked.push_back(url);
+            return url.find("there") != std::string::npos;
+        });
         presence.show(playing);
 
         client = accept_within(listener, 5000);
@@ -176,6 +191,26 @@ void test_discord_is_told_and_told_again_after_it_restarts() {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
         CHECK(presence.up_to_date());
+
+        // An icon that is there is shown; one that is not leaves this app's,
+        // and each is only asked about once.
+        playing.image = "https://example.com/there.png";
+        presence.show(playing);
+        CHECK(read_frame(client, &frame));
+        CHECK(frame.body["args"]["activity"]["assets"]["large_image"] == "https://example.com/there.png");
+        playing.image = "https://example.com/missing.png";
+        presence.show(playing);
+        CHECK(read_frame(client, &frame));
+        CHECK(frame.body["args"]["activity"]["assets"]["large_image"].get<std::string>().find("missing") ==
+              std::string::npos);
+        CHECK(!frame.body["args"]["activity"]["assets"].contains("small_image"));
+        playing.image = "https://example.com/there.png";
+        presence.show(playing);
+        CHECK(read_frame(client, &frame));
+        CHECK(asked.size() == 2);
+        for (int wait = 0; wait < 100 && !presence.up_to_date(); ++wait) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
 
         // Shown once, however often the same thing is asked for.
         presence.show(playing);

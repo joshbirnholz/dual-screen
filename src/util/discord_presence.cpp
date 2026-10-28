@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 
 #include <nlohmann/json.hpp>
 
@@ -22,6 +23,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -35,6 +37,8 @@ namespace {
 constexpr const char* kLargeImage =
     "https://raw.githubusercontent.com/joshbirnholz/dual-screen/claude/emulator-display-streaming-xnfjj0/"
     "assets/app_icon.png";
+
+constexpr const char* kGameIcons = "https://raw.githubusercontent.com/joshbirnholz/dual-screen/icons/";
 
 enum Opcode : uint32_t { Handshake = 0, Frame = 1, Close = 2 };
 
@@ -58,6 +62,10 @@ std::string discord_frame(uint32_t opcode, const std::string& json) {
     return frame + json;
 }
 
+std::string discord_game_icon_url(const std::string& key) {
+    return key.empty() ? std::string() : kGameIcons + key + ".png";
+}
+
 std::string discord_activity_command(const DiscordActivity& activity, long process_id, const std::string& nonce) {
     nlohmann::json args = {{"pid", process_id}};
     if (!activity.details.empty()) {
@@ -67,8 +75,15 @@ std::string discord_activity_command(const DiscordActivity& activity, long proce
             // Dualscreen".
             {"status_display_type", 2},
             {"details", activity.details},
-            {"assets", {{"large_image", kLargeImage}, {"large_text", "Dualscreen"}}},
         };
+        if (activity.image.empty()) {
+            shown["assets"] = {{"large_image", kLargeImage}, {"large_text", "Dualscreen"}};
+        } else {
+            shown["assets"] = {{"large_image", activity.image},
+                               {"large_text", activity.details},
+                               {"small_image", kLargeImage},
+                               {"small_text", "Dualscreen"}};
+        }
         if (!activity.state.empty()) shown["state"] = activity.state;
         if (activity.started != 0) shown["timestamps"] = {{"start", static_cast<int64_t>(activity.started)}};
         args["activity"] = shown;
@@ -101,7 +116,8 @@ std::vector<std::string> discord_socket_paths() {
     return paths;
 }
 
-DiscordPresence::DiscordPresence(std::string application_id) : application_id_(std::move(application_id)) {
+DiscordPresence::DiscordPresence(std::string application_id, ImageCheck image_exists)
+    : application_id_(std::move(application_id)), image_exists_(std::move(image_exists)) {
 #if DS_DISCORD_PRESENCE
     if (!application_id_.empty()) thread_ = std::thread([this] { run(); });
 #endif
@@ -201,6 +217,27 @@ private:
     std::string buffer_;
 };
 
+// Whether `url` answers at all, asked of curl -- the program the updater
+// uses too -- rather than this app growing an HTTP client for one question.
+bool curl_finds(const std::string& url) {
+    const pid_t child = ::fork();
+    if (child < 0) return false;
+    if (child == 0) {
+        const int null_fd = ::open("/dev/null", O_RDWR);
+        if (null_fd >= 0) {
+            ::dup2(null_fd, STDOUT_FILENO);
+            ::dup2(null_fd, STDERR_FILENO);
+        }
+        ::execlp("curl", "curl", "-sfI", "--max-time", "10", "-o", "/dev/null", url.c_str(),
+                 static_cast<char*>(nullptr));
+        ::_exit(127);
+    }
+    int status = 0;
+    while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 int connect_to_discord(std::string* where) {
     for (const std::string& path : discord_socket_paths()) {
         sockaddr_un address{};
@@ -233,6 +270,9 @@ void DiscordPresence::run() {
     Clock::time_point next_look = Clock::now();
     long nonce = 0;
     bool said_connected = false;
+    // What each game icon's address turned out to be, asked once each.
+    std::map<std::string, bool> images;
+    const ImageCheck image_exists = image_exists_ ? image_exists_ : ImageCheck(curl_finds);
 
     const auto hang_up = [&] {
         if (fd >= 0) ::close(fd);
@@ -288,11 +328,21 @@ void DiscordPresence::run() {
                 activity = wanted_;
             }
             if (tell) {
+                const DiscordActivity wanted = activity;
+                if (!activity.image.empty()) {
+                    auto found = images.find(activity.image);
+                    if (found == images.end()) {
+                        const bool there = image_exists(activity.image);
+                        if (!there) log_debug("no icon for this game at " + activity.image);
+                        found = images.emplace(activity.image, there).first;
+                    }
+                    if (!found->second) activity.image.clear();
+                }
                 if (send_all(fd, discord_frame(Frame, discord_activity_command(activity, static_cast<long>(::getpid()),
                                                                                 std::to_string(++nonce))))) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     // Unless it changed again while being sent.
-                    told_ = activity == wanted_;
+                    told_ = wanted == wanted_;
                 } else {
                     hang_up();
                 }

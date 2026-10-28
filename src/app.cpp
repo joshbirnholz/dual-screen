@@ -146,6 +146,22 @@ constexpr double kResumePointIntervalSeconds = 30.0;
 // game is going ("Playing Dualscreen"). See util/discord_presence.hpp.
 constexpr const char* kDiscordApplicationId = "1564808519046271126";
 
+// Which of the icons Discord can be shown is this game's: "3ds/<title ID>" or
+// "wiiu/<title ID>", or empty for a game with none -- a DS game, for now.
+std::string game_icon_key(const std::string& rom_path) {
+    SystemId system = SystemId::Ds;
+    if (!system_for_rom(rom_path, system) || system == SystemId::Ds) return std::string();
+    ConsoleTitleInfo info;
+    const bool read = system == SystemId::ThreeDs ? read_3ds_title_info(rom_path, info, nullptr)
+                      : path_extension_lower(rom_path) == "wua"
+                          ? read_wii_u_archive_title_info(rom_path, "", 0, info, nullptr)
+                          : read_wii_u_title_info(rom_path, info, nullptr);
+    if (!read || info.title_id == 0) return std::string();
+    // The game IDs Data Management uses are the same title ID after a prefix.
+    return system == SystemId::ThreeDs ? "3ds/" + three_ds_game_id(info.title_id).substr(4)
+                                       : "wiiu/" + wii_u_game_id(info.title_id).substr(4);
+}
+
 std::string next_argument(int argc, char** argv, int& index, const char* flag, std::string& error) {
     if (index + 1 >= argc) {
         error = std::string("missing value after ") + flag;
@@ -1022,6 +1038,8 @@ struct App::Impl {
     // What Discord shows under the player's name -- see update_discord().
     std::unique_ptr<DiscordPresence> discord;
     DiscordActivity discord_activity;
+    // The running game's own icon for Discord, from start_game().
+    std::string discord_icon;
     void update_discord();
     // Whether this device is the one being held as the GamePad, which is the
     // one showing the GamePad's screen -- the bottom one. With a companion
@@ -2142,8 +2160,10 @@ void App::Impl::update_discord() {
     } else if ((source || external_source) && !game_title.empty()) {
         activity.details = game_title;
         activity.state = system_profile(system).name;
+        activity.image = discord_icon;
     }
-    if (activity.details != discord_activity.details || activity.state != discord_activity.state) {
+    if (activity.details != discord_activity.details || activity.state != discord_activity.state ||
+        activity.image != discord_activity.image) {
         activity.started = activity.details.empty() ? 0 : std::time(nullptr);
         discord_activity = activity;
         discord->show(discord_activity);
@@ -5970,6 +5990,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // called. See game_title.hpp: every one of these formats carries the real
     // name, and the file name is the fallback rather than the answer.
     game_title = game_title_for_file(rom_path);
+    discord_icon = discord_game_icon_url(game_icon_key(rom_path));
     if (game_title.empty()) {
         game_title = path_stem(rom_path);
         // Which is a guess, and says so. A Wii U keeps its name in
