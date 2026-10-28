@@ -14,10 +14,14 @@ jobs:
         run: |
           mkdir -p pages
           get() { curl -sSL -A "Mozilla/5.0" -o "pages/$1" -w "$1 %{http_code} %{size_download} %{url_effective}\n" "$2" >> pages/log.txt 2>&1 || echo "$1 failed" >> pages/log.txt; }
-          get dats.html "https://www.advanscene.com/html/dats.php"
-          get ndslist.html "https://www.advanscene.com/html/dbndslst.php"
-          get dsscene-releases.xml "https://www.ds-scene.net/releases.xml"
-          get dsscene-topic.html "https://www.ds-scene.net/?s=viewtopic&nid=13522"
+          get nds_s.zip "https://www.advanscene.com/offline/datas/ADVANsCEne_NDS_S.zip"
+          get nds.zip "https://www.advanscene.com/offline/datas/ADVANsCEne_NDS.zip"
+          get r6464.png "http://img.files-ds-scene.net/boxarts/6251-6500/6464.png"
+          get r0001.png "http://img.files-ds-scene.net/boxarts/0001-0250/0001.png"
+          get r1.png "http://img.files-ds-scene.net/boxarts/1-250/1.png"
+          get r0436.png "http://img.files-ds-scene.net/boxarts/0251-0500/0436.png"
+          get r436.png "http://img.files-ds-scene.net/boxarts/251-500/436.png"
+          cd pages && (unzip -o nds_s.zip; unzip -o nds.zip) > unzip.txt 2>&1; ls -la >> log.txt; for x in *.xml; do head -c 3000 "$x" > "$x.head"; grep -m3 -n "<game>" -A30 "$x" > "$x.sample"; rm -f "$x"; done; rm -f nds_s.zip nds.zip
       - name: Keep
         run: |
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
