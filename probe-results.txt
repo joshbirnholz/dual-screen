@@ -1,117 +1,75 @@
-#### TLS chain of the icon server
- 0 s:C=JP, ST=Kyoto, L=Kyoto, O=Nintendo Co., Ltd., OU=Network Business Department, CN=*.cdn.nintendo.net
-   i:C=US, ST=Washington, O=Nintendo of America, Inc., OU=IS, CN=Nintendo Class 2 CA - G3, emailAddress=ca@noa.nintendo.com
-== https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
-status 200 type application/octet-stream bytes 73858
-qsM\e
-;p&?D5
-Sl>(%
-SYqT
-
-#### GameTDB
--rw-r--r-- 1 runner runner 24359432 Oct 28 02:56 dstdb.xml
--rw-r--r-- 1 runner runner  8998313 Oct 28 02:15 wiiutdb.xml
-1364:	<game name="Bayonetta (Europe) (EN,FR,DE,ES,IT)">
-	<game name="Bayonetta (Japan) (JA)">
-		<id>AAFJ01</id>
-		<type>WiiU</type>
-		<region>NTSC-J</region>
-		<languages>JA</languages>
-		<locale lang="EN">
-			<title>Bayonetta</title>
-			<synopsis>From the creators of Devil May Cry and Resident Evil comes the free flowing over-the-top action, extravagant weapons, demonic hair and savage grace of Bayonetta. Play as Bayonetta, a witch with powers beyond the comprehension of us mere mortals and face-off against countless angelic enemies, evil forces and giant sized foes in a game of 100% pure and unadulterated all-out action. Outlandish finishing moves are performed with balletic grace as Bayonetta flows from one fight to another. With magnificent over-the-top action taking place in stage that are a veritable them park of exciting attractions, Bayonetta pushes the limits of the action genre, bringing to life its fast-paced, dynamic climax combat. Tired of action games that value realism over fun? If so Bayonetta is the perfect cure: an outrageous brawling beat 'em-up as only the Japanese can make them. Take control of Bayonetta the only thing in the game weirder than the monsters. She might be a witch but Bayonetta isn't taking any chances when going into battle, not only does she have two handguns but her stiletto heels are also pistols and she's not above using everything from a rock launcher to a Japanese sword and a whip. But that's only the half of it: dodge an enemy at the last second and you can enter slow motion &quot;witch time&quot;. Or try transforming into a panther or turn Bayonetta's hair into a giant boot - the more complex your attacks the more chances you'll get to use torture combos to really do some damage. After this any other action game will seem tame by comparison.</synopsis>
-		</locale>
-		<locale lang="JA">
-			<title>ベヨネッタ</title>
-			<synopsis/>
-		</locale>
-		<developer>Platinum Games Inc.</developer>
-		<publisher>Nintendo</publisher>
-		<date year="2014" month="9" day="20"/>
-		<genre>action,fighting</genre>
-		<rating type="CERO" value="D">
-			<descriptor>sex</descriptor>
-			<descriptor>violence</descriptor>
-			<descriptor>crime</descriptor>
-		</rating>
-		<wi-fi players="0">
-			<feature>online</feature>
-		</wi-fi>
-		<input players="2">
-			<control type="pad" required="false"/>
-			<control type="procontroller" required="false"/>
-			<control type="classiccontroller" required="false"/>
-		</input>
-		<rom version="1" firmware="4.1.0" name="Bayonetta (Japan) (JA) (v1).wud" size="25025314816" crc="7bf270d5" md5="1f1884da296d2ba6fc0f5eb03529c1b9" sha1="d59f45d476deeccf961bc220a919d7f7453203c2"/>
-		<case color="000000"/>
-	</game>
-wiiutdb.xml:2860
-dstdb.xml:8460
-  50032 <
-   7332 <title
-   7332 <synopsis
-   7332 <locale
-   7034 <control
-   2898 <rom
-   2860 <wi
-   2860 <type
-   2860 <region
-   2860 <rating
-   2860 <publisher
-   2860 <languages
-   2860 <input
-   2860 <id
-   2860 <game
-   2860 <date
-   2661 <genre
-   2643 <developer
-   1587 <descriptor
-    819 <case
-    682 <company
-    432 <feature
-    334 <loc
-     96 <subgenre
-     57 <descr
-     14 <save
-     14 <maingenre
-      1 <genres
-      1 <descriptors
-      1 <datafile
-      1 <companies
-	<game name="WarioWare: Touched! (Demo) (Europe) (EN,FR,DE,ES,IT)">
-		<id>A22P</id>
-		<type>DS</type>
-		<region>PAL</region>
-		<languages>EN,FR,DE,ES,IT</languages>
-		<locale lang="EN">
-			<title>WarioWare: Touched! (Demo)</title>
-			<synopsis>Wario and his wacky companions have returned to transform your touch screen into a playground of possibilities, with 180 wild microgames.</synopsis>
-		</locale>
-		<developer>Intelligent Systems</developer>
-		<publisher>Nintendo</publisher>
-		<date year="2005" month="7" day="4"/>
-		<genre>action,party,demo</genre>
-		<rating type="PEGI" value="3"/>
-		<wi-fi players="0"/>
-		<input players-multi-cart="1" players-single-cart="1"/>
-		<rom version="" name="WarioWare: Touched! (Demo) (Europe) (EN,FR,DE,ES,IT).ds"/>
-	</game>
-#### DS icon sites
-== https://www.advanscene.com/
-status 302 type text/html; charset=UTF-8 bytes 0
-
-== https://art.gametdb.com/ds/
-status 404 type text/html bytes 0
-
-== https://art.gametdb.com/ds/icon/US/AMCE.png
-status 404 type text/html bytes 0
-
-== https://art.gametdb.com/ds/coverS/US/AMCE.png
-status 200 type image/png bytes 25198
-IHDR
-	pHYs
-bKGD
-a-IDATx
-}wx]
-.`c#
-
+0004000000031100: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/11/0004000000031100.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030F00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/0F/0004000000030F00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030200: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/02/0004000000030200.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031400: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/14/0004000000031400.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030D00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/0D/0004000000030D00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030300: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/03/0004000000030300.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031600: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/16/0004000000031600.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030700: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/07/0004000000030700.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030A00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/0A/0004000000030A00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030000: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/00/0004000000030000.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031500: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/15/0004000000031500.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031900: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/19/0004000000031900.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031000: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/10/0004000000031000.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031B00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/1B/0004000000031B00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031700: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/17/0004000000031700.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030C00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/0C/0004000000030C00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030600: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/06/0004000000030600.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030800: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/08/0004000000030800.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030500: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/05/0004000000030500.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030B00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/0B/0004000000030B00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031C00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/1C/0004000000031C00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030100: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/01/0004000000030100.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031200: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/12/0004000000031200.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000030400: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/04/0004000000030400.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031F00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/1F/0004000000031F00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032100: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/21/0004000000032100.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032300: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/23/0004000000032300.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031E00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/1E/0004000000031E00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032000: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/20/0004000000032000.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032900: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/29/0004000000032900.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032A00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/2A/0004000000032A00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000031D00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/1D/0004000000031D00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032600: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/26/0004000000032600.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032800: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/28/0004000000032800.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032400: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/24/0004000000032400.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000033300: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/33/0004000000033300.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032500: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/25/0004000000032500.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032E00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/2E/0004000000032E00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032B00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/2B/0004000000032B00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+0004000000032D00: HTTPSConnectionPool(host='idbe-ctr.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/2D/0004000000032D00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+3DS: 0 icons from 40 title IDs
+000500001010E000: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E0/000500001010E000.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E100: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E1/000500001010E100.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E200: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E2/000500001010E200.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E500: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E5/000500001010E500.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E900: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E9/000500001010E900.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E800: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E8/000500001010E800.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E400: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E4/000500001010E400.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E300: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E3/000500001010E300.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E700: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E7/000500001010E700.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010EC00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/EC/000500001010EC00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010EB00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/EB/000500001010EB00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F300: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F3/000500001010F300.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010E600: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/E6/000500001010E600.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010ED00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/ED/000500001010ED00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010EF00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/EF/000500001010EF00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010EE00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/EE/000500001010EE00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F700: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F7/000500001010F700.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F000: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F0/000500001010F000.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010EA00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/EA/000500001010EA00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F100: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F1/000500001010F100.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F400: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F4/000500001010F400.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F200: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F2/000500001010F200.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F600: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F6/000500001010F600.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F500: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F5/000500001010F500.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FA00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FA/000500001010FA00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FF00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FF/000500001010FF00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FC00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FC/000500001010FC00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F800: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F8/000500001010F800.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FE00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FE/000500001010FE00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FB00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FB/000500001010FB00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010FD00: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/FD/000500001010FD00.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+000500001010F900: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/F9/000500001010F900.idbe (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')))
+Wii U: 0 icons from 32 title IDs
+sample/index.json
