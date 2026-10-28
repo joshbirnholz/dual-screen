@@ -1248,7 +1248,9 @@ struct App::Impl {
     void show_corner_notice(const std::string& message);
     // A corner alert about the controller in `slot`, drawn as it, under any
     // others still up.
-    void show_controller_notice(PadSlot slot, const std::string& message);
+    // sideways: how a lone Wii Remote is held, when it isn't this game's
+    // mapping yet -- as a profile switched to.
+    void show_controller_notice(PadSlot slot, const std::string& message, std::optional<bool> sideways = {});
     // Those still up, oldest first.
     std::vector<ControllerNotice> shown_controller_notices() const;
     // Every corner alert up, here or -- on a companion -- the host's.
@@ -2276,7 +2278,7 @@ void App::Impl::switch_wii_u_profile(int player, const std::string& name) {
             }
             if (!game_config.save(paths)) log_warn("could not save this game's button mapping");
         }
-        show_controller_notice(slot, name);
+        show_controller_notice(slot, name, profile.wii_u.sideways);
         log_info(pad_slot_name(slot) + " switched to the profile " + name);
         return;
     }
@@ -3814,7 +3816,7 @@ void App::Impl::show_corner_notice(const std::string& message) {
     corner_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
 }
 
-void App::Impl::show_controller_notice(PadSlot slot, const std::string& message) {
+void App::Impl::show_controller_notice(PadSlot slot, const std::string& message, std::optional<bool> sideways) {
     ControllerNotice notice;
     notice.slot = slot;
     if (slot.kind == PadSlot::Kind::GamePad) {
@@ -3828,7 +3830,7 @@ void App::Impl::show_controller_notice(PadSlot slot, const std::string& message)
             }
         }
         notice.sideways = wii_u_controller_of(slot.player) == WiiUController::Remote &&
-                          wii_u_mapping_of(slot.player).sideways;
+                          sideways.value_or(wii_u_mapping_of(slot.player).sideways);
     }
     notice.text = message;
     const auto now = std::chrono::steady_clock::now();
