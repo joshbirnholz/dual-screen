@@ -2,12 +2,17 @@ name: Icon probe
 on:
   push:
     branches: [claude/icon-probe]
+permissions:
+  contents: write
 jobs:
   probe:
+    if: ${{ !contains(github.event.head_commit.message, 'probe results') }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Nintendo servers
         run: |
+          exec > probe-results.txt 2>&1
           probe() { echo "== $1"; curl -sS -o out.bin -w 'status %{http_code} type %{content_type} bytes %{size_download}\n' "$1" 2>&1 || true; head -c 300 out.bin | strings | head -5; echo; }
           probe https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
           probe http://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
@@ -19,3 +24,7 @@ jobs:
           probe https://art.gametdb.com/wiiu/coverHQ/US/ARKE01.jpg
           probe https://www.gametdb.com/wiiutdb.zip
           probe https://www.gametdb.com/dstdb.zip
+      - name: Keep the results
+        run: |
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git add probe-results.txt && git commit -m "probe results" && git push
