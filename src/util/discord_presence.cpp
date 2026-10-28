@@ -34,7 +34,7 @@ namespace {
 // from the repository.
 constexpr const char* kLargeImage =
     "https://raw.githubusercontent.com/joshbirnholz/dual-screen/claude/emulator-display-streaming-xnfjj0/"
-    "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png";
+    "assets/app_icon.png";
 
 enum Opcode : uint32_t { Handshake = 0, Frame = 1, Close = 2 };
 
