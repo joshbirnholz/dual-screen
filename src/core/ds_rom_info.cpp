@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "config/sha1.hpp"
 #include "core/game_title.hpp"
 
 namespace ds {
@@ -121,6 +122,22 @@ std::vector<uint32_t> decode_ds_icon(const std::vector<uint8_t>& icon) {
         }
     }
     return pixels;
+}
+
+std::string ds_icon_key(const std::vector<uint8_t>& icon) {
+    const std::vector<uint32_t> pixels = decode_ds_icon(icon);
+    if (pixels.empty()) return std::string();
+    std::vector<uint8_t> packed;
+    packed.reserve(pixels.size() * 2);
+    for (const uint32_t pixel : pixels) {
+        const uint32_t red = ((pixel >> 16) & 0xFF) >> 3;
+        const uint32_t green = ((pixel >> 8) & 0xFF) >> 3;
+        const uint32_t blue = (pixel & 0xFF) >> 3;
+        const uint32_t value = red | (green << 5) | (blue << 10);
+        packed.push_back(static_cast<uint8_t>(value & 0xFF));
+        packed.push_back(static_cast<uint8_t>(value >> 8));
+    }
+    return Sha1::hash_bytes(packed.data(), packed.size());
 }
 
 }  // namespace ds

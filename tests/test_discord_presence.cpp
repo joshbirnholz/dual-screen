@@ -21,6 +21,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "core/ds_rom_info.hpp"
 #include "util/discord_presence.hpp"
 
 using namespace ds;
@@ -123,6 +124,25 @@ void test_the_activity_names_the_game_and_clearing_sends_none() {
     const nlohmann::json cleared = nlohmann::json::parse(discord_activity_command(DiscordActivity(), 42, "9"));
     CHECK(cleared["cmd"] == "SET_ACTIVITY");
     CHECK(!cleared["args"].contains("activity"));
+}
+
+// The name a DS icon is kept under is worked out from the picture, by this
+// app from the ROM and by tools/build_ds_icons.py from DS-Scene's PNG of it;
+// the two have to agree. The expected value is that script's, given this
+// icon drawn the way DS-Scene draws them (every colour, 8 bits a channel).
+void test_a_ds_icon_is_named_as_the_icons_branch_names_it() {
+    std::vector<uint8_t> icon;
+    for (int i = 0; i < 512; ++i) {
+        icon.push_back(static_cast<uint8_t>(((i * 7) & 0x0F) | ((((i * 3) + 5) & 0x0F) << 4)));
+    }
+    for (int i = 0; i < 16; ++i) {
+        const int colour = (i * 2113 + 1234) & 0x7FFF;
+        icon.push_back(static_cast<uint8_t>(colour & 0xFF));
+        icon.push_back(static_cast<uint8_t>(colour >> 8));
+    }
+    CHECK(ds_icon_key(icon) == "4cff9b7fb5006dc85fea92f6028dacfc51842fe3");
+    CHECK(ds_icon_key(std::vector<uint8_t>(10)).empty());
+    CHECK(discord_game_icon_url("ds/" + ds_icon_key(icon)).find("/icons/ds/4cff9b7f") != std::string::npos);
 }
 
 void test_the_flatpak_discord_is_looked_for_too() {
@@ -256,6 +276,7 @@ void test_no_discord_is_nothing_to_wait_for() {
 int main() {
     test_a_frame_is_opcode_then_length_little_endian();
     test_the_activity_names_the_game_and_clearing_sends_none();
+    test_a_ds_icon_is_named_as_the_icons_branch_names_it();
     test_the_flatpak_discord_is_looked_for_too();
     test_discord_is_told_and_told_again_after_it_restarts();
     test_no_discord_is_nothing_to_wait_for();
