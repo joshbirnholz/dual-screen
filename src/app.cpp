@@ -2134,7 +2134,9 @@ const std::string& App::Impl::shown_game_title() const {
 void App::Impl::update_discord() {
     if (!discord) return;
     DiscordActivity activity;
-    if (is_companion()) {
+    if (!settings.discord_status) {
+        // Cleared, below, as for no game at all.
+    } else if (is_companion()) {
         activity.details = companion_session->game_title();
         if (!joining_host.device_name.empty()) activity.state = "Second screen for " + joining_host.device_name;
     } else if ((source || external_source) && !game_title.empty()) {

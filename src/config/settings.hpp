@@ -274,6 +274,10 @@ struct Settings {
     // menu opening -- on this device. See UiSoundPlayer.
     bool ui_sounds = true;
 
+    // Whether Discord is told what is being played on this device -- see
+    // util/discord_presence.hpp. Offered on a desktop only.
+    bool discord_status = true;
+
     // The DS's owner, as its own settings have them: the name games greet
     // the player by, the favorite color -- an index into kDsFavoriteColors
     // (config/ds_profile.hpp), Gray unless another is chosen -- and the

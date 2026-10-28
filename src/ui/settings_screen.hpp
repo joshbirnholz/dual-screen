@@ -193,6 +193,8 @@ private:
         PauseWiiUInMenu,
         WiiUTvAudio,
         WiiRemoteRumble,
+        // Desktops only, where Discord runs: see util/discord_presence.hpp.
+        DiscordStatus,
 #endif
         UiSounds,
         Count

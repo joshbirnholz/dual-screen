@@ -617,6 +617,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
+        case Row::DiscordStatus:
+            settings_.discord_status = !settings_.discord_status;
+            result.settings_changed = true;
+            break;
 #endif
         case Row::UiSounds:
             settings_.ui_sounds = !settings_.ui_sounds;
@@ -839,6 +843,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Pause Wii U Games in the Quick Menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
         {"Wii U TV Audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
         {"Wii Remote Rumble Strength", rumble_label(settings_.wii_remote_rumble)},
+        {"Discord Rich Presence", settings_.discord_status ? "On" : "Off"},
 #endif
         {"Sound Effects", settings_.ui_sounds ? "On" : "Off"},
     };
@@ -990,6 +995,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_audio));
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_remote_rumble));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
+    mix_sound_state(view.rest, settings_.discord_status ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, text_entry_.is_open() ? 1u : 0u);
@@ -1005,6 +1011,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
                 case Row::Vsync: view.toggle = settings_.vsync ? 1 : 0; break;
 #if DS_PLAYS_WII_U
                 case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
+                case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
 #endif
                 case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
                 default: break;
