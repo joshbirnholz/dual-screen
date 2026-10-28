@@ -1176,6 +1176,9 @@ struct App::Impl {
     // Steam's keyboard was asked for by its URL rather than raised by SDL,
     // so it is put away the same way.
     bool steam_keyboard_opened = false;
+    // The host's new profile name was last seen asked for here -- see
+    // ButtonMappingViewMessage::naming_on_companion.
+    bool companion_naming_asked = false;
     // When the game was last seen going again with an amiibo waiting -- see
     // send_pending_amiibo().
     std::optional<std::chrono::steady_clock::time_point> amiibo_game_going_since;
@@ -6521,8 +6524,19 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     // host's as it goes -- the pad smoothly, so its directions
                     // are not sent as steps too.
                     const net::ButtonMappingViewMessage& host_view = companion_session->host_button_mapping_view();
-                    // A new profile's name typed here goes to the host as it is typed.
-                    if (host_view.naming &&
+                    // A new profile's name typed here goes to the host as it is typed --
+                    // when it was asked for here. On a Switch, on its own keyboard,
+                    // there and then: the name, then OK or Cancel.
+                    const bool naming_here = host_view.naming && host_view.naming_on_companion;
+                    if (naming_here && !companion_naming_asked && system_keyboard_available()) {
+                        std::string typed;
+                        const bool ok = edit_with_system_keyboard("Name the new profile.", host_view.name_text,
+                                                                  MappingProfiles::kMaxName, typed);
+                        if (ok) companion_session->request_profile_name(typed);
+                        companion_session->request_menu_focus(ButtonMappingScreen::kNamingEntryBase + (ok ? 1 : 0));
+                    }
+                    companion_naming_asked = naming_here;
+                    if (naming_here &&
                         mirrored_button_mapping.type_mirrored(input.typed_text(), input.backspaces())) {
                         companion_session->request_profile_name(mirrored_button_mapping.name_text());
                     }
@@ -7464,7 +7478,10 @@ int App::run(const AppOptions& options) {
         [&input = impl.input](UiAction direction) { return input.direction_repeating(direction); });
     impl.apply_system();
     impl.settings_screen.reset(new SettingsScreen(impl.paths));
-    if (system_keyboard_available()) impl.settings_screen->set_text_editor(&edit_with_system_keyboard);
+    if (system_keyboard_available()) {
+        impl.settings_screen->set_text_editor(&edit_with_system_keyboard);
+        impl.button_mapping_screen.set_text_editor(&edit_with_system_keyboard);
+    }
     impl.settings_screen->set_offers_data_management(impl.save_store != nullptr);
     // Settings > melonDS: how the Switch's melonDS runs, in its melonds.ini.
     // Elsewhere only when DUALSCREEN_MELONDS_INI names a file to show it
@@ -8177,6 +8194,9 @@ int App::run(const AppOptions& options) {
             }
             // Every press the companion made in the menu, in the order it made
             // them: two of them are two moves, not one.
+            // A name they ask for is typed over there -- see
+            // ButtonMappingScreen::set_input_from_other_device().
+            impl.button_mapping_screen.set_input_from_other_device(true);
             net::HostSession::MenuPress press;
             while (impl.host_session->take_menu_press(press)) {
                 // The companion's presses earn sounds as this device's own do,
@@ -8272,6 +8292,7 @@ int App::run(const AppOptions& options) {
                                         static_cast<float>(impl.output_height));
                 impl.apply_menu_result(result, /*pressed_here=*/false);
             }
+            impl.button_mapping_screen.set_input_from_other_device(false);
             if (impl.host_session->take_companion_quit_request()) {
                 // The same as choosing Quit here: the whole app shuts down.
                 // The companion that asked is leaving on its own right after,
@@ -8641,13 +8662,18 @@ int App::run(const AppOptions& options) {
             // comes up for it, there being no other.
             {
                 // A game's keyboard is typed on the companion when it is the
-                // GamePad; here otherwise.
+                // GamePad; here otherwise. A new profile's name, on whichever
+                // device's press or tap asked for it -- never on both.
+                const bool companion_names = impl.button_mapping_screen.naming_elsewhere() &&
+                                             impl.host_session && impl.host_session->has_companion();
                 const bool typing = (impl.state == Impl::State::Settings && impl.settings_screen &&
                                      impl.settings_screen->wants_text()) ||
-                                    (impl.state == Impl::State::ButtonMapping && impl.button_mapping_screen.naming()) ||
+                                    (impl.state == Impl::State::ButtonMapping && impl.button_mapping_screen.naming() &&
+                                     !companion_names) ||
                                     (impl.state == Impl::State::Companion && impl.companion_session &&
                                      impl.companion_session->host_button_mapping_view().open &&
-                                     impl.companion_session->host_button_mapping_view().naming) ||
+                                     impl.companion_session->host_button_mapping_view().naming &&
+                                     impl.companion_session->host_button_mapping_view().naming_on_companion) ||
                                     (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing() &&
                                      !impl.companion_types_game_dialog()) ||
                                     (impl.state == Impl::State::Companion &&

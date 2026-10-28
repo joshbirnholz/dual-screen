@@ -801,6 +801,52 @@ void test_profiles_are_loaded_saved_and_deleted() {
     CHECK(mirrored.name_text() == "Profile 4xy");
 }
 
+void test_a_name_is_typed_on_the_device_that_asked_for_it() {
+    // Asked for here: typed here.
+    ButtonMappingScreen screen = open_screen();
+    screen.set_profiles({"Touch Steering"}, 0, "DS Profiles");
+    press(screen, UiAction::MenuMinus);
+    while (screen.choice_focus() > 0) press(screen, UiAction::Up);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.naming() && !screen.naming_elsewhere());
+    CHECK(!button_mapping_view_of(screen).naming_on_companion);
+    press(screen, UiAction::Cancel);
+
+    // Asked for by the other device's press: typed there, and the view says so.
+    screen.set_input_from_other_device(true);
+    press(screen, UiAction::Confirm);
+    screen.set_input_from_other_device(false);
+    CHECK(screen.naming() && screen.naming_elsewhere());
+    const net::ButtonMappingViewMessage view = button_mapping_view_of(screen);
+    CHECK(view.naming && view.naming_on_companion);
+    ButtonMappingScreen mirrored = open_screen();
+    mirrored.show_mirrored(view, kWidth, kHeight);
+    CHECK(mirrored.naming() && !mirrored.naming_elsewhere());
+    // Still theirs after a press made here moves the cursor.
+    press(screen, UiAction::Down);
+    CHECK(screen.naming_elsewhere());
+    press(screen, UiAction::Cancel);
+    CHECK(!screen.naming_elsewhere());
+
+    // A system keyboard is only brought up for a name asked for here.
+    int asked = 0;
+    screen.set_text_editor([&](const std::string&, const std::string&, std::size_t, std::string& out) {
+        ++asked;
+        out = "Kart";
+        return true;
+    });
+    screen.set_input_from_other_device(true);
+    press(screen, UiAction::Confirm);
+    screen.set_input_from_other_device(false);
+    CHECK_EQ(asked, 0);
+    CHECK(screen.naming());
+    press(screen, UiAction::Cancel);
+    const ButtonMappingScreenResult saved = press(screen, UiAction::Confirm);
+    CHECK_EQ(asked, 1);
+    CHECK(saved.profile_save_new && *saved.profile_save_new == "Kart");
+    CHECK(!screen.naming() && screen.profiles_open());
+}
+
 }  // namespace
 
 int main() {
@@ -824,5 +870,6 @@ int main() {
     test_the_other_device_shows_a_wii_u_controllers_page();
     test_a_held_button_can_switch_profile();
     test_profiles_are_loaded_saved_and_deleted();
+    test_a_name_is_typed_on_the_device_that_asked_for_it();
     return test::finish("button-mapping-screen");
 }

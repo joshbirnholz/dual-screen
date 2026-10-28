@@ -933,7 +933,7 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     }
     // And Mapping Profiles.
     put_u8(out, static_cast<uint8_t>((message.profiles ? 1u : 0u) | (message.naming ? 2u : 0u) |
-                                     (message.holding ? 4u : 0u)));
+                                     (message.holding ? 4u : 0u) | (message.naming_on_companion ? 8u : 0u)));
     put_u8(out, message.asking);
     put_u16(out, static_cast<uint16_t>(std::clamp(message.asking_profile + 1, 0, 65535)));
     put_u8(out, message.naming_focus);
@@ -1036,6 +1036,7 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
             view.profiles = (flags & 1u) != 0;
             view.naming = (flags & 2u) != 0;
             view.holding = (flags & 4u) != 0;
+            view.naming_on_companion = (flags & 8u) != 0;
             view.asking_profile = static_cast<int>(asking_profile) - 1;
             view.profile_current = static_cast<int>(current) - 1;
         }

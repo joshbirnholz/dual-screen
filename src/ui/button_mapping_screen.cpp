@@ -251,14 +251,14 @@ int ButtonMappingScreen::profile_of_line(int line) const {
 
 void ButtonMappingScreen::choose_profile(int line, ButtonMappingScreenResult& result) {
     if (line == 0) {
-        start_naming();
+        start_naming(result);
         return;
     }
     const int profile = profile_of_line(line);
     if (profile >= 0) result.profile_load = profile;
 }
 
-void ButtonMappingScreen::start_naming() {
+void ButtonMappingScreen::start_naming(ButtonMappingScreenResult& result) {
     choice_.close();
     profiles_up_ = false;
     holding_up_ = false;
@@ -269,8 +269,21 @@ void ButtonMappingScreen::start_naming() {
         if (std::find(profile_names_.begin(), profile_names_.end(), name) == profile_names_.end()) break;
     }
     naming_.open("Name the new profile.", name, MappingProfiles::kMaxName);
+    // Typed on the device whose press or tap asked for it, and only there.
+    naming_elsewhere_ = input_from_other_device_;
     typed_.clear();
     backspaces_ = 0;
+    if (text_editor_ && !naming_elsewhere_) {
+        std::string typed;
+        TextEntryResult answer;
+        if (text_editor_("Name the new profile.", name, MappingProfiles::kMaxName, typed)) {
+            naming_.set_text(typed);
+            answer.done = true;
+        } else {
+            answer.cancelled = true;
+        }
+        finish_naming(answer, result);
+    }
 }
 
 void ButtonMappingScreen::finish_naming(const TextEntryResult& answer, ButtonMappingScreenResult& result) {
@@ -1379,6 +1392,8 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
             naming_.open("Name the new profile.", view.name_text, MappingProfiles::kMaxName);
             own_name_views_ = 0;
         }
+        // Drawn here for the host: elsewhere unless the name is typed here.
+        naming_elsewhere_ = !view.naming_on_companion;
         if (own_name_views_ > 0) {
             --own_name_views_;
         } else {
@@ -1510,6 +1525,7 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     if (view.naming) {
         view.name_text = screen.name_text();
         view.naming_focus = static_cast<uint8_t>(std::max(0, screen.naming_focus()));
+        view.naming_on_companion = screen.naming_elsewhere();
     }
     view.asking = static_cast<uint8_t>(screen.asking());
     view.asking_profile = screen.asking_profile();

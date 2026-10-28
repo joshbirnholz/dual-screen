@@ -2248,6 +2248,7 @@ void test_button_mapping_view_round_trip() {
     sent.naming = true;
     sent.name_text = "Kart";
     sent.naming_focus = 1;
+    sent.naming_on_companion = true;
     sent.asking = 2;
     sent.asking_profile = 0;
     buffer.clear();
@@ -2257,6 +2258,7 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.profiles && received.profile_names == sent.profile_names);
     CHECK(received.profile_current == 1 && received.profile_heading == sent.profile_heading);
     CHECK(received.naming && received.name_text == "Kart" && received.naming_focus == 1);
+    CHECK(received.naming_on_companion);
     CHECK(received.asking == 2 && received.asking_profile == 0);
     // When Held's picker, and the profiles held buttons switch to.
     sent.profiles = false;

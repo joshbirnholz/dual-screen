@@ -818,6 +818,9 @@ struct ButtonMappingViewMessage {
     bool naming = false;
     std::string name_text;
     uint8_t naming_focus = 0;
+    // The name is typed on the companion: it was the companion's press or
+    // tap that asked for it. The keyboard comes up on that device alone.
+    bool naming_on_companion = false;
     uint8_t asking = 0;
     int asking_profile = -1;
     // When Held's picker is the one up -- see ButtonMappingScreen. The
@@ -835,6 +838,7 @@ struct ButtonMappingViewMessage {
                profiles == other.profiles && profile_names == other.profile_names &&
                profile_current == other.profile_current && profile_heading == other.profile_heading &&
                naming == other.naming && name_text == other.name_text && naming_focus == other.naming_focus &&
+               naming_on_companion == other.naming_on_companion &&
                asking == other.asking && asking_profile == other.asking_profile && holding == other.holding;
     }
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -112,6 +114,19 @@ public:
     void type(const std::string& typed, int backspaces) {
         typed_ = typed;
         backspaces_ = backspaces;
+    }
+    // Whether the presses and taps update() is about to hear were made on
+    // the other device -- the companion working the host's page. A name
+    // asked for by them is typed there, on its keyboard, not on this one.
+    void set_input_from_other_device(bool other) { input_from_other_device_ = other; }
+    bool naming_elsewhere() const { return naming_.is_open() && naming_elsewhere_; }
+    // The system's own keyboard, where there is one (see
+    // edit_with_system_keyboard()): a name asked for here is typed on it
+    // there and then, rather than into the popup.
+    void set_text_editor(std::function<bool(const std::string& header, const std::string& initial,
+                                            std::size_t max_characters, std::string& out)>
+                             editor) {
+        text_editor_ = std::move(editor);
     }
     // Typed on the other device.
     void set_name_text(const std::string& text) {
@@ -244,7 +259,7 @@ private:
     int profile_of_line(int line) const;
     void choose_profile(int line, ButtonMappingScreenResult& result);
     void ask_about_profile(Asking asking);
-    void start_naming();
+    void start_naming(ButtonMappingScreenResult& result);
     void finish_naming(const TextEntryResult& answer, ButtonMappingScreenResult& result);
     // Turbo's picker, beside the same row, after Turbo was chosen.
     // Y: the focused button made to press its console button over and over
@@ -320,6 +335,9 @@ private:
     // the list.
     std::string profile_saved_;
     TextEntryPopup naming_;
+    bool input_from_other_device_ = false;
+    bool naming_elsewhere_ = false;
+    std::function<bool(const std::string&, const std::string&, std::size_t, std::string&)> text_editor_;
     std::string typed_;
     int backspaces_ = 0;
     // How many more of the other device's views keep the name typed here.
