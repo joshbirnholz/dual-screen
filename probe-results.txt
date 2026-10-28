@@ -1,0 +1,7 @@
+0005000010E30500: HTTPSConnectionPool(host='idbe-wup.cdn.nintendo.net', port=443): Max retries exceeded with url: /icondata/05/0005000010E30500.idbe (Caused by ConnectTimeoutError(<HTTPSConnection(host='idbe-wup.cdn.nintendo.net', port=443) at 0x7dab18ee5370>, 'Connection to idbe-wup.cdn.nintendo.net timed out. (connect timeout=30)'))
+Wii U: 60000/65536 asked, 2844 found
+Wii U: 62000/65536 asked, 2844 found
+Wii U: 64000/65536 asked, 2844 found
+Wii U: 2844 icons from 65536 title IDs
+5043
+2844
