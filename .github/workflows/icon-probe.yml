@@ -5,23 +5,33 @@ on:
 permissions:
   contents: write
 jobs:
-  probe:
+  fill:
     if: ${{ !contains(github.event.head_commit.message, 'probe results') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Try a few
+      - name: Fetch every icon
         run: |
           pip install -q requests pycryptodome pillow
-          echo | openssl s_client -connect idbe-wup.cdn.nintendo.net:443 -servername idbe-wup.cdn.nintendo.net 2>/dev/null | openssl x509 > cdn.pem
-          export NINTENDO_CDN_CERT=$PWD/cdn.pem
-          mkdir -p sample
-          (cd /tmp && LIMIT=40 WIIU_FIRST=1010E0 WIIU_LAST=1010FF python $GITHUB_WORKSPACE/tools/build_icons.py $GITHUB_WORKSPACE/sample) > probe-results.txt 2>&1 || true
-          ls sample/* >> probe-results.txt 2>&1
-      - name: Keep the results
+          echo | openssl s_client -connect idbe-wup.cdn.nintendo.net:443 -servername idbe-wup.cdn.nintendo.net 2>/dev/null | openssl x509 > /tmp/cdn.pem
+          export NINTENDO_CDN_CERT=/tmp/cdn.pem
+          mkdir -p /tmp/icons/tools
+          cp tools/build_icons.py tools/ICONS_README.md /tmp/icons/
+          mv /tmp/icons/ICONS_README.md /tmp/icons/README.md
+          mv /tmp/icons/build_icons.py /tmp/icons/tools/
+          cd /tmp && WIIU_FIRST=100000 WIIU_LAST=10FFFF python /tmp/icons/tools/build_icons.py /tmp/icons 2>&1 | tee /tmp/fill-log.txt
+      - name: Publish the icons branch
         run: |
+          cd /tmp/icons
+          cp /tmp/fill-log.txt tools/fill-log.txt
+          git init -q -b icons
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
-          git add probe-results.txt sample && git commit -m "probe results" && git push
+          git add -A && git commit -qm "Official 3DS and Wii U icons, from Nintendo's icon servers"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" icons:icons
+          cd $GITHUB_WORKSPACE && tail -5 /tmp/fill-log.txt > probe-results.txt && ls /tmp/icons/3ds | wc -l >> probe-results.txt && ls /tmp/icons/wiiu | wc -l >> probe-results.txt
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git add probe-results.txt && git commit -m "probe results" && git push
