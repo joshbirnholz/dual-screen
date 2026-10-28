@@ -1,0 +1,21 @@
+name: Icon probe
+on:
+  push:
+    branches: [claude/icon-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nintendo servers
+        run: |
+          probe() { echo "== $1"; curl -sS -o out.bin -w 'status %{http_code} type %{content_type} bytes %{size_download}\n' "$1" 2>&1 || true; head -c 300 out.bin | strings | head -5; echo; }
+          probe https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
+          probe http://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
+          probe https://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
+          probe http://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
+          probe "https://samurai.wup.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=2"
+          probe "https://samurai.ctr.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=1"
+          probe "https://tagaya-wup.cdn.nintendo.net/tagaya/versionlist/EUR/EU/latest_version"
+          probe https://art.gametdb.com/wiiu/coverHQ/US/ARKE01.jpg
+          probe https://www.gametdb.com/wiiutdb.zip
+          probe https://www.gametdb.com/dstdb.zip
