@@ -1,0 +1,457 @@
+6750 releases
+/home/runner/work/dual-screen/dual-screen/icons/tools/build_ds_icons.py:60: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  for r, g, b in image.getdata():
+/home/runner/work/dual-screen/dual-screen/icons/tools/build_ds_icons.py:71: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  rgba.putdata([(0, 0, 0, 0) if p == key else p for p in rgba.getdata()])
+138: (39, 39)
+154: (39, 39)
+156: (39, 39)
+157: (39, 39)
+162: (39, 39)
+163: (39, 39)
+164: (39, 39)
+165: (39, 39)
+166: (39, 39)
+167: (39, 39)
+169: (39, 39)
+170: (39, 39)
+171: (34, 35)
+172: (34, 35)
+173: (34, 35)
+174: (34, 35)
+175: (34, 35)
+176: (34, 35)
+177: (34, 35)
+178: (34, 35)
+179: (34, 35)
+180: (34, 35)
+181: (34, 35)
+182: (34, 35)
+183: (34, 35)
+184: (34, 35)
+185: (34, 35)
+186: (34, 35)
+187: (34, 35)
+188: (34, 35)
+189: (34, 35)
+190: (34, 35)
+191: (34, 35)
+192: (34, 35)
+194: (34, 35)
+195: (34, 35)
+196: (34, 35)
+198: (34, 35)
+199: (34, 35)
+202: (34, 35)
+203: (34, 35)
+204: (34, 35)
+205: (34, 35)
+206: (34, 35)
+207: (34, 35)
+208: (34, 35)
+209: (34, 35)
+211: (34, 35)
+212: (34, 35)
+213: (34, 35)
+214: (34, 35)
+215: (34, 35)
+218: (34, 35)
+219: (34, 35)
+220: (34, 35)
+221: (34, 35)
+224: (34, 35)
+225: (34, 35)
+226: (34, 35)
+228: (34, 35)
+229: (34, 35)
+231: (34, 35)
+232: (34, 35)
+233: (34, 35)
+234: (34, 35)
+235: (34, 35)
+236: (34, 35)
+237: (34, 35)
+238: (34, 35)
+240: (34, 35)
+241: (34, 35)
+242: (34, 35)
+243: (34, 35)
+250: (34, 35)
+251: (34, 35)
+252: (34, 35)
+259: (34, 35)
+261: (34, 35)
+262: (34, 35)
+265: (34, 35)
+266: (34, 35)
+269: (34, 35)
+270: (34, 35)
+271: (34, 35)
+284: (34, 35)
+297: (34, 35)
+298: (34, 35)
+318: (34, 35)
+352: (34, 35)
+355: (34, 35)
+824: (34, 35)
+990: (34, 35)
+2173: <urlopen error timed out>
+2174: <urlopen error timed out>
+2175: <urlopen error timed out>
+2176: <urlopen error timed out>
+2177: <urlopen error timed out>
+2179: <urlopen error timed out>
+2181: <urlopen error timed out>
+2182: <urlopen error timed out>
+2183: <urlopen error timed out>
+2184: <urlopen error timed out>
+2185: <urlopen error timed out>
+2187: <urlopen error timed out>
+2188: <urlopen error timed out>
+2189: <urlopen error timed out>
+2190: <urlopen error timed out>
+2191: <urlopen error timed out>
+2192: <urlopen error timed out>
+2194: <urlopen error timed out>
+2195: <urlopen error timed out>
+2196: <urlopen error timed out>
+2197: <urlopen error timed out>
+2198: <urlopen error timed out>
+2199: <urlopen error timed out>
+2200: <urlopen error timed out>
+3761: (34, 35)
+4117: <urlopen error timed out>
+4140: <urlopen error timed out>
+4157: <urlopen error timed out>
+4158: <urlopen error timed out>
+4159: <urlopen error timed out>
+4162: <urlopen error timed out>
+4198: <urlopen error timed out>
+4222: <urlopen error timed out>
+4224: <urlopen error timed out>
+4232: <urlopen error timed out>
+5089: (33, 32)
+5974: HTTP Error 404: Not Found
+5977: (33, 33)
+6179: HTTP Error 404: Not Found
+6183: HTTP Error 404: Not Found
+6191: <urlopen error timed out>
+6204: <urlopen error timed out>
+6206: HTTP Error 404: Not Found
+6207: <urlopen error timed out>
+6208: <urlopen error timed out>
+6209: HTTP Error 404: Not Found
+6210: HTTP Error 404: Not Found
+6211: HTTP Error 404: Not Found
+6212: HTTP Error 404: Not Found
+6213: HTTP Error 404: Not Found
+6214: HTTP Error 404: Not Found
+6220: HTTP Error 404: Not Found
+6222: HTTP Error 404: Not Found
+6227: HTTP Error 404: Not Found
+6228: HTTP Error 404: Not Found
+6229: HTTP Error 404: Not Found
+6230: HTTP Error 404: Not Found
+6231: HTTP Error 404: Not Found
+6232: HTTP Error 404: Not Found
+6233: HTTP Error 404: Not Found
+6248: HTTP Error 404: Not Found
+6249: HTTP Error 404: Not Found
+6252: HTTP Error 404: Not Found
+6253: HTTP Error 404: Not Found
+6256: HTTP Error 404: Not Found
+6267: HTTP Error 404: Not Found
+6308: HTTP Error 404: Not Found
+6315: <urlopen error timed out>
+6319: HTTP Error 404: Not Found
+6348: <urlopen error timed out>
+6423: HTTP Error 404: Not Found
+6428: HTTP Error 404: Not Found
+6461: HTTP Error 404: Not Found
+6465: HTTP Error 404: Not Found
+6466: HTTP Error 404: Not Found
+6467: HTTP Error 404: Not Found
+6468: HTTP Error 404: Not Found
+6469: HTTP Error 404: Not Found
+6470: HTTP Error 404: Not Found
+6471: HTTP Error 404: Not Found
+6472: HTTP Error 404: Not Found
+6473: HTTP Error 404: Not Found
+6474: HTTP Error 404: Not Found
+6475: HTTP Error 404: Not Found
+6476: HTTP Error 404: Not Found
+6477: HTTP Error 404: Not Found
+6478: HTTP Error 404: Not Found
+6479: HTTP Error 404: Not Found
+6480: HTTP Error 404: Not Found
+6481: HTTP Error 404: Not Found
+6482: HTTP Error 404: Not Found
+6483: HTTP Error 404: Not Found
+6484: HTTP Error 404: Not Found
+6485: HTTP Error 404: Not Found
+6486: HTTP Error 404: Not Found
+6487: HTTP Error 404: Not Found
+6488: HTTP Error 404: Not Found
+6489: HTTP Error 404: Not Found
+6490: HTTP Error 404: Not Found
+6491: HTTP Error 404: Not Found
+6492: HTTP Error 404: Not Found
+6493: HTTP Error 404: Not Found
+6494: HTTP Error 404: Not Found
+6495: HTTP Error 404: Not Found
+6496: HTTP Error 404: Not Found
+6497: HTTP Error 404: Not Found
+6498: HTTP Error 404: Not Found
+6499: HTTP Error 404: Not Found
+6500: HTTP Error 404: Not Found
+6501: HTTP Error 404: Not Found
+6502: HTTP Error 404: Not Found
+6503: HTTP Error 404: Not Found
+6504: HTTP Error 404: Not Found
+6505: HTTP Error 404: Not Found
+6506: HTTP Error 404: Not Found
+6507: HTTP Error 404: Not Found
+6508: HTTP Error 404: Not Found
+6509: HTTP Error 404: Not Found
+6510: HTTP Error 404: Not Found
+6511: HTTP Error 404: Not Found
+6512: HTTP Error 404: Not Found
+6513: HTTP Error 404: Not Found
+6514: HTTP Error 404: Not Found
+6515: HTTP Error 404: Not Found
+6516: HTTP Error 404: Not Found
+6517: HTTP Error 404: Not Found
+6518: HTTP Error 404: Not Found
+6519: HTTP Error 404: Not Found
+6520: HTTP Error 404: Not Found
+6521: HTTP Error 404: Not Found
+6522: HTTP Error 404: Not Found
+6523: HTTP Error 404: Not Found
+6524: HTTP Error 404: Not Found
+6525: HTTP Error 404: Not Found
+6526: HTTP Error 404: Not Found
+6527: HTTP Error 404: Not Found
+6528: HTTP Error 404: Not Found
+6529: HTTP Error 404: Not Found
+6530: HTTP Error 404: Not Found
+6531: HTTP Error 404: Not Found
+6532: HTTP Error 404: Not Found
+6533: HTTP Error 404: Not Found
+6534: HTTP Error 404: Not Found
+6535: HTTP Error 404: Not Found
+6536: HTTP Error 404: Not Found
+6537: HTTP Error 404: Not Found
+6538: HTTP Error 404: Not Found
+6539: HTTP Error 404: Not Found
+6540: HTTP Error 404: Not Found
+6541: HTTP Error 404: Not Found
+6542: HTTP Error 404: Not Found
+6543: HTTP Error 404: Not Found
+6544: HTTP Error 404: Not Found
+6545: HTTP Error 404: Not Found
+6546: HTTP Error 404: Not Found
+6547: HTTP Error 404: Not Found
+6548: HTTP Error 404: Not Found
+6549: HTTP Error 404: Not Found
+6550: HTTP Error 404: Not Found
+6551: HTTP Error 404: Not Found
+6552: HTTP Error 404: Not Found
+6553: HTTP Error 404: Not Found
+6554: HTTP Error 404: Not Found
+6555: HTTP Error 404: Not Found
+6556: HTTP Error 404: Not Found
+6557: HTTP Error 404: Not Found
+6558: HTTP Error 404: Not Found
+6559: HTTP Error 404: Not Found
+6560: HTTP Error 404: Not Found
+6561: HTTP Error 404: Not Found
+6562: HTTP Error 404: Not Found
+6563: HTTP Error 404: Not Found
+6564: HTTP Error 404: Not Found
+6565: HTTP Error 404: Not Found
+6566: HTTP Error 404: Not Found
+6567: HTTP Error 404: Not Found
+6568: HTTP Error 404: Not Found
+6569: HTTP Error 404: Not Found
+6570: HTTP Error 404: Not Found
+6571: HTTP Error 404: Not Found
+6572: HTTP Error 404: Not Found
+6573: HTTP Error 404: Not Found
+6574: HTTP Error 404: Not Found
+6575: HTTP Error 404: Not Found
+6576: HTTP Error 404: Not Found
+6577: HTTP Error 404: Not Found
+6578: HTTP Error 404: Not Found
+6579: HTTP Error 404: Not Found
+6580: HTTP Error 404: Not Found
+6581: HTTP Error 404: Not Found
+6582: HTTP Error 404: Not Found
+6583: HTTP Error 404: Not Found
+6584: HTTP Error 404: Not Found
+6585: HTTP Error 404: Not Found
+6586: HTTP Error 404: Not Found
+6587: HTTP Error 404: Not Found
+6588: HTTP Error 404: Not Found
+6589: HTTP Error 404: Not Found
+6590: HTTP Error 404: Not Found
+6591: HTTP Error 404: Not Found
+6592: HTTP Error 404: Not Found
+6593: HTTP Error 404: Not Found
+6594: HTTP Error 404: Not Found
+6595: HTTP Error 404: Not Found
+6596: HTTP Error 404: Not Found
+6597: HTTP Error 404: Not Found
+6598: HTTP Error 404: Not Found
+6599: HTTP Error 404: Not Found
+6600: HTTP Error 404: Not Found
+6601: HTTP Error 404: Not Found
+6602: HTTP Error 404: Not Found
+6603: HTTP Error 404: Not Found
+6604: HTTP Error 404: Not Found
+6605: HTTP Error 404: Not Found
+6606: HTTP Error 404: Not Found
+6607: HTTP Error 404: Not Found
+6608: HTTP Error 404: Not Found
+6609: HTTP Error 404: Not Found
+6610: HTTP Error 404: Not Found
+6611: HTTP Error 404: Not Found
+6612: HTTP Error 404: Not Found
+6613: HTTP Error 404: Not Found
+6614: HTTP Error 404: Not Found
+6615: HTTP Error 404: Not Found
+6616: HTTP Error 404: Not Found
+6617: HTTP Error 404: Not Found
+6618: HTTP Error 404: Not Found
+6619: HTTP Error 404: Not Found
+6620: HTTP Error 404: Not Found
+6621: HTTP Error 404: Not Found
+6622: HTTP Error 404: Not Found
+6623: HTTP Error 404: Not Found
+6624: HTTP Error 404: Not Found
+6625: HTTP Error 404: Not Found
+6626: HTTP Error 404: Not Found
+6627: HTTP Error 404: Not Found
+6628: HTTP Error 404: Not Found
+6629: HTTP Error 404: Not Found
+6630: HTTP Error 404: Not Found
+6631: HTTP Error 404: Not Found
+6632: HTTP Error 404: Not Found
+6633: HTTP Error 404: Not Found
+6634: HTTP Error 404: Not Found
+6635: HTTP Error 404: Not Found
+6636: HTTP Error 404: Not Found
+6637: HTTP Error 404: Not Found
+6638: HTTP Error 404: Not Found
+6639: HTTP Error 404: Not Found
+6640: HTTP Error 404: Not Found
+6641: HTTP Error 404: Not Found
+6642: HTTP Error 404: Not Found
+6643: HTTP Error 404: Not Found
+6644: HTTP Error 404: Not Found
+6645: HTTP Error 404: Not Found
+6646: HTTP Error 404: Not Found
+6647: HTTP Error 404: Not Found
+6648: HTTP Error 404: Not Found
+6649: HTTP Error 404: Not Found
+6650: HTTP Error 404: Not Found
+6651: HTTP Error 404: Not Found
+6652: HTTP Error 404: Not Found
+6653: HTTP Error 404: Not Found
+6654: HTTP Error 404: Not Found
+6655: HTTP Error 404: Not Found
+6656: HTTP Error 404: Not Found
+6657: HTTP Error 404: Not Found
+6658: HTTP Error 404: Not Found
+6659: HTTP Error 404: Not Found
+6660: HTTP Error 404: Not Found
+6661: HTTP Error 404: Not Found
+6662: HTTP Error 404: Not Found
+6663: HTTP Error 404: Not Found
+6664: HTTP Error 404: Not Found
+6665: HTTP Error 404: Not Found
+6666: HTTP Error 404: Not Found
+6667: HTTP Error 404: Not Found
+6668: HTTP Error 404: Not Found
+6669: HTTP Error 404: Not Found
+6670: HTTP Error 404: Not Found
+6671: HTTP Error 404: Not Found
+6672: HTTP Error 404: Not Found
+6673: HTTP Error 404: Not Found
+6674: HTTP Error 404: Not Found
+6675: HTTP Error 404: Not Found
+6676: HTTP Error 404: Not Found
+6677: HTTP Error 404: Not Found
+6678: HTTP Error 404: Not Found
+6679: HTTP Error 404: Not Found
+6680: HTTP Error 404: Not Found
+6681: HTTP Error 404: Not Found
+6682: HTTP Error 404: Not Found
+6683: HTTP Error 404: Not Found
+6684: HTTP Error 404: Not Found
+6685: HTTP Error 404: Not Found
+6686: HTTP Error 404: Not Found
+6687: HTTP Error 404: Not Found
+6688: HTTP Error 404: Not Found
+6689: HTTP Error 404: Not Found
+6690: HTTP Error 404: Not Found
+6691: HTTP Error 404: Not Found
+6692: HTTP Error 404: Not Found
+6693: HTTP Error 404: Not Found
+6694: HTTP Error 404: Not Found
+6695: HTTP Error 404: Not Found
+6696: HTTP Error 404: Not Found
+6697: HTTP Error 404: Not Found
+6698: HTTP Error 404: Not Found
+6699: HTTP Error 404: Not Found
+6700: HTTP Error 404: Not Found
+6701: HTTP Error 404: Not Found
+6702: HTTP Error 404: Not Found
+6703: HTTP Error 404: Not Found
+6704: HTTP Error 404: Not Found
+6705: HTTP Error 404: Not Found
+6706: HTTP Error 404: Not Found
+6707: HTTP Error 404: Not Found
+6708: HTTP Error 404: Not Found
+6709: HTTP Error 404: Not Found
+6710: HTTP Error 404: Not Found
+6711: HTTP Error 404: Not Found
+6712: HTTP Error 404: Not Found
+6713: HTTP Error 404: Not Found
+6714: HTTP Error 404: Not Found
+6715: HTTP Error 404: Not Found
+6716: HTTP Error 404: Not Found
+6717: HTTP Error 404: Not Found
+6718: HTTP Error 404: Not Found
+6719: HTTP Error 404: Not Found
+6720: HTTP Error 404: Not Found
+6721: HTTP Error 404: Not Found
+6722: HTTP Error 404: Not Found
+6723: HTTP Error 404: Not Found
+6724: HTTP Error 404: Not Found
+6725: HTTP Error 404: Not Found
+6726: HTTP Error 404: Not Found
+6727: HTTP Error 404: Not Found
+6728: HTTP Error 404: Not Found
+6729: HTTP Error 404: Not Found
+6730: HTTP Error 404: Not Found
+6731: HTTP Error 404: Not Found
+6732: HTTP Error 404: Not Found
+6733: HTTP Error 404: Not Found
+6734: HTTP Error 404: Not Found
+6735: HTTP Error 404: Not Found
+6736: HTTP Error 404: Not Found
+6737: HTTP Error 404: Not Found
+6738: HTTP Error 404: Not Found
+6739: HTTP Error 404: Not Found
+6740: HTTP Error 404: Not Found
+6741: HTTP Error 404: Not Found
+6742: HTTP Error 404: Not Found
+6743: HTTP Error 404: Not Found
+6744: HTTP Error 404: Not Found
+6745: HTTP Error 404: Not Found
+6746: HTTP Error 404: Not Found
+6747: HTTP Error 404: Not Found
+6748: HTTP Error 404: Not Found
+6749: HTTP Error 404: Not Found
+6750: HTTP Error 404: Not Found
+DS: 3661 icons from 6750 releases, 451 without one
