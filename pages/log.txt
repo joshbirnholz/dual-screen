@@ -1,0 +1,6 @@
+dsscene-releases.html 200 151812 https://www.ds-scene.net/?s=releases
+advanscene-index.html 200 26331 https://www.advanscene.com/html/index.php
+advanscene-nds.html 404 18 https://www.advanscene.com/html/Releases/index.php?gt=nds
+advanscene-rel1.html 200 65 https://www.advanscene.com/html/Releases/dbrelds.php?id=1
+advanscene-rel3000.html 200 65 https://www.advanscene.com/html/Releases/dbrelds.php?id=3000
+dsscene-rel1.html 200 8 https://www.ds-scene.net/?s=viewrelease&id=1
