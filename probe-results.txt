@@ -1,0 +1,101 @@
+== https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
+curl: (60) SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the webpage mentioned above.
+status 000 type  bytes 0
+head: cannot open 'out.bin' for reading: No such file or directory
+
+== http://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
+status 504 type text/html bytes 280
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;87d02e17&#46;1793156260&#46;27401209
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;87d02e17&#46;1793156260&#46;27401209</P>
+</BODY></HTML>
+
+== https://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
+curl: (60) SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the webpage mentioned above.
+status 000 type  bytes 0
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;87d02e17&#46;1793156260&#46;27401209
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;87d02e17&#46;1793156260&#46;27401209</P>
+</BODY></HTML>
+
+== http://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
+status 504 type text/html bytes 280
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e</P>
+</BODY></HTML>
+
+== https://samurai.wup.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=2
+curl: (60) SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the webpage mentioned above.
+status 000 type  bytes 0
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e</P>
+</BODY></HTML>
+
+== https://samurai.ctr.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=1
+curl: (60) SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the webpage mentioned above.
+status 000 type  bytes 0
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e</P>
+</BODY></HTML>
+
+== https://tagaya-wup.cdn.nintendo.net/tagaya/versionlist/EUR/EU/latest_version
+curl: (60) SSL certificate OpenSSL verify result: unable to get local issuer certificate (20)
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the webpage mentioned above.
+status 000 type  bytes 0
+<HTML><HEAD><TITLE>Error</TITLE></HEAD><BODY>
+An error occurred while processing your request.<p>
+Reference&#32;&#35;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e
+<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;97&#46;916d3e17&#46;1793156268&#46;2eb5d09e</P>
+</BODY></HTML>
+
+== https://art.gametdb.com/wiiu/coverHQ/US/ARKE01.jpg
+status 200 type image/jpeg bytes 449105
+JFIF
+$uploaded on http://www.gametdb.com
+
+== https://www.gametdb.com/wiiutdb.zip
+status 200 type application/txt bytes 1790315
+wiiutdb.xmlUT	
+3}f		
+8?0?v"
+*^~i
+
+== https://www.gametdb.com/dstdb.zip
+status 200 type application/txt bytes 4527710
+\]|E[
+dstdb.xmlUT	
+d"_@
+~|=|,
+
