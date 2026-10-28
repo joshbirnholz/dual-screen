@@ -300,6 +300,10 @@ void test_game_config_round_trip() {
     remote.turbo(PadControl::X) = WiiUAction::Two;
     remote.sideways = true;
     fresh.wii_u_mappings[wii_u_mapping_key(0, WiiUController::Remote)] = remote;
+    ProfileSwitching switching;
+    switching.button = PadControl::Minus;
+    switching.profiles = {"Kart", "Motion Steering"};
+    fresh.wii_u_profile_switching[wii_u_mapping_key(0, WiiUController::Remote)] = switching;
     fresh.lcd_filter = true;
     fresh.custom_textures = true;
     CHECK(fresh.button_mapping == ButtonMapping());
@@ -328,6 +332,7 @@ void test_game_config_round_trip() {
     const std::map<std::string, int> kept{{"upscale_filter", 3}};
     CHECK(reloaded.wii_u_options == kept);
     CHECK(reloaded.wii_u_mappings == fresh.wii_u_mappings);
+    CHECK(reloaded.wii_u_profile_switching == fresh.wii_u_profile_switching);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.
@@ -418,7 +423,6 @@ void test_mapping_profiles_round_trip() {
     kart.name = "Kart";
     kart.wii_u[PadControl::B] = WiiUAction::Two;
     kart.wii_u.sideways = true;
-    kart.wii_u.held(PadControl::Minus) = "Kart Two";
     CHECK(profiles.add(mapping_profile_kind(WiiUController::Remote), kart));
     CHECK(profiles.save(paths));
 
@@ -426,8 +430,6 @@ void test_mapping_profiles_round_trip() {
     CHECK(reloaded == profiles);
     CHECK(reloaded.of("wii_u.remote").size() == 1 && reloaded.of("wii_u.remote")[0].name == "Kart");
     CHECK(reloaded.of("wii_u.remote")[0].wii_u.sideways);
-    CHECK(reloaded.of("wii_u.remote")[0].wii_u.held(PadControl::Minus) == "Kart Two");
-    CHECK(reloaded.of("wii_u.remote")[0].wii_u.held(PadControl::Plus).empty());
     CHECK(mapping_profile_heading("wii_u.nunchuk") == "Wii Remote + Nunchuk Profiles");
     CHECK(mapping_profile_heading("3ds") == "3DS Profiles");
 

@@ -1311,6 +1311,12 @@ struct App::Impl {
     // GamePad's (-1) or a player's mapping, said in the corner.
     std::array<ProfileHold, kPadPlayers + 1> profile_holds;
     void switch_wii_u_profile(int player, const std::string& name);
+    // Profile Switching as this game has it for a player (-1 the GamePad) as
+    // the controller it is now; the profile its mapping is, empty for none;
+    // and the button held: on to the next profile -- see ProfileSwitching.
+    ProfileSwitching profile_switching_of(int player) const;
+    std::string wii_u_profile_name(int player) const;
+    void cycle_wii_u_profile(int player);
     const WiiUMapping& wii_u_mapping_of(int player) const;
     // The GamePad's buttons this frame, through its mapping -- see
     // route_wii_u_pads().
@@ -2225,15 +2231,14 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
 
     RoutedPads routed = route_pads(known_pads, pad_slots);
     const uint32_t now_ms = SDL_GetTicks();
-    // A button that switches profile when held is held back from the game
-    // until it is plainly a tap -- see ProfileHold.
+    // Profile Switching's button is held back from the game until it is
+    // plainly a tap -- see ProfileHold.
     for (int slot = -1; slot < kPadPlayers; ++slot) {
         uint32_t& controls = slot < 0 ? routed.gamepad_controls : routed.player_controls[slot];
-        const WiiUMapping& mapping = wii_u_mapping_of(slot);
         int switched = -1;
-        controls = profile_holds[static_cast<std::size_t>(slot + 1)].update(controls, mapping.hold_controls(), now_ms,
-                                                                              switched);
-        if (switched >= 0) switch_wii_u_profile(slot, mapping.hold_profile[static_cast<std::size_t>(switched)]);
+        controls = profile_holds[static_cast<std::size_t>(slot + 1)].update(
+            controls, profile_switching_of(slot).hold_controls(), now_ms, switched);
+        if (switched >= 0) cycle_wii_u_profile(slot);
     }
     // Each controller's buttons as the game has it, through this game's
     // mapping for it -- see WiiUMapping.
@@ -2289,6 +2294,35 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
 
     apply_pad_rumble();
     return gamepad;
+}
+
+ProfileSwitching App::Impl::profile_switching_of(int player) const {
+    if (!have_game_config) return ProfileSwitching();
+    const auto found = game_config.wii_u_profile_switching.find(wii_u_mapping_key(player, wii_u_controller_of(player)));
+    return found != game_config.wii_u_profile_switching.end() ? found->second : ProfileSwitching();
+}
+
+std::string App::Impl::wii_u_profile_name(int player) const {
+    const WiiUMapping& mapping = wii_u_mapping_of(player);
+    for (const MappingProfile& profile : profiles().of(mapping_profile_kind(wii_u_controller_of(player)))) {
+        if (profile.wii_u == mapping) return profile.name;
+    }
+    return std::string();
+}
+
+void App::Impl::cycle_wii_u_profile(int player) {
+    std::vector<std::string> names;
+    for (const MappingProfile& profile : profiles().of(mapping_profile_kind(wii_u_controller_of(player)))) {
+        names.push_back(profile.name);
+    }
+    const std::string next = next_switching_profile(profile_switching_of(player), names, wii_u_profile_name(player));
+    if (next.empty()) {
+        const PadSlot slot = player < 0 ? PadSlot::gamepad() : PadSlot::player_number(player);
+        show_controller_notice(slot, "There's no other profile to switch to.");
+        log_info(pad_slot_name(slot) + " has no other profile to switch to");
+        return;
+    }
+    switch_wii_u_profile(player, next);
 }
 
 void App::Impl::switch_wii_u_profile(int player, const std::string& name) {
@@ -2652,6 +2686,15 @@ void App::Impl::show_wii_u_player(WiiUPlayerScreen& screen) const {
         }
     }
     screen.set_controllers(wii_u_controller_rows(), std::move(types), current);
+    // And Profile Switching, with the profiles for the controller it is.
+    if (!screen.adding()) {
+        const int player = screen.slot().kind == PadSlot::Kind::Player ? screen.slot().player : -1;
+        std::vector<std::string> names;
+        for (const MappingProfile& profile : profiles().of(mapping_profile_kind(wii_u_controller_of(player)))) {
+            names.push_back(profile.name);
+        }
+        screen.set_profile_switching(profile_switching_of(player), std::move(names), wii_u_profile_name(player));
+    }
 }
 
 void App::Impl::open_wii_u_player(PadSlot slot, bool adding) {
@@ -2679,6 +2722,21 @@ void App::Impl::update_wii_u_player_screen(const std::vector<UiAction>& actions,
     if (result.edit_mapping) {
         open_wii_u_mapping();
         return;
+    }
+    if (result.switching_changed && have_game_config) {
+        const int player = slot.kind == PadSlot::Kind::Player ? slot.player : -1;
+        const std::string key = wii_u_mapping_key(player, wii_u_controller_of(player));
+        const ProfileSwitching& switching = *result.switching_changed;
+        if (!switching.on() && switching.profiles.empty()) {
+            game_config.wii_u_profile_switching.erase(key);
+        } else {
+            game_config.wii_u_profile_switching[key] = switching;
+        }
+        persist_game_config();
+        log_info(!switching.on() ? pad_slot_name(slot) + "'s profile switching is off"
+                                 : pad_slot_name(slot) + " switches profile holding " +
+                                       (switching.button == PadControl::Minus ? "Minus" : "Plus") + ", through " +
+                                       std::to_string(switching.profiles.size()) + " profiles");
     }
     if (slot.kind == PadSlot::Kind::Player) {
         if (result.added) {
@@ -3106,6 +3164,12 @@ void App::Impl::remove_wii_u_player(int player) {
             if (!moved.empty()) mappings[moved] = mapping;
         }
         game_config.wii_u_mappings = std::move(mappings);
+        std::map<std::string, ProfileSwitching> switching;
+        for (const auto& [key, each] : game_config.wii_u_profile_switching) {
+            const std::string moved = player_key_after_removing(key, player);
+            if (!moved.empty()) switching[moved] = each;
+        }
+        game_config.wii_u_profile_switching = std::move(switching);
         persist_game_config();
     }
     remove_player(lineup, player);

@@ -121,6 +121,13 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
             if (kept.is_object()) config.wii_u_mappings[key] = wii_u_mapping_from_json(kept);
         }
     }
+    config.wii_u_profile_switching.clear();
+    if (const auto found = document.find("wii_u_profile_switching");
+        found != document.end() && found->is_object()) {
+        for (const auto& [key, kept] : found->items()) {
+            if (kept.is_object()) config.wii_u_profile_switching[key] = profile_switching_from_json(kept);
+        }
+    }
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -173,6 +180,10 @@ bool GameConfig::save(const AppPaths& paths) const {
     for (const auto& [id, choice] : wii_u_options) document["wii_u_options"][id] = choice;
     document["wii_u_mappings"] = json::object();
     for (const auto& [key, mapping] : wii_u_mappings) document["wii_u_mappings"][key] = wii_u_mapping_json(mapping);
+    document["wii_u_profile_switching"] = json::object();
+    for (const auto& [key, switching] : wii_u_profile_switching) {
+        document["wii_u_profile_switching"][key] = profile_switching_json(switching);
+    }
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

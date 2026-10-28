@@ -1,5 +1,7 @@
 #include "input/wii_u_mapping.hpp"
 
+#include <algorithm>
+
 #include "core/external_frame_link.hpp"
 #include "input/ds_input.hpp"
 
@@ -122,12 +124,26 @@ WiiUAction WiiUMapping::resolved(PadControl control, WiiUController controller) 
     return action == WiiUAction::Standard ? standard_wii_u_action(control, controller) : action;
 }
 
-uint32_t WiiUMapping::hold_controls() const {
-    uint32_t controls = 0;
-    for (std::size_t index = 0; index < kPadControls; ++index) {
-        if (!hold_profile[index].empty()) controls |= 1u << index;
+bool ProfileSwitching::includes(const std::string& name) const {
+    return std::find(profiles.begin(), profiles.end(), name) != profiles.end();
+}
+
+uint32_t ProfileSwitching::hold_controls() const {
+    if (!on() || profiles.empty()) return 0;
+    return 1u << static_cast<unsigned>(button);
+}
+
+std::string next_switching_profile(const ProfileSwitching& switching, const std::vector<std::string>& saved,
+                                   const std::string& current) {
+    const auto now = std::find(saved.begin(), saved.end(), current);
+    const std::size_t count = saved.size();
+    // From the one after the current -- or, with none, from the first.
+    const std::size_t from = now == saved.end() ? 0 : static_cast<std::size_t>(now - saved.begin()) + 1;
+    for (std::size_t step = 0; step < count; ++step) {
+        const std::string& name = saved[(from + step) % count];
+        if (switching.includes(name) && name != current) return name;
     }
-    return controls;
+    return std::string();
 }
 
 uint32_t ProfileHold::update(uint32_t controls, uint32_t holding, uint32_t now_ms, int& switched) {
@@ -177,7 +193,6 @@ uint32_t ProfileHold::update(uint32_t controls, uint32_t holding, uint32_t now_m
 }
 
 bool WiiUMapping::is_standard(WiiUController controller) const {
-    if (hold_controls() != 0) return false;
     for (std::size_t index = 0; index < kPadControls; ++index) {
         const PadControl control = static_cast<PadControl>(index);
         if (resolved(control, controller) != standard_wii_u_action(control, controller)) return false;

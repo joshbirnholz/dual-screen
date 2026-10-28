@@ -590,26 +590,29 @@ button on Up presses the remote's Right, which points up. What each button
 is chosen as stays the same, and a profile keeps whether it is on. The
 Controls page draws a player's Wii Remote on its side too.
 
-**When Held…**, last in a Wii U button's list, makes holding that button
-switch the controller to one of its saved profiles, as Steam Input's long
-press does: a tap still does the button's job, reaching the game as the
-button is let go, and holding it half a second switches instead, the game
-never seeing it. Each profile keeps its own, so two can switch back and
-forth on one button. The button's row says so after its job: **· Hold: Kart**.
+**Save Profile…** and **Load Profile…**, at the top right of that page or
+of a DS or 3DS game's Change Controls -- **Right** from the list -- each open
+a page of mappings kept under a name, for any game to load. Save Profile's
+**New Profile…** names the mapping as it is now and keeps it, and a profile
+there is saved over, after asking. Load Profile's **A** loads one into this
+game and **X** deletes one, after asking; the one the mapping is now says
+**In Use**, and its name is under the two buttons. There is a list for DS
+games, one for 3DS games and one for each Wii U controller type, so a Wii
+Remote's profiles are only offered for a Wii Remote. A loaded profile is
+copied into the game, so changing the game's mapping afterwards leaves the
+profile as it was. They are kept by the device running the games, in
+`mapping_profiles.json` beside its settings.
+
+**Profile Switching**, on a Wii U player's page or the GamePad's, is **Off**,
+**Hold −** or **Hold +**, and while it is on, **Switch Between** has a switch
+for each of the controller's profiles. Holding the button half a second
+moves the controller on to the next profile switched on, in the order they
+were saved, round from the last to the first, as Steam Input's long press
+does: a tap still does the button's job, reaching the game as it is let go.
+The game keeps it for each player, with which profile each controller has.
 Switching puts an alert in the corner, as a Switch's own do: the
 controller, its player lights and the profile's name -- several at once
 stacked down the side, on both devices.
-
-**−** on that page, or on a DS or 3DS game's Change Controls, opens
-**Mapping Profiles**: mappings kept under a name, for any game to load.
-**Save as New Profile…** names the mapping as it is now and keeps it. Over
-a profile, **A** loads it into this game, **Y** (Save Over) puts the
-mapping as it is now in its place, and **X** deletes it. There is a list
-for DS games, one for 3DS games and one for each Wii U controller type, so
-a Wii Remote's profiles are only offered for a Wii Remote. A loaded profile
-is copied into the game, so changing the game's mapping afterwards leaves
-the profile as it was. They are kept by the device running the games, in
-`mapping_profiles.json` beside its settings.
 
 In Controls itself, **X** (Identify) buzzes the highlighted controller, and
 **Y** is **Change Order**, as on a Switch: every controller is let go of, and

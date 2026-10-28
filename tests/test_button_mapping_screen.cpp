@@ -673,46 +673,37 @@ void test_a_wii_remote_can_be_held_sideways() {
     CHECK_EQ(open_wii_u(WiiUController::RemoteNunchuk).row_count(), static_cast<int>(kPadControls));
 }
 
-// When Held..., last in a Wii U button's picker: Nothing, then each
-// profile, the one chosen switched to while the button is held -- the
-// button keeping its job -- shown beside its job, and on the other device.
-void test_a_held_button_can_switch_profile() {
-    ButtonMappingScreen screen = open_wii_u(WiiUController::Pro);
-    screen.set_profiles({"Kart", "Menus"}, -1, "Wii U Pro Controller Profiles");
-    move_to(screen, PadControl::Minus);
-    press(screen, UiAction::Confirm);
-    const int when_held = static_cast<int>(wii_u_action_choices(WiiUController::Pro).size());
-    ButtonMappingScreenResult result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + when_held);
-    CHECK(!result.wii_u_changed.has_value());
-    CHECK(screen.hold_choice_open() && screen.choice_focus() == 0);
-    CHECK(button_mapping_view_of(screen).holding);
-    result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 2);
-    CHECK(result.wii_u_changed.has_value() && !screen.choosing());
-    if (result.wii_u_changed) {
-        CHECK(result.wii_u_changed->held(PadControl::Minus) == "Menus");
-        CHECK((*result.wii_u_changed)[PadControl::Minus] == WiiUAction::Standard);
-        CHECK(result.wii_u_changed->hold_controls() == 1u << static_cast<unsigned>(PadControl::Minus));
-        CHECK(!result.wii_u_changed->is_standard(WiiUController::Pro));
-    }
-    CHECK(screen.action_label(PadControl::Minus) ==
-          wii_u_action_name(standard_wii_u_action(PadControl::Minus, WiiUController::Pro), WiiUController::Pro) +
-              " \u00b7 Hold: Menus");
-
-    // On the one it is, and the other device's drawn the same.
-    press(screen, UiAction::Confirm);
-    press(screen, UiAction::Up);
-    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + when_held);
-    CHECK(screen.hold_choice_open() && screen.choice_focus() == 2);
+// Save Profile... and Load Profile..., over the console: Right from the list
+// to the first, across to the other, Left back to the list where it was --
+// the list unringed meanwhile -- and the other device's cursor on them too.
+void test_save_and_load_are_beside_the_list() {
+    ButtonMappingScreen screen = open_screen();
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Right);
+    CHECK_EQ(screen.button_focus(), 0);
+    CHECK_EQ(screen.focus(), 1);
+    // Up and Down stay put; Right goes on, and no further.
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.button_focus(), 0);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Right);
+    CHECK_EQ(screen.button_focus(), 1);
     const net::ButtonMappingViewMessage view = button_mapping_view_of(screen);
-    ButtonMappingScreen mirrored;
-    mirrored.set_wii_u_mapping(view.wii_u_mapping, WiiUController::Pro, view.wii_u_detail);
+    CHECK_EQ(static_cast<int>(view.focus), ButtonMappingScreen::kButtonFocusBase + 1);
+    ButtonMappingScreen mirrored = open_screen();
     mirrored.show_mirrored(view, kWidth, kHeight);
-    CHECK(mirrored.hold_choice_open() && mirrored.choice_focus() == 2);
-
-    // Nothing takes it off.
-    result = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 0);
-    CHECK(result.wii_u_changed.has_value() && result.wii_u_changed->hold_controls() == 0);
-    if (result.wii_u_changed) CHECK(result.wii_u_changed->is_standard(WiiUController::Pro));
+    CHECK_EQ(mirrored.button_focus(), 1);
+    press(screen, UiAction::Left);
+    CHECK_EQ(screen.button_focus(), 0);
+    press(screen, UiAction::Left);
+    CHECK_EQ(screen.button_focus(), -1);
+    CHECK_EQ(screen.focus(), 1);
+    // A tap on one opens its page, and B comes back to it.
+    tap_entry(screen, ButtonMappingScreen::kProfileButtonEntry + 1);
+    CHECK(screen.profile_page() == ButtonMappingScreen::ProfilePage::Load);
+    press(screen, UiAction::Cancel);
+    CHECK(screen.profile_page() == ButtonMappingScreen::ProfilePage::None && screen.is_open());
+    CHECK_EQ(screen.button_focus(), 1);
 }
 
 // The other device's page is drawn from the view alone: the mapping, the
@@ -734,41 +725,51 @@ void test_the_other_device_shows_a_wii_u_controllers_page() {
     CHECK(mirrored.detail() == host.detail());
 }
 
-// Mapping Profiles, on -: loaded with A, deleted with X and saved over with Y
-// after asking, and a new one named and saved -- the cursor on it once it is
-// in the list.
+// Load Profile's page: on the profile in use, A loads one and goes back to
+// the mapping, X deletes one after asking. Save Profile's: New Profile...
+// named and saved, or a profile saved over after asking -- back to the
+// mapping either way, or to the page if not.
 void test_profiles_are_loaded_saved_and_deleted() {
+    using Page = ButtonMappingScreen::ProfilePage;
     ButtonMappingScreen screen = open_screen();
     screen.set_profiles({"Touch Steering", "Left-Handed"}, 1, "DS Profiles");
-    press(screen, UiAction::MenuMinus);
-    CHECK(screen.profiles_open());
-    // On the one in use: Save as New Profile..., the heading, then the two.
-    CHECK_EQ(screen.choice_focus(), 3);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.profile_page() == Page::Load);
+    CHECK_EQ(screen.page_focus(), 1);
     CHECK_EQ(press(screen, UiAction::Confirm).profile_load, 1);
-    CHECK(!screen.profiles_open());
+    CHECK(screen.profile_page() == Page::None && screen.button_focus() == 1);
 
-    press(screen, UiAction::MenuMinus);
+    press(screen, UiAction::Confirm);
     press(screen, UiAction::Up);
-    CHECK_EQ(screen.choice_focus(), 2);
     press(screen, UiAction::MenuQuit);
     CHECK(screen.confirming() && screen.asking() == ButtonMappingScreen::Asking::Delete);
     const ButtonMappingScreenResult deleted = press(screen, UiAction::Confirm);
     CHECK_EQ(deleted.profile_delete, 0);
-    CHECK(screen.profiles_open() && !screen.confirming());
-    // Y: saved over, after asking; B there is back to the list.
-    press(screen, UiAction::MenuReset);
+    CHECK(screen.profile_page() == Page::Load && !screen.confirming());
+    // The other device draws the same page, its cursor where this one's is.
+    const net::ButtonMappingViewMessage loading = button_mapping_view_of(screen);
+    ButtonMappingScreen mirrored = open_screen();
+    mirrored.show_mirrored(loading, kWidth, kHeight);
+    CHECK(mirrored.profile_page() == Page::Load && mirrored.page_focus() == 0);
+    press(screen, UiAction::Cancel);
+
+    // Save Profile's: a profile saved over, after asking.
+    press(screen, UiAction::Left);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.profile_page() == Page::Save && screen.page_focus() == 0);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
     CHECK(screen.confirming() && screen.asking() == ButtonMappingScreen::Asking::SaveOver);
     CHECK_EQ(press(screen, UiAction::Cancel).profile_save_over, -1);
-    CHECK(screen.profiles_open());
-    press(screen, UiAction::MenuReset);
+    CHECK(screen.profile_page() == Page::Save && screen.page_focus() == 1);
+    press(screen, UiAction::Confirm);
     CHECK_EQ(press(screen, UiAction::Confirm).profile_save_over, 0);
-    // -, and they are put away.
-    press(screen, UiAction::MenuMinus);
-    CHECK(!screen.profiles_open() && screen.is_open());
+    CHECK(screen.profile_page() == Page::None && screen.button_focus() == 0);
 
     // A new one: named, typed into, and OK'd with a tap.
-    press(screen, UiAction::MenuMinus);
-    while (screen.choice_focus() > 0) press(screen, UiAction::Up);
+    press(screen, UiAction::Confirm);
     press(screen, UiAction::Confirm);
     CHECK(screen.naming());
     CHECK(screen.name_text() == "Profile 3");
@@ -777,36 +778,33 @@ void test_profiles_are_loaded_saved_and_deleted() {
     CHECK(screen.name_text() == "Profile!");
     const ButtonMappingScreenResult saved = tap_entry(screen, ButtonMappingScreen::kNamingEntryBase + 1);
     CHECK(saved.profile_save_new && *saved.profile_save_new == "Profile!");
-    CHECK(!screen.naming() && screen.profiles_open());
-    screen.set_profiles({"Touch Steering", "Left-Handed", "Profile!"}, 2, "DS Profiles");
-    CHECK_EQ(screen.choice_focus(), 4);
-    // Cancelled, nothing is saved.
-    while (screen.choice_focus() > 0) press(screen, UiAction::Up);
+    CHECK(!screen.naming() && screen.profile_page() == Page::None);
+    // Cancelled, nothing is saved, and Save Profile's page is still up.
+    press(screen, UiAction::Confirm);
     press(screen, UiAction::Confirm);
     CHECK(!press(screen, UiAction::Cancel).profile_save_new.has_value());
-    CHECK(!screen.naming());
+    CHECK(!screen.naming() && screen.profile_page() == Page::Save);
 
-    // The other device draws the same list and the same name being typed.
+    // The other device draws the same name being typed.
     press(screen, UiAction::Confirm);
     screen.type("x", 0);
     press(screen, UiAction::Down);
     const net::ButtonMappingViewMessage view = button_mapping_view_of(screen);
-    CHECK(view.naming && view.name_text == "Profile 4x");
-    ButtonMappingScreen mirrored = open_screen();
-    mirrored.show_mirrored(view, kWidth, kHeight);
-    CHECK(mirrored.naming() && mirrored.name_text() == "Profile 4x");
-    CHECK(mirrored.type_mirrored("y", 0) && mirrored.name_text() == "Profile 4xy");
+    CHECK(view.naming && view.name_text == "Profile 3x");
+    ButtonMappingScreen naming = open_screen();
+    naming.show_mirrored(view, kWidth, kHeight);
+    CHECK(naming.naming() && naming.name_text() == "Profile 3x");
+    CHECK(naming.type_mirrored("y", 0) && naming.name_text() == "Profile 3xy");
     // Kept while the other device catches up.
-    mirrored.show_mirrored(view, kWidth, kHeight);
-    CHECK(mirrored.name_text() == "Profile 4xy");
+    naming.show_mirrored(view, kWidth, kHeight);
+    CHECK(naming.name_text() == "Profile 3xy");
 }
 
 void test_a_name_is_typed_on_the_device_that_asked_for_it() {
     // Asked for here: typed here.
     ButtonMappingScreen screen = open_screen();
     screen.set_profiles({"Touch Steering"}, 0, "DS Profiles");
-    press(screen, UiAction::MenuMinus);
-    while (screen.choice_focus() > 0) press(screen, UiAction::Up);
+    tap_entry(screen, ButtonMappingScreen::kProfileButtonEntry);
     press(screen, UiAction::Confirm);
     CHECK(screen.naming() && !screen.naming_elsewhere());
     CHECK(!button_mapping_view_of(screen).naming_on_companion);
@@ -844,7 +842,7 @@ void test_a_name_is_typed_on_the_device_that_asked_for_it() {
     const ButtonMappingScreenResult saved = press(screen, UiAction::Confirm);
     CHECK_EQ(asked, 1);
     CHECK(saved.profile_save_new && *saved.profile_save_new == "Kart");
-    CHECK(!screen.naming() && screen.profiles_open());
+    CHECK(!screen.naming() && screen.profile_page() == ButtonMappingScreen::ProfilePage::None);
 }
 
 }  // namespace
@@ -868,7 +866,7 @@ int main() {
     test_a_wii_u_controller_is_mapped_on_the_same_page();
     test_a_wii_remote_can_be_held_sideways();
     test_the_other_device_shows_a_wii_u_controllers_page();
-    test_a_held_button_can_switch_profile();
+    test_save_and_load_are_beside_the_list();
     test_profiles_are_loaded_saved_and_deleted();
     test_a_name_is_typed_on_the_device_that_asked_for_it();
     return test::finish("button-mapping-screen");

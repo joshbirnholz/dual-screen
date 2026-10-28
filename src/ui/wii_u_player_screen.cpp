@@ -14,6 +14,8 @@ void WiiUPlayerScreen::open(PadSlot slot) {
     open_ = true;
     slot_ = slot;
     focus_ = 0;
+    scroll_ = 0.0f;
+    drag_.stop();
     choice_.close();
     adding_ = false;
     pending_type_ = -1;
@@ -40,6 +42,14 @@ void WiiUPlayerScreen::set_controllers(const std::vector<ControllerRowView>& con
     focus_ = std::clamp(focus_, 0, static_cast<int>(rows().size()) - 1);
 }
 
+void WiiUPlayerScreen::set_profile_switching(ProfileSwitching switching, std::vector<std::string> profiles,
+                                             std::string mapping_profile) {
+    switching_ = std::move(switching);
+    profile_names_ = std::move(profiles);
+    mapping_profile_ = std::move(mapping_profile);
+    focus_ = std::clamp(focus_, 0, static_cast<int>(rows().size()) - 1);
+}
+
 std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
     std::vector<Row> rows;
     if (!types_.empty()) rows.push_back(Row::Type);
@@ -48,8 +58,22 @@ std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
         return rows;
     }
     rows.push_back(Row::Mapping);
+    rows.push_back(Row::Switching);
+    if (switching_.on()) {
+        for (std::size_t index = 0; index < profile_names_.size(); ++index) rows.push_back(Row::Profile);
+    }
     if (removable()) rows.push_back(Row::Remove);
     return rows;
+}
+
+int WiiUPlayerScreen::profile_of_row(int row) const {
+    const std::vector<Row> all = rows();
+    if (row < 0 || row >= static_cast<int>(all.size()) || all[static_cast<std::size_t>(row)] != Row::Profile) return -1;
+    int profile = 0;
+    for (int index = 0; index < row; ++index) {
+        if (all[static_cast<std::size_t>(index)] == Row::Profile) ++profile;
+    }
+    return profile;
 }
 
 WiiUPlayerScreen::Row WiiUPlayerScreen::focused_row() const {
@@ -75,18 +99,55 @@ WiiUPlayerScreen::Geometry WiiUPlayerScreen::compute_geometry(float output_width
     geometry.list = PixelRect{frame.panel.x, frame.content_top, frame.panel.w, frame.content_bottom - frame.content_top};
     const float row_height = menu_row_height(frame.line);
     const float step = row_height + menu_row_gap(frame.line);
-    const std::size_t count = rows().size();
-    for (std::size_t index = 0; index < count; ++index) {
-        geometry.rows.push_back(
-            PixelRect{frame.panel.x, frame.content_top + static_cast<float>(index) * step, frame.panel.w, row_height});
+    const std::vector<Row> all = rows();
+    // Room for Switch Between over the first profile.
+    const float heading = std::round(frame.line * 2.6f);
+    float y = 0.0f;
+    std::vector<float> tops;
+    for (std::size_t index = 0; index < all.size(); ++index) {
+        if (all[index] == Row::Profile && (index == 0 || all[index - 1] != Row::Profile)) {
+            geometry.heading_y = y;
+            y += heading;
+        }
+        tops.push_back(y);
+        y += step;
     }
+    geometry.content_height = y;
+    const bool scrolls = geometry.max_scroll() > 0.5f;
+    const float row_width = frame.panel.w - (scrolls ? scroll_bar_width(frame.scale) + frame.line * 0.6f : 0.0f);
+    for (const float top : tops) {
+        geometry.rows.push_back(PixelRect{frame.panel.x, frame.content_top - scroll_ + top, row_width, row_height});
+    }
+    geometry.heading_y += frame.content_top - scroll_;
     return geometry;
+}
+
+void WiiUPlayerScreen::scroll_focus_into_view(const Geometry& geometry) {
+    if (focus_ < 0 || focus_ >= static_cast<int>(geometry.rows.size())) return;
+    const PixelRect& focused = geometry.rows[static_cast<std::size_t>(focus_)];
+    // The first profile brings Switch Between with it.
+    const float top = profile_of_row(focus_) == 0 ? geometry.heading_y : focused.y;
+    if (top < geometry.list.y) {
+        scroll_ -= geometry.list.y - top;
+    } else if (focused.y + focused.h > geometry.list.y + geometry.list.h) {
+        scroll_ += focused.y + focused.h - geometry.list.y - geometry.list.h;
+    }
+    scroll_ = std::clamp(scroll_, 0.0f, geometry.max_scroll());
 }
 
 void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
     const PixelRect& row = geometry.rows[static_cast<std::size_t>(std::clamp(focus_, 0, static_cast<int>(geometry.rows.size()) - 1))];
     choice_types_.clear();
+    if (focused_row() == Row::Switching) {
+        // Off, then each of the two it can be, drawn as the buttons are.
+        const int current = switching_.button == PadControl::Minus  ? 1
+                            : switching_.button == PadControl::Plus ? 2
+                                                                    : 0;
+        choice_.open({"Off", "Hold", "Hold"}, current, row);
+        choice_.set_trailing_glyphs({ButtonGlyph::Count, ButtonGlyph::Minus, ButtonGlyph::Plus}, glyph_aspect_);
+        return;
+    }
     if (focused_row() != Row::Type) return;
     // Cemu's, but for None -- a player there is no more is Remove
     // Controller's -- and a Classic Controller alone, which a Wii U never
@@ -110,6 +171,13 @@ void WiiUPlayerScreen::open_choice(float output_width, float output_height) {
 }
 
 void WiiUPlayerScreen::choose(int index, WiiUPlayerScreenResult& result) {
+    if (focused_row() == Row::Switching) {
+        const PadControl button = index == 1 ? PadControl::Minus : index == 2 ? PadControl::Plus : PadControl::Count;
+        if (button == switching_.button) return;
+        switching_.button = button;
+        result.switching_changed = switching_;
+        return;
+    }
     if (focused_row() != Row::Type || index < 0 || index >= static_cast<int>(choice_types_.size())) return;
     const int type = choice_types_[static_cast<std::size_t>(index)];
     if (adding_) {
@@ -127,6 +195,19 @@ void WiiUPlayerScreen::act(WiiUPlayerScreenResult& result, float output_width, f
         result.close_requested = true;
     } else if (focused_row() == Row::Mapping) {
         result.edit_mapping = true;
+    } else if (focused_row() == Row::Profile) {
+        // A profile in, or out, kept in the order they were saved.
+        const int profile = profile_of_row(focus_);
+        if (profile < 0) return;
+        const std::string& name = profile_names_[static_cast<std::size_t>(profile)];
+        ProfileSwitching changed = switching_;
+        changed.profiles.clear();
+        for (const std::string& each : profile_names_) {
+            const bool in = each == name ? !switching_.includes(name) : switching_.includes(each);
+            if (in) changed.profiles.push_back(each);
+        }
+        switching_ = changed;
+        result.switching_changed = switching_;
     } else if (focused_row() == Row::Add) {
         result.added = true;
         result.type_chosen = pending_type_;
@@ -165,6 +246,7 @@ WiiUPlayerScreenResult WiiUPlayerScreen::update(const std::vector<UiAction>& pre
     const int last = static_cast<int>(rows().size()) - 1;
     for (const UiAction action : actions) {
         switch (action) {
+            // No going round: the list stops at its ends.
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
             case UiAction::Down: focus_ = std::min(last, focus_ + 1); break;
             case UiAction::Confirm: act(result, output_width, output_height); break;
@@ -177,11 +259,18 @@ WiiUPlayerScreenResult WiiUPlayerScreen::update(const std::vector<UiAction>& pre
         }
         if (choice_.is_open() || result.close_requested) break;
     }
+    // The cursor brings the list with it when it is moved -- and only then,
+    // so a list dragged by a finger stays where the finger left it.
+    if (!actions.empty()) {
+        drag_.stop();
+        scroll_focus_into_view(compute_geometry(output_width, output_height));
+    }
     if (!result.close_requested) {
         for (const int tap : take_taps(pointers, output_width, output_height)) {
             handle_tap(tap, result, output_width, output_height);
         }
     }
+    drag_.settle();
     if (result.close_requested) close();
     return result;
 }
@@ -210,6 +299,8 @@ void WiiUPlayerScreen::handle_tap(int entry, WiiUPlayerScreenResult& result, flo
 void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                               float output_width, float output_height) {
     if (!open_) return;
+    glyph_aspect_ = glyphs.width_for(1.0f);
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging());
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;
@@ -228,10 +319,24 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
     const float pad = menu_row_pad(line);
     const float row_scale = scale * 1.1f;
     const std::vector<Row> all = rows();
+    quads.set_clip(menu_list_clip(geometry.list, scale));
+    if (switching_.on() && !profile_names_.empty()) {
+        // Over the profiles, what their switches are.
+        const float heading_scale = scale * 0.9f;
+        text.draw(quads, "Switch Between", geometry.list.x + std::round(line * 0.5f),
+                  std::round(geometry.heading_y + std::round(line * 2.6f) - TextRenderer::line_height(heading_scale) -
+                             line * 0.5f),
+                  heading_scale, theme.text_dim);
+    }
     for (std::size_t index = 0; index < all.size(); ++index) {
         const PixelRect& row = geometry.rows[index];
         const bool focused = static_cast<int>(index) == focus_;
-        draw_menu_row(quads, row, focused, scale, index + 1 == all.size(), static_cast<int>(index) == focus_ + 1);
+        // A row after a heading is the first of its block: it draws its own
+        // top rule, as the first row of the page does.
+        const bool first_profile = all[index] == Row::Profile && (index == 0 || all[index - 1] != Row::Profile);
+        const bool before_profiles = index + 1 < all.size() && all[index + 1] == Row::Profile && all[index] != Row::Profile;
+        draw_menu_row(quads, row, focused, scale, index + 1 == all.size() || before_profiles,
+                      static_cast<int>(index) == focus_ + 1 && !first_profile);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         const float right = row.x + row.w - pad;
         if (all[index] == Row::Remove) {
@@ -239,7 +344,32 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             continue;
         }
         if (all[index] == Row::Mapping) {
+            // And the profile its mapping is, if it is one.
             text.draw(quads, "Edit Button Mapping", row.x + pad, baseline, row_scale, menu_row_text(focused));
+            text.draw(quads, mapping_profile_, right, baseline, row_scale, theme.text_dim, TextAlign::Right);
+            continue;
+        }
+        if (all[index] == Row::Switching) {
+            text.draw(quads, "Profile Switching", row.x + pad, baseline, row_scale, menu_row_text(focused));
+            if (!switching_.on()) {
+                text.draw(quads, "Off", right, baseline, row_scale, theme.text_dim, TextAlign::Right);
+                continue;
+            }
+            // "Hold" and the button, as the pad draws it.
+            const float height = std::round(line * 1.5f);
+            const float width = glyphs.width_for(height);
+            glyphs.draw(quads, switching_.button == PadControl::Minus ? ButtonGlyph::Minus : ButtonGlyph::Plus,
+                        right - width, std::round(row.y + row.h * 0.5f - height * glyphs.button_centre()), height,
+                        theme.text_dim);
+            text.draw(quads, "Hold", right - width - std::round(line * 0.4f), baseline, row_scale, theme.text_dim,
+                      TextAlign::Right);
+            continue;
+        }
+        if (all[index] == Row::Profile) {
+            const int profile = profile_of_row(static_cast<int>(index));
+            const std::string& name = profile_names_[static_cast<std::size_t>(profile)];
+            text.draw(quads, name, row.x + pad, baseline, row_scale, menu_row_text(focused));
+            draw_toggle(quads, right, row.y + row.h * 0.5f, switching_.includes(name), line);
             continue;
         }
         if (all[index] == Row::Add) {
@@ -264,6 +394,11 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             text.draw(quads, value, value_right, baseline, row_scale, theme.text_dim, TextAlign::Right);
         }
     }
+    quads.clear_clip();
+    if (geometry.content_height > geometry.list.h + 0.5f) {
+        draw_scroll_bar(quads, geometry.list, scroll_ / geometry.content_height,
+                        geometry.list.h / geometry.content_height, line, scale);
+    }
 
     std::vector<GuidePrompt> guide;
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
@@ -272,6 +407,7 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
                      focused == Row::Remove    ? "Remove"
                      : focused == Row::Add     ? "Add"
                      : focused == Row::Mapping ? "Open"
+                     : focused == Row::Profile ? "OK"
                                                : "Change",
                      PromptRole::ActsOnSelection});
     guide_hits_.clear();
@@ -279,7 +415,7 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
 
     if (choice_.is_open()) {
         choice_.set_row(geometry.rows[static_cast<std::size_t>(std::clamp(focus_, 0, static_cast<int>(all.size()) - 1))]);
-        choice_.render(quads, text, output_width, output_height);
+        choice_.render(quads, text, output_width, output_height, &glyphs);
     }
 }
 
@@ -293,7 +429,19 @@ void WiiUPlayerScreen::show_mirrored(const net::WiiUPlayerViewMessage& view, flo
         }
     }
     if (adding_) pending_type_ = view.pending_type - 1;
+    ProfileSwitching switching;
+    switching.button = view.switch_button == 1   ? PadControl::Minus
+                       : view.switch_button == 2 ? PadControl::Plus
+                                                 : PadControl::Count;
+    switching.profiles = view.switch_profiles;
+    set_profile_switching(switching, view.profile_names, view.mapping_profile);
+    const int was = focus_;
     focus_ = std::clamp(static_cast<int>(view.focus), 0, static_cast<int>(rows().size()) - 1);
+    // The other device's cursor brings the list with it when it moves.
+    if (focus_ != was) {
+        drag_.stop();
+        scroll_focus_into_view(compute_geometry(output_width, output_height));
+    }
     if (view.choice_focus == 0) {
         choice_.close();
     } else {
@@ -304,7 +452,9 @@ void WiiUPlayerScreen::show_mirrored(const net::WiiUPlayerViewMessage& view, flo
 
 bool WiiUPlayerScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width, float output_height) {
     if (choice_.is_open()) return choice_.scroll(pointers, output_width, output_height);
-    return false;
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
+    return drag_.release_was_drag();
 }
 
 int WiiUPlayerScreen::entry_at(float x, float y, float output_width, float output_height) const {
@@ -313,6 +463,7 @@ int WiiUPlayerScreen::entry_at(float x, float y, float output_width, float outpu
         return choice >= 0 ? kChoiceEntryBase + choice : -1;
     }
     const Geometry geometry = compute_geometry(output_width, output_height);
+    if (!geometry.list.contains(x, y)) return -1;
     for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
         if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
     }
@@ -324,11 +475,15 @@ bool WiiUPlayerScreen::off_popup(float x, float y, float output_width, float out
     return false;
 }
 
-std::vector<float> WiiUPlayerScreen::scroll_state(float, float) const {
-    return {0.0f, choice_.is_open() ? choice_.scroll_rows() : 0.0f};
+std::vector<float> WiiUPlayerScreen::scroll_state(float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    return {scroll_in_lines(scroll_, geometry.scale), choice_.is_open() ? choice_.scroll_rows() : 0.0f};
 }
 
-void WiiUPlayerScreen::set_scroll_state(const std::vector<float>& state, float, float) {
+void WiiUPlayerScreen::set_scroll_state(const std::vector<float>& state, float output_width, float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f, geometry.max_scroll());
+    drag_.stop();
     if (choice_.is_open()) choice_.set_scroll_rows(scroll_at(state, 1));
 }
 
@@ -340,6 +495,16 @@ void WiiUPlayerScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(type_current_));
     mix_sound_state(view.rest, static_cast<uint64_t>(pending_type_ + 1));
     if (const ControllerRowView* own = own_row()) mix_sound_state(view.rest, own->pad);
+    mix_sound_state(view.rest, static_cast<uint64_t>(switching_.button));
+    mix_sound_state(view.rest, static_cast<uint64_t>(switching_.profiles.size()));
+    for (const std::string& name : switching_.profiles) {
+        for (const char c : name) mix_sound_state(view.rest, static_cast<uint64_t>(static_cast<unsigned char>(c)));
+    }
+    // A profile's switch, for the sound it makes turned on or off.
+    const int profile = profile_of_row(focus_);
+    if (profile >= 0 && !choice_.is_open()) {
+        view.toggle = switching_.includes(profile_names_[static_cast<std::size_t>(profile)]) ? 1 : 0;
+    }
 }
 
 net::WiiUPlayerViewMessage wii_u_player_view_of(const WiiUPlayerScreen& screen) {
@@ -350,6 +515,13 @@ net::WiiUPlayerViewMessage wii_u_player_view_of(const WiiUPlayerScreen& screen) 
     view.focus = static_cast<uint8_t>(screen.focus());
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.adding = screen.adding();
+    const ProfileSwitching& switching = screen.switching();
+    view.switch_button = switching.button == PadControl::Minus  ? 1
+                         : switching.button == PadControl::Plus ? 2
+                                                                : 0;
+    view.switch_profiles = switching.profiles;
+    view.profile_names = screen.profile_names();
+    view.mapping_profile = screen.mapping_profile();
     if (view.adding) {
         view.pending_type = static_cast<uint8_t>(std::clamp(screen.pending_type() + 1, 0, 255));
     }

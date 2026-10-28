@@ -18,5 +18,9 @@ void read_button_mapping(const nlohmann::json& document, ButtonMapping& mapping)
 // A Wii U controller's, as {"actions": {...}, "turbo": {...}}.
 nlohmann::json wii_u_mapping_json(const WiiUMapping& mapping);
 WiiUMapping wii_u_mapping_from_json(const nlohmann::json& kept);
+// Profile Switching, as a game keeps it for a player: its button, "minus",
+// "plus" or "off", and the profiles it moves through.
+nlohmann::json profile_switching_json(const ProfileSwitching& switching);
+ProfileSwitching profile_switching_from_json(const nlohmann::json& kept);
 
 }  // namespace ds

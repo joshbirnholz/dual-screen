@@ -67,6 +67,9 @@ public:
     // After open(): each choice drawn as two buttons, "first / second", in
     // place of its words -- `aspect` is a glyph's width for its height.
     void set_glyph_pairs(std::vector<std::pair<ButtonGlyph, ButtonGlyph>> pairs, float aspect);
+    // After open(): a button drawn after a choice's words -- "Hold (-)" --
+    // ButtonGlyph::Count for none; `aspect` as above.
+    void set_trailing_glyphs(std::vector<ButtonGlyph> glyphs, float aspect);
     // After open(): which choices are only headings over the ones after them.
     // They are drawn dim, without a circle, and cannot be chosen: the cursor
     // passes over them, and a tap on one does nothing.
@@ -148,7 +151,10 @@ private:
     bool open_ = false;
     std::vector<std::string> choices_;
     std::vector<std::pair<ButtonGlyph, ButtonGlyph>> glyph_pairs_;
+    std::vector<ButtonGlyph> trailing_glyphs_;
     float glyph_aspect_ = 1.0f;
+    // How wide a choice's button after its words is, with the gap before it.
+    float trailing_room(std::size_t index, float line) const;
     std::vector<Color> colors_;
     std::vector<bool> headings_;
     std::vector<std::string> hints_;

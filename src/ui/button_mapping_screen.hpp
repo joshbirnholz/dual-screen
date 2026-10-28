@@ -63,14 +63,13 @@ struct ButtonMappingScreenResult {
 // there instead, a switch: on, the remote is drawn and its D-Pad pressed as
 // held on its side.
 //
-// A Wii U controller's button can also switch to a profile when held, as
-// well as doing its job when tapped: When Held..., last in its picker, then
-// the profile -- see ProfileHold.
-//
-// Mapping Profiles, on -, are mappings kept under a name for any game to load:
-// Save as New Profile..., then the profiles there are for this page's kind of
-// mapping -- a DS game's, a Wii Remote + Nunchuk's -- the one the mapping is
-// now filled. A loads one, Y saves the mapping over one, X deletes one.
+// Profiles are mappings kept under a name for any game to load, from the
+// two buttons at the top of the right of the page -- right from the list --
+// each a page of its own: Save Profile, New Profile... and then the profiles
+// there are for this page's kind of mapping -- a DS game's, a Wii Remote +
+// Nunchuk's -- any of them saved over after asking; and Load Profile, the
+// same profiles, the one the mapping is now marked, A loading one and X
+// deleting one after asking.
 //
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
@@ -83,7 +82,7 @@ public:
         choice_.close();
         confirming_ = false;
         placing_ = false;
-        profiles_up_ = false;
+        page_ = ProfilePage::None;
         naming_.close();
     }
     bool is_open() const { return open_; }
@@ -97,14 +96,19 @@ public:
     // Wii Remote + Nunchuk" -- at the right of the heading.
     void set_wii_u_mapping(const WiiUMapping& mapping, WiiUController controller, std::string detail);
     bool wii_u() const { return wii_u_; }
-    // Mapping Profiles: the names of those there are for this page's kind of
+    // Profiles: the names of those there are for this page's kind of
     // mapping, which of them the mapping is now (-1 for none), and the words
     // over them -- "DS Profiles". Every frame, from whoever keeps them.
     void set_profiles(std::vector<std::string> names, int current, std::string heading);
-    bool profiles_open() const { return profiles_up_ && choice_.is_open(); }
-    // When Held's picker, beside a Wii U controller's button: Nothing, then
-    // the profiles, one to switch to while the button is held.
-    bool hold_choice_open() const { return holding_up_ && choice_.is_open(); }
+    // Save Profile's page or Load Profile's, in place of the mapping; and the
+    // row the cursor is on there -- on Save Profile's, New Profile... is 0
+    // and each profile one past its index.
+    enum class ProfilePage : uint8_t { None, Load, Save };
+    ProfilePage profile_page() const { return page_; }
+    int page_focus() const { return page_focus_; }
+    // The cursor on one of the buttons over the console instead of on the
+    // list: 0 Save Profile..., 1 Load Profile..., -1 neither.
+    int button_focus() const { return button_focus_; }
     // A new profile being named, and what has been typed: the keyboard is to
     // type into it -- see InputManager::set_text_entry() -- what it typed
     // coming in through type(), before update().
@@ -209,7 +213,9 @@ public:
     // choice in the picker kChoiceEntryBase plus its index, a button of
     // Reset to Default's question kConfirmEntryBase plus its, a spot on
     // the touch screen being placed on kSpotEntryBase plus spot_entry(), and
-    // the OK under it kPlacingOkEntry.
+    // the OK under it kPlacingOkEntry, Save Profile... and Load Profile...
+    // kProfileButtonEntry plus 0 or 1, and a row of a profile page
+    // kPageEntryBase plus its index.
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
@@ -227,6 +233,10 @@ public:
     static constexpr int kSpotEntryBase = 0x10000;
     // A button of a new profile's name's popup.
     static constexpr int kNamingEntryBase = 0x5800;
+    static constexpr int kProfileButtonEntry = 0x6000;
+    static constexpr int kPageEntryBase = 0x6800;
+    // How the cursor on a button is said in ButtonMappingViewMessage::focus.
+    static constexpr int kButtonFocusBase = 200;
     // A spot as an entry, to 1/1024 of the screen each way, and back.
     static int spot_entry(const TouchSpot& spot);
     static TouchSpot entry_spot(int entry);
@@ -240,9 +250,14 @@ private:
         PixelRect list;
         std::vector<PixelRect> rows;
         float content_height = 0.0f;
-        // Where the console is drawn, and the words under it.
+        // Where the console is drawn, and the words under it; over it, Save
+        // Profile... and Load Profile..., and the profile the mapping is.
         PixelRect diagram;
         float caption_y = 0.0f;
+        PixelRect save_button;
+        PixelRect load_button;
+        float profile_y = 0.0f;
+        float rule_y = 0.0f;
         float max_scroll() const { return std::max(0.0f, content_height - (view_bottom - view_top)); }
     };
     Geometry compute_geometry(float output_width, float output_height) const;
@@ -252,13 +267,28 @@ private:
     void choose(int index, ButtonMappingScreenResult& result);
     void ask_revert();
     void answer_revert(int button, ButtonMappingScreenResult& result);
-    // Mapping Profiles: up over the page, the cursor on `focus` (a line of
-    // it), or on the profile in use; the profile a line is, or -1; and one
-    // chosen, Y or X pressed on one, and the name typed.
-    void open_profiles(int focus);
-    int profile_of_line(int line) const;
-    void choose_profile(int line, ButtonMappingScreenResult& result);
+    // A profile page: up in place of the mapping, the cursor on `focus`;
+    // the profile a row of it is, or -1; its rows, and where they are; one
+    // chosen, X pressed on one, and the name typed; and back to the mapping,
+    // the cursor on the page's button.
+    void open_page(ProfilePage page, int focus);
+    int profile_of_row(int row) const;
+    int page_rows() const;
+    struct PageGeometry {
+        float scale = 1.0f;
+        float line = 0.0f;
+        PixelRect list;
+        std::vector<PixelRect> rows;
+        float content_height = 0.0f;
+        float max_scroll() const { return std::max(0.0f, content_height - list.h); }
+    };
+    PageGeometry compute_page_geometry(float output_width, float output_height) const;
+    void choose_on_page(int row, ButtonMappingScreenResult& result);
     void ask_about_profile(Asking asking);
+    void back_from_page();
+    void update_page(const std::vector<UiAction>& actions, ButtonMappingScreenResult& result);
+    void render_page(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs, float output_width,
+                     float output_height);
     void start_naming(ButtonMappingScreenResult& result);
     void finish_naming(const TextEntryResult& answer, ButtonMappingScreenResult& result);
     // Turbo's picker, beside the same row, after Turbo was chosen.
@@ -272,8 +302,6 @@ private:
     void open_wii_u_choice(const PixelRect& row);
     void choose_wii_u(int index, ButtonMappingScreenResult& result);
     void toggle_wii_u_turbo(ButtonMappingScreenResult& result);
-    void open_hold_choice();
-    void choose_hold(int index, ButtonMappingScreenResult& result);
     std::string wii_u_caption() const;
     // Sideways Wii Remote turned on or off.
     void toggle_sideways(ButtonMappingScreenResult& result);
@@ -324,16 +352,16 @@ private:
     WiiUController wii_u_controller_ = WiiUController::Pro;
     std::string detail_;
     std::vector<WiiUAction> choice_wii_u_;
-    // Mapping Profiles, in choice_ while profiles_up_; When Held's picker
-    // while holding_up_.
-    bool profiles_up_ = false;
-    bool holding_up_ = false;
+    // Profiles, and the page of them up, its cursor and how far it is
+    // scrolled; the cursor on a button over the console.
     std::vector<std::string> profile_names_;
     int profile_current_ = -1;
     std::string profile_heading_;
-    // A profile just saved, by name, for the cursor to be on once it is in
-    // the list.
-    std::string profile_saved_;
+    ProfilePage page_ = ProfilePage::None;
+    int page_focus_ = 0;
+    float page_scroll_ = 0.0f;
+    ListDrag page_drag_;
+    int button_focus_ = -1;
     TextEntryPopup naming_;
     bool input_from_other_device_ = false;
     bool naming_elsewhere_ = false;

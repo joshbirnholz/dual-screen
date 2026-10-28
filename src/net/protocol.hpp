@@ -807,11 +807,14 @@ struct ButtonMappingViewMessage {
     uint8_t wii_u_controller = 0;
     std::string wii_u_detail;
     WiiUMapping wii_u_mapping;
-    // Mapping Profiles: whether the picker is them, and what they are -- the
-    // names, the one in use (-1 for none), the words over them -- a new
-    // one's name being typed, with its popup's cursor, and what the question
-    // up asks (ButtonMappingScreen::Asking) and of which profile.
-    bool profiles = false;
+    // Profiles: the page of them up in place of the mapping
+    // (ButtonMappingScreen::ProfilePage, its cursor plus one in choice_focus),
+    // and what they are -- the names, the one in use (-1 for none), the
+    // words over them -- a new one's name being typed, with its popup's
+    // cursor, and what the question up asks (ButtonMappingScreen::Asking)
+    // and of which profile. The cursor on Save Profile... or Load
+    // Profile... is focus ButtonMappingScreen::kButtonFocusBase plus 0 or 1.
+    uint8_t profile_page = 0;
     std::vector<std::string> profile_names;
     int profile_current = -1;
     std::string profile_heading;
@@ -823,10 +826,6 @@ struct ButtonMappingViewMessage {
     bool naming_on_companion = false;
     uint8_t asking = 0;
     int asking_profile = -1;
-    // When Held's picker is the one up -- see ButtonMappingScreen. The
-    // profiles held buttons switch to are wii_u_mapping's, carried at the
-    // end: a count, then each button's number and the name.
-    bool holding = false;
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
@@ -835,11 +834,11 @@ struct ButtonMappingViewMessage {
                placing_stick == other.placing_stick && stick_radius == other.stick_radius &&
                wii_u == other.wii_u && wii_u_controller == other.wii_u_controller &&
                wii_u_detail == other.wii_u_detail && wii_u_mapping == other.wii_u_mapping &&
-               profiles == other.profiles && profile_names == other.profile_names &&
+               profile_page == other.profile_page && profile_names == other.profile_names &&
                profile_current == other.profile_current && profile_heading == other.profile_heading &&
                naming == other.naming && name_text == other.name_text && naming_focus == other.naming_focus &&
                naming_on_companion == other.naming_on_companion &&
-               asking == other.asking && asking_profile == other.asking_profile && holding == other.holding;
+               asking == other.asking && asking_profile == other.asking_profile;
     }
 };
 
@@ -862,12 +861,21 @@ struct WiiUPlayerViewMessage {
     bool adding = false;
     uint8_t pending_type = 0;
     std::string pending_pad;
+    // Profile Switching: its button, 0 Off, 1 -, 2 +; the profiles it moves
+    // through; every profile there is for the controller; and the one the
+    // mapping is now, empty for none. Last, and optional.
+    uint8_t switch_button = 0;
+    std::vector<std::string> switch_profiles;
+    std::vector<std::string> profile_names;
+    std::string mapping_profile;
 
     bool operator==(const WiiUPlayerViewMessage& other) const {
         return open == other.open && slot == other.slot && focus == other.focus &&
                choice_focus == other.choice_focus && detecting == other.detecting &&
                detect_seconds == other.detect_seconds && adding == other.adding &&
-               pending_type == other.pending_type && pending_pad == other.pending_pad;
+               pending_type == other.pending_type && pending_pad == other.pending_pad &&
+               switch_button == other.switch_button && switch_profiles == other.switch_profiles &&
+               profile_names == other.profile_names && mapping_profile == other.mapping_profile;
     }
 };
 

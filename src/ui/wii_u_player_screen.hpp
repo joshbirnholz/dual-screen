@@ -6,6 +6,7 @@
 
 #include "input/input_manager.hpp"
 #include "input/pad_routing.hpp"
+#include "input/wii_u_mapping.hpp"
 #include "net/protocol.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
@@ -32,6 +33,8 @@ struct WiiUPlayerScreenResult {
     bool added = false;
     // Edit Button Mapping: its page, for what the game has this one as.
     bool edit_mapping = false;
+    // Profile Switching changed: its button, or a profile in or out.
+    std::optional<ProfileSwitching> switching_changed;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
@@ -40,6 +43,10 @@ struct WiiUPlayerScreenResult {
 // controller the game has it as -- see ButtonMappingScreen -- and for a
 // player, Remove Controller. Which controller is which is Change Order's, in
 // Controls. B goes back to the menu.
+//
+// Profile Switching, after Edit Button Mapping, is Off, Hold - or Hold + --
+// see ProfileSwitching -- and while it is on, under Switch Between, each
+// profile there is for the controller with a switch: which it moves through.
 //
 // Add Controller opens the page of the player after the last, yet to be: its
 // type is chosen first, and Add makes it one -- so a player is never there
@@ -75,6 +82,14 @@ public:
     // player's is the one it starts as.
     void set_controllers(const std::vector<ControllerRowView>& controllers, std::vector<std::string> types,
                          int type_current);
+    // And Profile Switching as the game has it for the player, every profile
+    // there is for its controller, and the one its mapping is now -- empty
+    // for none. Every frame.
+    void set_profile_switching(ProfileSwitching switching, std::vector<std::string> profiles,
+                               std::string mapping_profile);
+    const ProfileSwitching& switching() const { return switching_; }
+    const std::vector<std::string>& profile_names() const { return profile_names_; }
+    const std::string& mapping_profile() const { return mapping_profile_; }
 
     WiiUPlayerScreenResult update(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
                                   float output_width, float output_height);
@@ -83,9 +98,10 @@ public:
     void describe_for_sound(UiSoundView& view) const;
 
     // The rows: Controller Type, for a player Cemu has a type for, then
-    // Edit Button Mapping, then for a player Remove Controller. A new
-    // player's has Add instead of the last two.
-    enum class Row { Type, Remove, Add, Mapping };
+    // Edit Button Mapping, Profile Switching and while it is on a row for
+    // each profile, then for a player Remove Controller. A new player's has
+    // Add instead of all after the first.
+    enum class Row { Type, Remove, Add, Mapping, Switching, Profile };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -115,6 +131,10 @@ private:
         float line = 0.0f;
         std::vector<PixelRect> rows;
         PixelRect list;
+        float content_height = 0.0f;
+        // Where Switch Between is written, over the profiles.
+        float heading_y = 0.0f;
+        float max_scroll() const { return std::max(0.0f, content_height - list.h); }
     };
     Geometry compute_geometry(float output_width, float output_height) const;
     void open_choice(float output_width, float output_height);
@@ -124,6 +144,9 @@ private:
     void act(WiiUPlayerScreenResult& result, float output_width, float output_height);
     bool removable() const;
     Row focused_row() const;
+    // The profile a row is, by its index among the profiles; -1 for none.
+    int profile_of_row(int row) const;
+    void scroll_focus_into_view(const Geometry& geometry);
 
     bool open_ = false;
     bool over_game_ = false;
@@ -137,6 +160,15 @@ private:
     ChoicePopup choice_;
     // What each of the popup's lines is: an index into Cemu's types.
     std::vector<int> choice_types_;
+    ProfileSwitching switching_;
+    std::vector<std::string> profile_names_;
+    std::string mapping_profile_;
+    float scroll_ = 0.0f;
+    ListDrag drag_;
+    ScrollEase scroll_ease_;
+    // A button's width for its height, as the page last drew them, for the
+    // popup's.
+    float glyph_aspect_ = 1.0f;
     Texture icons_;
     bool icons_tried_ = false;
     std::vector<GuideHit> guide_hits_;

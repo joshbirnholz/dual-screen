@@ -2133,6 +2133,10 @@ void test_wii_u_player_view_round_trip() {
     sent.adding = true;
     sent.pending_type = 4;
     sent.pending_pad = "companion#3";
+    sent.switch_button = 2;
+    sent.profile_names = {"Kart", "Motion", "Menus"};
+    sent.switch_profiles = {"Kart", "Menus"};
+    sent.mapping_profile = "Motion";
     std::vector<uint8_t> buffer;
     encode_wii_u_player_view(sent, buffer);
     MessageType type = MessageType::Ping;
@@ -2239,9 +2243,9 @@ void test_button_mapping_view_round_trip() {
     CHECK(received.wii_u_mapping == sent.wii_u_mapping);
     CHECK(received.wii_u_controller == sent.wii_u_controller);
 
-    // Mapping Profiles: the list, the one in use, a name being typed and the
-    // question asked of one.
-    sent.profiles = true;
+    // Profiles: Load Profile's page, the list, the one in use, a name being
+    // typed and the question asked of one.
+    sent.profile_page = 1;
     sent.profile_names = {"Touch Steering", "Left-Handed"};
     sent.profile_current = 1;
     sent.profile_heading = "Wii Classic Controller Profiles";
@@ -2255,22 +2259,19 @@ void test_button_mapping_view_round_trip() {
     encode_button_mapping_view(sent, buffer);
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
-    CHECK(received.profiles && received.profile_names == sent.profile_names);
+    CHECK(received.profile_page == 1 && received.profile_names == sent.profile_names);
     CHECK(received.profile_current == 1 && received.profile_heading == sent.profile_heading);
     CHECK(received.naming && received.name_text == "Kart" && received.naming_focus == 1);
     CHECK(received.naming_on_companion);
     CHECK(received.asking == 2 && received.asking_profile == 0);
-    // When Held's picker, and the profiles held buttons switch to.
-    sent.profiles = false;
+    // Save Profile's page.
+    sent.profile_page = 2;
     sent.naming = false;
-    sent.holding = true;
-    sent.wii_u_mapping.held(PadControl::Minus) = "Kart";
-    sent.wii_u_mapping.held(PadControl::RightStick) = "Menus";
     buffer.clear();
     encode_button_mapping_view(sent, buffer);
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
-    CHECK(received.holding && received.wii_u_mapping == sent.wii_u_mapping);
+    CHECK(received.profile_page == 2 && !received.naming);
 
     // Closed is a message too.
     buffer.clear();

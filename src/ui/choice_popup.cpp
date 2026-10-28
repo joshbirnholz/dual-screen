@@ -20,6 +20,7 @@ float ChoicePopup::icon_room(float line) const {
 void ChoicePopup::open(std::vector<std::string> choices, int current, const PixelRect& row) {
     choices_ = std::move(choices);
     glyph_pairs_.clear();
+    trailing_glyphs_.clear();
     headings_.clear();
     hints_.clear();
     icon_strip_ = nullptr;
@@ -64,6 +65,16 @@ void ChoicePopup::set_glyph_pairs(std::vector<std::pair<ButtonGlyph, ButtonGlyph
                                   float aspect) {
     glyph_pairs_ = std::move(pairs);
     glyph_aspect_ = aspect > 0.0f ? aspect : 1.0f;
+}
+
+void ChoicePopup::set_trailing_glyphs(std::vector<ButtonGlyph> glyphs, float aspect) {
+    trailing_glyphs_ = std::move(glyphs);
+    glyph_aspect_ = aspect > 0.0f ? aspect : 1.0f;
+}
+
+float ChoicePopup::trailing_room(std::size_t index, float line) const {
+    if (index >= trailing_glyphs_.size() || trailing_glyphs_[index] == ButtonGlyph::Count) return 0.0f;
+    return std::round(line * 0.4f) + line * 1.5f * glyph_aspect_;
 }
 
 void ChoicePopup::set_headings(std::vector<bool> headings) {
@@ -179,7 +190,8 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         widest = glyph * 2.0f + TextRenderer::measure_width("/", scale * 0.9f) + line * 0.3f;
     } else {
         for (std::size_t index = 0; index < choices_.size(); ++index) {
-            float wide = TextRenderer::measure_width(choices_[index], scale) + icon_room(line);
+            float wide = TextRenderer::measure_width(choices_[index], scale) + icon_room(line) +
+                         trailing_room(index, line);
             if (index < hints_.size() && !hints_[index].empty()) {
                 wide += gap + TextRenderer::measure_width(hints_[index], scale * kHintScale);
             }
@@ -457,6 +469,16 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
                       std::round(row.y + (row.h - TextRenderer::line_height(hint_scale)) * 0.5f), hint_scale,
                       theme.text_dim);
             text_right = hint_x - gap;
+        }
+        // And a button after the words, where the choice has one.
+        if (const float room = trailing_room(index, line); room > 0.0f && glyphs != nullptr) {
+            const float height = line * 1.5f;
+            const float words = std::min(TextRenderer::measure_width(choices_[index], scale),
+                                         text_right - text_x_words - room);
+            glyphs->draw(quads, trailing_glyphs_[index], std::round(text_x_words + words + line * 0.4f),
+                         std::round(row.y + row.h * 0.5f - height * glyphs->button_centre()), height,
+                         held ? theme.accent : theme.text);
+            text_right -= room;
         }
         draw_fitted_text(quads, text, choices_[index], text_x_words, std::round(row.y + (row.h - line) * 0.5f),
                          text_right - text_x_words, scale, held ? theme.accent : theme.text, TextAlign::Left,

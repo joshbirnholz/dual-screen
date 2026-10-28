@@ -880,6 +880,13 @@ void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<
     put_u8(out, message.adding ? 1u : 0u);
     put_u8(out, message.pending_type);
     put_string(out, message.pending_pad.substr(0, 255));
+    put_u8(out, message.switch_button);
+    put_string(out, message.mapping_profile.substr(0, 255));
+    for (const std::vector<std::string>* names : {&message.profile_names, &message.switch_profiles}) {
+        const std::size_t count = std::min<std::size_t>(names->size(), 255);
+        put_u8(out, static_cast<uint8_t>(count));
+        for (std::size_t index = 0; index < count; ++index) put_string(out, (*names)[index].substr(0, 255));
+    }
     finish_message(out, start, MessageType::WiiUPlayerView);
 }
 
@@ -902,6 +909,21 @@ bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerV
     reader.u8(view.pending_type);
     reader.string(view.pending_pad);
     if (!reader.ok() || kind > 2) return false;
+    // From a host new enough to have Profile Switching.
+    if (reader.remaining() > 0) {
+        reader.u8(view.switch_button);
+        reader.string(view.mapping_profile);
+        for (std::vector<std::string>* names : {&view.profile_names, &view.switch_profiles}) {
+            uint8_t count = 0;
+            reader.u8(count);
+            for (uint8_t index = 0; index < count && reader.ok(); ++index) {
+                std::string name;
+                reader.string(name);
+                names->push_back(std::move(name));
+            }
+        }
+        if (!reader.ok() || view.switch_button > 2) return false;
+    }
     view.adding = adding != 0;
     view.open = open != 0;
     view.slot.kind = static_cast<PadSlot::Kind>(kind);
@@ -931,9 +953,11 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
         for (const WiiUAction action : message.wii_u_mapping.actions) put_u8(out, static_cast<uint8_t>(action));
         for (const WiiUAction action : message.wii_u_mapping.turbo_of) put_u8(out, static_cast<uint8_t>(action));
     }
-    // And Mapping Profiles.
-    put_u8(out, static_cast<uint8_t>((message.profiles ? 1u : 0u) | (message.naming ? 2u : 0u) |
-                                     (message.holding ? 4u : 0u) | (message.naming_on_companion ? 8u : 0u)));
+    // And Profiles: bit 1 Load Profile's page, 16 Save Profile's. Bit 4 was
+    // a picker of profiles for a held button, which there is no longer.
+    put_u8(out, static_cast<uint8_t>((message.profile_page == 1 ? 1u : 0u) | (message.naming ? 2u : 0u) |
+                                     (message.naming_on_companion ? 8u : 0u) |
+                                     (message.profile_page == 2 ? 16u : 0u)));
     put_u8(out, message.asking);
     put_u16(out, static_cast<uint16_t>(std::clamp(message.asking_profile + 1, 0, 65535)));
     put_u8(out, message.naming_focus);
@@ -943,18 +967,6 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     const std::size_t names = std::min<std::size_t>(message.profile_names.size(), 255);
     put_u8(out, static_cast<uint8_t>(names));
     for (std::size_t index = 0; index < names; ++index) put_string(out, message.profile_names[index].substr(0, 255));
-    // And the profiles a Wii U controller's held buttons switch to.
-    uint8_t held = 0;
-    for (const std::string& name : message.wii_u_mapping.hold_profile) {
-        if (!name.empty()) ++held;
-    }
-    if (held > 0) put_u8(out, held);
-    for (std::size_t index = 0; index < kPadControls && held > 0; ++index) {
-        const std::string& name = message.wii_u_mapping.hold_profile[index];
-        if (name.empty()) continue;
-        put_u8(out, static_cast<uint8_t>(index));
-        put_string(out, name.substr(0, 255));
-    }
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -1033,24 +1045,11 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
                 view.profile_names.push_back(std::move(name));
             }
             if (!reader.ok()) return false;
-            view.profiles = (flags & 1u) != 0;
+            view.profile_page = (flags & 1u) != 0 ? 1 : (flags & 16u) != 0 ? 2 : 0;
             view.naming = (flags & 2u) != 0;
-            view.holding = (flags & 4u) != 0;
             view.naming_on_companion = (flags & 8u) != 0;
             view.asking_profile = static_cast<int>(asking_profile) - 1;
             view.profile_current = static_cast<int>(current) - 1;
-        }
-        // From a host new enough to switch profile on a held button.
-        uint8_t held = 0;
-        if (reader.remaining() > 0 && reader.u8(held)) {
-            for (uint8_t at = 0; at < held && reader.ok(); ++at) {
-                uint8_t control = 0;
-                std::string name;
-                reader.u8(control);
-                reader.string(name);
-                if (control < kPadControls) view.wii_u_mapping.hold_profile[control] = std::move(name);
-            }
-            if (!reader.ok()) return false;
         }
     }
     out = view;

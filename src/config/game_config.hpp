@@ -69,6 +69,9 @@ struct GameConfig {
     // A Wii U game's mapping for the GamePad and for each player as each
     // controller, by wii_u_mapping_key(). One never changed is not kept.
     std::map<std::string, WiiUMapping> wii_u_mappings;
+    // And Profile Switching for each, by the same key -- see ProfileSwitching.
+    // One Off with nothing chosen is not kept.
+    std::map<std::string, ProfileSwitching> wii_u_profile_switching;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

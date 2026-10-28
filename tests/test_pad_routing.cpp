@@ -429,7 +429,7 @@ void test_a_players_page_chooses_a_type_and_removes_it() {
     page.set_controllers(controller_rows(), types, 0);
     CHECK(page.title() == "Player 1");
     const std::vector<WiiUPlayerScreen::Row> rows{WiiUPlayerScreen::Row::Type, WiiUPlayerScreen::Row::Mapping,
-                                                   WiiUPlayerScreen::Row::Remove};
+                                                   WiiUPlayerScreen::Row::Switching, WiiUPlayerScreen::Row::Remove};
     CHECK(page.rows() == rows);
     CHECK(page.own_row() != nullptr && page.own_row()->pad == "companion#2");
 
@@ -453,6 +453,7 @@ void test_a_players_page_chooses_a_type_and_removes_it() {
     // Remove Controller: the player gone, and the page with it -- with a
     // controller or without.
     page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
     result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.removed && result.close_requested && !page.is_open());
     std::vector<ds::ControllerRowView> empty = controller_rows();
@@ -465,7 +466,77 @@ void test_a_players_page_chooses_a_type_and_removes_it() {
     gamepad.open(PadSlot::gamepad());
     gamepad.set_controllers(controller_rows(), types, 0);
     CHECK(gamepad.title() == "GamePad");
-    CHECK(gamepad.rows() == std::vector<WiiUPlayerScreen::Row>{WiiUPlayerScreen::Row::Mapping});
+    CHECK(gamepad.rows() ==
+          (std::vector<WiiUPlayerScreen::Row>{WiiUPlayerScreen::Row::Mapping, WiiUPlayerScreen::Row::Switching}));
+}
+
+// Profile Switching, on a player's page: Off, Hold - or Hold +, from a
+// dropdown; while on, a switch for each profile, turned on and off with A,
+// kept in the order they were saved -- and the other device's page the same.
+void test_a_players_page_sets_up_profile_switching() {
+    using ds::PadControl;
+    using ds::ProfileSwitching;
+    using ds::UiAction;
+    using ds::WiiUPlayerScreen;
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    WiiUPlayerScreen page;
+    page.open(PadSlot::player_number(1));
+    page.set_controllers(controller_rows(), {}, -1);
+    const std::vector<std::string> profiles{"Kart", "Motion", "Menus"};
+    page.set_profile_switching(ProfileSwitching(), profiles, "Kart");
+    CHECK(page.rows().size() == 3);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(page.choosing() && page.choice_focus() == 0);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.switching_changed && result.switching_changed->button == PadControl::Minus);
+    // A switch for each profile, between Profile Switching and Remove.
+    CHECK(page.rows().size() == 6);
+    CHECK(page.rows()[2] == WiiUPlayerScreen::Row::Profile && page.rows()[5] == WiiUPlayerScreen::Row::Remove);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.switching_changed && result.switching_changed->profiles == std::vector<std::string>{"Motion"});
+    page.update({UiAction::Up}, {}, kWidth, kHeight);
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.switching_changed &&
+          result.switching_changed->profiles == (std::vector<std::string>{"Kart", "Motion"}));
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.switching_changed && result.switching_changed->profiles == std::vector<std::string>{"Motion"});
+
+    const ds::net::WiiUPlayerViewMessage view = ds::wii_u_player_view_of(page);
+    CHECK(view.switch_button == 1 && view.switch_profiles == std::vector<std::string>{"Motion"});
+    WiiUPlayerScreen mirrored;
+    mirrored.set_controllers(controller_rows(), {}, -1);
+    mirrored.show_mirrored(view, kWidth, kHeight);
+    CHECK(mirrored.rows() == page.rows() && mirrored.focus() == page.focus());
+    CHECK(mirrored.switching() == page.switching() && mirrored.mapping_profile() == "Kart");
+}
+
+// Held, Profile Switching moves on to the next profile it includes after the
+// one the mapping is, in the order they were saved, round from the last to
+// the first -- or from the first, the mapping no profile.
+void test_profile_switching_goes_round_the_profiles_it_includes() {
+    ds::ProfileSwitching switching;
+    switching.button = ds::PadControl::Plus;
+    switching.profiles = {"Menus", "Kart"};
+    const std::vector<std::string> saved{"Kart", "Motion", "Menus"};
+    CHECK(ds::next_switching_profile(switching, saved, "Kart") == "Menus");
+    CHECK(ds::next_switching_profile(switching, saved, "Menus") == "Kart");
+    CHECK(ds::next_switching_profile(switching, saved, "Motion") == "Menus");
+    CHECK(ds::next_switching_profile(switching, saved, "") == "Kart");
+    CHECK(switching.hold_controls() == 1u << static_cast<unsigned>(ds::PadControl::Plus));
+    // Only the one it is: nowhere to go.
+    switching.profiles = {"Kart"};
+    CHECK(ds::next_switching_profile(switching, saved, "Kart").empty());
+    // Off, or with nothing chosen, it holds nothing back.
+    switching.button = ds::PadControl::Count;
+    CHECK(switching.hold_controls() == 0u);
+    switching.button = ds::PadControl::Minus;
+    switching.profiles.clear();
+    CHECK(switching.hold_controls() == 0u);
 }
 
 // Add Controller's page: the new player's type, what it starts as but never
@@ -740,6 +811,8 @@ int main() {
     test_change_order_lets_go_and_takes_each_in_turn();
     test_removing_a_player_moves_the_rest_up();
     test_a_held_button_switches_and_a_tap_still_presses();
+    test_a_players_page_sets_up_profile_switching();
+    test_profile_switching_goes_round_the_profiles_it_includes();
     test_a_wii_u_controller_is_mapped_as_itself();
     return test::finish("pad-routing");
 }

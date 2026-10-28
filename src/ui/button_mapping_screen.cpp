@@ -73,8 +73,11 @@ void ButtonMappingScreen::open() {
     placing_ = false;
     placing_stick_ = false;
     mirrored_focus_ = -1;
-    profiles_up_ = false;
-    holding_up_ = false;
+    page_ = ProfilePage::None;
+    page_focus_ = 0;
+    page_scroll_ = 0.0f;
+    page_drag_.stop();
+    button_focus_ = -1;
     naming_.close();
 }
 
@@ -127,11 +130,25 @@ ButtonMappingScreen::Geometry ButtonMappingScreen::compute_geometry(float output
                                           row_width, row_height});
     }
     const float diagram_x = frame.panel.x + list_width + frame.line * 2.0f;
-    // Two lines of words under it, for the longer things a button can do.
+    const float right_width = frame.panel.x + frame.panel.w - diagram_x;
+    // Save Profile... and Load Profile... side by side at the top, as big as
+    // Touch Point's OK; the profile the mapping is under them, then a rule.
+    const float button_height = std::round(menu_row_height(frame.line) * 0.8f);
+    const float button_gap = std::round(frame.line * 0.8f);
+    const float button_width = std::round((right_width - button_gap) * 0.5f);
+    const float buttons_top = std::round(geometry.view_top + frame.line * 0.4f);
+    geometry.save_button = PixelRect{diagram_x, buttons_top, button_width, button_height};
+    geometry.load_button =
+        PixelRect{diagram_x + right_width - button_width, buttons_top, button_width, button_height};
+    geometry.profile_y = std::round(buttons_top + button_height + frame.line * 0.5f);
+    geometry.rule_y = std::round(geometry.profile_y + TextRenderer::line_height(frame.scale * 0.85f) +
+                                 frame.line * 0.6f);
+    // Two lines of words under the console, for the longer things a button
+    // can do.
     const float caption_room = frame.line * 3.6f;
-    geometry.diagram = PixelRect{diagram_x, geometry.view_top,
-                                 frame.panel.x + frame.panel.w - diagram_x,
-                                 geometry.view_bottom - geometry.view_top - caption_room};
+    const float diagram_top = geometry.rule_y + frame.line * 0.6f;
+    geometry.diagram = PixelRect{diagram_x, diagram_top, right_width,
+                                 std::max(1.0f, geometry.view_bottom - diagram_top - caption_room)};
     geometry.caption_y = std::round(geometry.view_bottom - caption_room + frame.line * 0.6f);
     return geometry;
 }
@@ -151,8 +168,6 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     choice_actions_.clear();
     choice_modes_.clear();
     choice_wii_u_.clear();
-    profiles_up_ = false;
-    holding_up_ = false;
     if (wii_u_) {
         open_wii_u_choice(geometry.rows[static_cast<std::size_t>(focus_)]);
         return;
@@ -202,66 +217,65 @@ void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float
 }
 
 void ButtonMappingScreen::set_profiles(std::vector<std::string> names, int current, std::string heading) {
-    const bool same = names == profile_names_ && current == profile_current_ && heading == profile_heading_;
     profile_names_ = std::move(names);
     profile_current_ = current >= 0 && current < static_cast<int>(profile_names_.size()) ? current : -1;
     profile_heading_ = std::move(heading);
-    if (same || !profiles_open()) return;
-    // The list changed under the popup: drawn again, the cursor where it
-    // was -- or on one just saved, now it is there.
-    int focus = choice_.focus();
-    for (std::size_t index = 0; index < profile_names_.size(); ++index) {
-        if (!profile_saved_.empty() && profile_names_[index] == profile_saved_) focus = static_cast<int>(index) + 2;
-    }
-    profile_saved_.clear();
-    open_profiles(focus);
+    // The list changed under a page: the cursor where it was, if it still is.
+    if (page_ != ProfilePage::None) page_focus_ = std::clamp(page_focus_, 0, std::max(0, page_rows() - 1));
 }
 
-void ButtonMappingScreen::open_profiles(int focus) {
-    const Geometry geometry = compute_geometry(last_width_, last_height_);
-    // Save as New Profile..., then the profiles under their heading.
-    std::vector<std::string> lines{"Save as New Profile\u2026"};
-    std::vector<bool> headings{false};
-    if (!profile_names_.empty()) {
-        lines.push_back(profile_heading_);
-        headings.push_back(true);
-        for (const std::string& name : profile_names_) {
-            lines.push_back(name);
-            headings.push_back(false);
+int ButtonMappingScreen::page_rows() const {
+    const int profiles = static_cast<int>(profile_names_.size());
+    return page_ == ProfilePage::Save ? profiles + 1 : page_ == ProfilePage::Load ? profiles : 0;
+}
+
+int ButtonMappingScreen::profile_of_row(int row) const {
+    const int profile = page_ == ProfilePage::Save ? row - 1 : row;
+    return page_ != ProfilePage::None && profile >= 0 && profile < static_cast<int>(profile_names_.size()) ? profile
+                                                                                                         : -1;
+}
+
+void ButtonMappingScreen::open_page(ProfilePage page, int focus) {
+    choice_.close();
+    page_ = page;
+    // Load Profile's on the profile in use, if the mapping is one.
+    if (focus < 0) focus = page == ProfilePage::Load ? std::max(0, profile_current_) : 0;
+    page_focus_ = std::clamp(focus, 0, std::max(0, page_rows() - 1));
+    page_drag_.stop();
+    const PageGeometry geometry = compute_page_geometry(last_width_, last_height_);
+    page_scroll_ = 0.0f;
+    if (!geometry.rows.empty()) {
+        const PixelRect& row = geometry.rows[static_cast<std::size_t>(page_focus_)];
+        if (row.y + row.h > geometry.list.y + geometry.list.h) {
+            page_scroll_ = std::min(geometry.max_scroll(), row.y + row.h - geometry.list.y - geometry.list.h);
         }
     }
-    const PixelRect top{geometry.list.x, geometry.view_top, geometry.list.w,
-                        geometry.rows.empty() ? geometry.line * 2.0f : geometry.rows.front().h};
-    choice_actions_.clear();
-    choice_modes_.clear();
-    choice_wii_u_.clear();
-    choice_.open(std::move(lines), profile_current_ >= 0 ? profile_current_ + 2 : -1, top);
-    choice_.set_headings(std::move(headings));
-    profiles_up_ = true;
-    const int count = static_cast<int>(choice_.choices().size());
-    if (focus >= 0) choice_.set_focus(std::clamp(focus, 0, count - 1));
-    // Never on the heading.
-    if (choice_.heading(choice_.focus())) choice_.set_focus(std::min(count - 1, choice_.focus() + 1));
 }
 
-int ButtonMappingScreen::profile_of_line(int line) const {
-    const int profile = line - 2;
-    return profile >= 0 && profile < static_cast<int>(profile_names_.size()) ? profile : -1;
+void ButtonMappingScreen::back_from_page() {
+    button_focus_ = page_ == ProfilePage::Load ? 1 : 0;
+    page_ = ProfilePage::None;
 }
 
-void ButtonMappingScreen::choose_profile(int line, ButtonMappingScreenResult& result) {
-    if (line == 0) {
+void ButtonMappingScreen::choose_on_page(int row, ButtonMappingScreenResult& result) {
+    if (page_ == ProfilePage::Save && row == 0) {
         start_naming(result);
         return;
     }
-    const int profile = profile_of_line(line);
-    if (profile >= 0) result.profile_load = profile;
+    const int profile = profile_of_row(row);
+    if (profile < 0) return;
+    if (page_ == ProfilePage::Save) {
+        page_focus_ = row;
+        ask_about_profile(Asking::SaveOver);
+        return;
+    }
+    // Loaded, and back to the mapping it now is.
+    result.profile_load = profile;
+    back_from_page();
 }
 
 void ButtonMappingScreen::start_naming(ButtonMappingScreenResult& result) {
     choice_.close();
-    profiles_up_ = false;
-    holding_up_ = false;
     // A name not taken yet, to keep or type over.
     std::string name;
     for (int number = static_cast<int>(profile_names_.size()) + 1;; ++number) {
@@ -291,22 +305,18 @@ void ButtonMappingScreen::finish_naming(const TextEntryResult& answer, ButtonMap
     std::string name = naming_.text();
     while (!name.empty() && name.back() == ' ') name.pop_back();
     while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+    naming_.close();
+    // Saved, back to the mapping; not, back to Save Profile's page.
     if (answer.done && !name.empty()) {
         result.profile_save_new = name;
-        profile_saved_ = name;
+        back_from_page();
     }
-    naming_.close();
-    // Back to the list: on the new one once it is there.
-    open_profiles(0);
 }
 
 void ButtonMappingScreen::ask_about_profile(Asking asking) {
-    const int profile = profile_of_line(choice_.focus());
+    const int profile = profile_of_row(page_focus_);
     if (profile < 0) return;
     asking_profile_ = profile;
-    choice_.close();
-    profiles_up_ = false;
-    holding_up_ = false;
     asking_ = asking;
     confirming_ = true;
     confirm_cursor_.reset(2, 1);
@@ -336,35 +346,7 @@ void ButtonMappingScreen::open_wii_u_choice(const PixelRect& row) {
         labels.push_back(wii_u_action_name(action, wii_u_controller_));
         choice_wii_u_.push_back(action);
     }
-    // Last, what it does when held, on to a picker of its own -- Count
-    // standing for it among the actions.
-    labels.push_back("When Held\u2026");
-    choice_wii_u_.push_back(WiiUAction::Count);
     choice_.open(std::move(labels), std::max(0, current), row);
-}
-
-void ButtonMappingScreen::open_hold_choice() {
-    const Geometry geometry = compute_geometry(last_width_, last_height_);
-    const std::string& now = wii_u_mapping_.held(focused_control());
-    std::vector<std::string> labels{"Nothing"};
-    int current = 0;
-    for (const std::string& name : profile_names_) {
-        if (name == now) current = static_cast<int>(labels.size());
-        labels.push_back("Switch to " + name);
-    }
-    choice_wii_u_.clear();
-    choice_.open(std::move(labels), current, geometry.rows[static_cast<std::size_t>(focus_)]);
-    holding_up_ = true;
-}
-
-void ButtonMappingScreen::choose_hold(int index, ButtonMappingScreenResult& result) {
-    holding_up_ = false;
-    if (index < 0 || index > static_cast<int>(profile_names_.size())) return;
-    const std::string name = index == 0 ? std::string() : profile_names_[static_cast<std::size_t>(index - 1)];
-    std::string& held = wii_u_mapping_.held(focused_control());
-    if (held == name) return;
-    held = name;
-    result.wii_u_changed = wii_u_mapping_;
 }
 
 void ButtonMappingScreen::toggle_sideways(ButtonMappingScreenResult& result) {
@@ -384,10 +366,6 @@ void ButtonMappingScreen::choose_wii_u(int index, ButtonMappingScreenResult& res
     if (index < 0 || index >= static_cast<int>(choice_wii_u_.size())) return;
     const PadControl control = focused_control();
     const WiiUAction action = choice_wii_u_[static_cast<std::size_t>(index)];
-    if (action == WiiUAction::Count) {
-        open_hold_choice();
-        return;
-    }
     // A button on turbo stays on it for another of the controller's buttons.
     if (wii_u_mapping_[control] == WiiUAction::Turbo && is_wii_u_turbo_button(action)) {
         if (wii_u_mapping_.turbo(control) == action) return;
@@ -592,10 +570,7 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
             return of == WiiUAction::Standard ? std::string("Turbo")
                                               : wii_u_action_name(of, wii_u_controller_) + " (turbo)";
         }
-        std::string label = wii_u_action_name(action, wii_u_controller_);
-        // And the profile it switches to when held.
-        if (!wii_u_mapping_.held(control).empty()) label += " \u00b7 Hold: " + wii_u_mapping_.held(control);
-        return label;
+        return wii_u_action_name(action, wii_u_controller_);
     }
     const PadAction action = mapping_.resolved(control, console_);
     if (action == PadAction::Turbo) {
@@ -606,14 +581,6 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
 }
 
 void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
-    if (profiles_up_) {
-        choose_profile(index, result);
-        return;
-    }
-    if (holding_up_) {
-        choose_hold(index, result);
-        return;
-    }
     if (wii_u_) {
         choose_wii_u(index, result);
         return;
@@ -695,12 +662,14 @@ void ButtonMappingScreen::ask_revert() {
 
 void ButtonMappingScreen::answer_revert(int button, ButtonMappingScreenResult& result) {
     confirming_ = false;
-    // A profile's question goes back to the profiles, on the one it was
-    // about -- or, deleted, where it was.
+    // A profile's question: deleted, Load Profile's page stays, the cursor
+    // where it was; saved over, back to the mapping; not, the page as it was.
     if (asking_ != Asking::Reset) {
         if (button == 1 && asking_ == Asking::Delete) result.profile_delete = asking_profile_;
-        if (button == 1 && asking_ == Asking::SaveOver) result.profile_save_over = asking_profile_;
-        open_profiles(asking_profile_ + 2);
+        if (button == 1 && asking_ == Asking::SaveOver) {
+            result.profile_save_over = asking_profile_;
+            back_from_page();
+        }
         return;
     }
     if (button != 1) return;
@@ -726,7 +695,7 @@ PopupText ButtonMappingScreen::confirm_text() const {
         return words;
     }
     if (asking_ == Asking::SaveOver) {
-        words.message = "\u201c" + name + "\u201d will be replaced with the mapping as it is now.";
+        words.message = "\u201c" + name + "\u201d will be replaced with this mapping.";
         return words;
     }
     words.message = wii_u_ ? "Every button will go back to the standard mapping for this controller."
@@ -757,7 +726,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
     // but not while a popup is up over them.
     std::vector<UiAction> actions = pressed;
     std::vector<PointerEvent> pointers = touched;
-    if ((!choice_.is_open() || profiles_up_) && !confirming_ && !naming_.is_open()) {
+    if (!choice_.is_open() && !confirming_ && !naming_.is_open()) {
         take_guide_taps(guide_hits_, actions, pointers);
     }
     // A tap on Touch Point's page lands on the screen, wherever it is.
@@ -785,31 +754,8 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         return result;
     }
     // The picker takes every press until put away -- the buttons here, a tap
-    // the one way every tap is heard, below. Over Mapping Profiles, - puts
-    // it away and Y and X ask about the profile the cursor is on.
+    // the one way every tap is heard, below.
     if (choice_.is_open()) {
-        if (profiles_up_) {
-            std::vector<UiAction> rest;
-            for (const UiAction action : actions) {
-                if (action == UiAction::MenuMinus) {
-                    choice_.close();
-                    profiles_up_ = false;
-    holding_up_ = false;
-                } else if (action == UiAction::MenuQuit) {
-                    ask_about_profile(Asking::Delete);
-                } else if (action == UiAction::MenuReset) {
-                    ask_about_profile(Asking::SaveOver);
-                } else {
-                    rest.push_back(action);
-                }
-                if (!choice_.is_open()) break;
-            }
-            actions = rest;
-            if (!choice_.is_open()) {
-                take_taps(pointers, output_width, output_height);
-                return result;
-            }
-        }
         const ChoicePopupResult answer = choice_.update(actions, {}, output_width, output_height);
         if (answer.close_everything) {
             result.close_requested = true;
@@ -876,13 +822,57 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         }
         return result;
     }
+    // And a profile page, in place of the mapping.
+    if (page_ != ProfilePage::None) {
+        update_page(actions, result);
+        if (result.close_everything) {
+            close();
+            return result;
+        }
+        if (!actions.empty()) {
+            page_drag_.stop();
+            const PageGeometry geometry = compute_page_geometry(output_width, output_height);
+            if (page_focus_ < static_cast<int>(geometry.rows.size())) {
+                const PixelRect& row = geometry.rows[static_cast<std::size_t>(page_focus_)];
+                if (row.y < geometry.list.y) page_scroll_ -= geometry.list.y - row.y;
+                if (row.y + row.h > geometry.list.y + geometry.list.h) {
+                    page_scroll_ += row.y + row.h - geometry.list.y - geometry.list.h;
+                }
+                page_scroll_ = std::clamp(page_scroll_, 0.0f, geometry.max_scroll());
+            }
+        }
+        for (const int tap : take_taps(pointers, output_width, output_height)) {
+            handle_tap(tap, result, output_width, output_height);
+        }
+        page_drag_.settle();
+        return result;
+    }
 
     const int last = row_count() - 1;
     for (const UiAction action : actions) {
+        // On Save Profile... or Load Profile...: across them and back to the
+        // list, A opening the page.
+        if (button_focus_ >= 0) {
+            switch (action) {
+                case UiAction::Left:
+                    button_focus_ = button_focus_ == 1 ? 0 : -1;
+                    continue;
+                case UiAction::Right: button_focus_ = 1; continue;
+                case UiAction::Up:
+                case UiAction::Down:
+                case UiAction::MenuReset: continue;
+                case UiAction::Confirm:
+                    open_page(button_focus_ == 1 ? ProfilePage::Load : ProfilePage::Save, -1);
+                    continue;
+                default: break;
+            }
+        }
         switch (action) {
             // No going round: the list stops at its ends.
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
             case UiAction::Down: focus_ = std::min(last, focus_ + 1); break;
+            // Right, from the list to the buttons over the console.
+            case UiAction::Right: button_focus_ = 0; break;
             case UiAction::Confirm: activate(result, output_width, output_height); break;
             // B a step back, to the menu; the menu's own button out of
             // everything.
@@ -895,10 +885,8 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             case UiAction::MenuQuit: ask_revert(); break;
             // Y, where a Nintendo pad has it.
             case UiAction::MenuReset: toggle_turbo(result); break;
-            // -: Mapping Profiles, on the one in use.
-            case UiAction::MenuMinus: open_profiles(-1); break;
+            case UiAction::MenuMinus:
             case UiAction::Left:
-            case UiAction::Right:
             case UiAction::PageUp:
             case UiAction::PageDown:
             case UiAction::MenuDisconnect:
@@ -909,11 +897,11 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             case UiAction::NextLayout:
             case UiAction::SwapLayout: break;
         }
-        if (choice_.is_open() || confirming_ || result.close_requested) break;
+        if (choice_.is_open() || confirming_ || page_ != ProfilePage::None || result.close_requested) break;
     }
     // The cursor brings the list with it when it is moved -- and only then,
     // so a list dragged by a finger stays where the finger left it.
-    if (!actions.empty()) {
+    if (!actions.empty() && page_ == ProfilePage::None) {
         drag_.stop();
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }
@@ -927,6 +915,48 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
     return result;
 }
 
+void ButtonMappingScreen::update_page(const std::vector<UiAction>& actions, ButtonMappingScreenResult& result) {
+    const int last = page_rows() - 1;
+    for (const UiAction action : actions) {
+        switch (action) {
+            case UiAction::Up: page_focus_ = std::max(0, page_focus_ - 1); break;
+            case UiAction::Down: page_focus_ = std::max(0, std::min(last, page_focus_ + 1)); break;
+            case UiAction::Confirm: choose_on_page(page_focus_, result); break;
+            // X, where a Nintendo pad has it: Load Profile's deletes one.
+            case UiAction::MenuQuit:
+                if (page_ == ProfilePage::Load) ask_about_profile(Asking::Delete);
+                break;
+            case UiAction::Cancel: back_from_page(); break;
+            case UiAction::ToggleMenu:
+                result.close_requested = true;
+                result.close_everything = true;
+                break;
+            default: break;
+        }
+        if (page_ == ProfilePage::None || confirming_ || naming_.is_open() || result.close_requested) break;
+    }
+}
+
+ButtonMappingScreen::PageGeometry ButtonMappingScreen::compute_page_geometry(float output_width,
+                                                                            float output_height) const {
+    PageGeometry geometry;
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
+    geometry.line = frame.line;
+    geometry.list = PixelRect{frame.panel.x, frame.content_top, frame.panel.w, frame.content_bottom - frame.content_top};
+    const float row_height = menu_row_height(frame.line);
+    const float step = row_height + menu_row_gap(frame.line);
+    const int count = page_rows();
+    geometry.content_height = static_cast<float>(count) * step;
+    const bool scrolls = geometry.max_scroll() > 0.5f;
+    const float row_width = frame.panel.w - (scrolls ? scroll_bar_width(frame.scale) + frame.line * 0.6f : 0.0f);
+    for (int index = 0; index < count; ++index) {
+        geometry.rows.push_back(PixelRect{frame.panel.x, frame.content_top - page_scroll_ + static_cast<float>(index) * step,
+                                          row_width, row_height});
+    }
+    return geometry;
+}
+
 void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& result, float output_width,
                                      float output_height) {
     if (!open_) return;
@@ -934,14 +964,7 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         // Off the picker or the question: put away, nothing changed -- a
         // profile's question back to the profiles. A name being typed stays.
         if (naming_.is_open()) return;
-        if (confirming_ && asking_ != Asking::Reset) {
-            confirming_ = false;
-            open_profiles(asking_profile_ + 2);
-            return;
-        }
         choice_.close();
-        profiles_up_ = false;
-    holding_up_ = false;
         confirming_ = false;
         return;
     }
@@ -953,6 +976,20 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
     }
     if (placing_) {
         if (entry == kPlacingOkEntry) finish_placing(result);
+        return;
+    }
+    if (entry >= kPageEntryBase) {
+        if (page_ == ProfilePage::None || naming_.is_open() || confirming_) return;
+        const int row = entry - kPageEntryBase;
+        if (row >= page_rows()) return;
+        if (tap_chooses(page_focus_, row)) choose_on_page(row, result);
+        return;
+    }
+    if (entry >= kProfileButtonEntry) {
+        if (page_ != ProfilePage::None || choice_.is_open() || confirming_ || naming_.is_open()) return;
+        const int button = entry - kProfileButtonEntry;
+        button_focus_ = button;
+        open_page(button == 1 ? ProfilePage::Load : ProfilePage::Save, -1);
         return;
     }
     if (entry >= kNamingEntryBase) {
@@ -975,8 +1012,9 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         choose(index, result);
         return;
     }
-    if (choice_.is_open() || confirming_ || entry >= row_count()) return;
-    // A tap chooses.
+    if (choice_.is_open() || confirming_ || page_ != ProfilePage::None || entry >= row_count()) return;
+    // A tap chooses -- and puts the cursor back on the list.
+    button_focus_ = -1;
     if (tap_chooses(focus_, entry)) activate(result, output_width, output_height);
 }
 
@@ -1144,6 +1182,10 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         render_placing(quads, text, glyphs, output_width, output_height);
         return;
     }
+    if (page_ != ProfilePage::None) {
+        render_page(quads, text, glyphs, output_width, output_height);
+        return;
+    }
     const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging());
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
@@ -1151,13 +1193,8 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     const float line = geometry.line;
     const PageFrame frame = page_frame(output_width, output_height);
     draw_page_background(quads, output_width, output_height, over_game_);
-    // And the profile the mapping is, if it is one.
-    std::string detail = wii_u_ ? detail_ : std::string();
-    if (profile_current_ >= 0) {
-        detail += (detail.empty() ? "" : " \u00b7 ") + std::string("Profile: ") +
-                  profile_names_[static_cast<std::size_t>(profile_current_)];
-    }
-    draw_page_header(quads, text, frame, wii_u_ ? "Button Mapping" : "Change Controls", detail);
+    draw_page_header(quads, text, frame, wii_u_ ? "Button Mapping" : "Change Controls",
+                     wii_u_ ? detail_ : std::string());
 
     quads.set_clip(menu_list_clip(PixelRect{geometry.list.x, geometry.view_top, geometry.list.w,
                                             geometry.view_bottom - geometry.view_top},
@@ -1167,9 +1204,10 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     const std::size_t rows = static_cast<std::size_t>(row_count());
     for (std::size_t index = 0; index < rows; ++index) {
         const PixelRect& row = geometry.rows[index];
-        const bool focused = static_cast<int>(index) == focus_;
+        // The cursor on a button over the console leaves the list unringed.
+        const bool focused = static_cast<int>(index) == focus_ && button_focus_ < 0;
         draw_menu_row(quads, row, focused, scale, index + 1 == rows,
-                      static_cast<int>(index) == focus_ + 1);
+                      static_cast<int>(index) == focus_ + 1 && button_focus_ < 0);
         // Sideways Wii Remote: its name and its switch -- the remote drawn
         // on its side says what it does.
         if (has_sideways_row() && static_cast<int>(index) == kRightStickRow) {
@@ -1197,6 +1235,33 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         draw_scroll_bar(quads, geometry.list, scroll_ / geometry.content_height,
                         view / geometry.content_height, line, scale);
     }
+
+    // Save Profile... and Load Profile..., as Touch Point's OK is drawn; the
+    // profile the mapping is, if it is one; and a rule over the console.
+    const auto profile_button = [&](const PixelRect& rect, const char* label, bool focused) {
+        const float radius = std::round(std::min(rect.h * 0.22f, scale * 3.5f));
+        quads.draw_rounded_rect(rect, radius, Color{1.0f, 1.0f, 1.0f, 0.10f});
+        if (pointer_holding(rect)) {
+            quads.draw_rounded_rect(rect, radius, menu_highlight_fill());
+        } else if (focused && menu_cursor_shown()) {
+            draw_menu_cursor(quads, rect, radius, scale);
+        }
+        text.draw(quads, TextRenderer::elide_right(label, rect.w - line, scale), rect.x + rect.w * 0.5f,
+                  std::round(rect.y + (rect.h - TextRenderer::line_height(scale)) * 0.5f), scale, theme.text,
+                  TextAlign::Center);
+    };
+    profile_button(geometry.save_button, "Save Profile\u2026", button_focus_ == 0);
+    profile_button(geometry.load_button, "Load Profile\u2026", button_focus_ == 1);
+    const float right_x = geometry.save_button.x;
+    const float right_w = geometry.load_button.x + geometry.load_button.w - right_x;
+    if (profile_current_ >= 0) {
+        const std::string said =
+            "Profile: " + profile_names_[static_cast<std::size_t>(profile_current_)];
+        text.draw(quads, TextRenderer::elide_right(said, right_w, scale * 0.85f), right_x + right_w * 0.5f,
+                  geometry.profile_y, scale * 0.85f, theme.text_dim, TextAlign::Center);
+    }
+    quads.draw_solid(PixelRect{right_x, geometry.rule_y, right_w, std::max(1.0f, std::round(scale * 0.5f))},
+                     menu_row_rule_color());
 
     // The console, what the highlighted button presses picked out on it.
     if (wii_u_) {
@@ -1240,27 +1305,16 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     }
 
     std::vector<GuidePrompt> guide;
-    if (profiles_open()) {
-        // What the profile the cursor is on can have done to it.
-        if (profile_of_line(choice_.focus()) >= 0) {
-            guide.push_back({ButtonGlyph::X, "Delete"});
-            guide.push_back({ButtonGlyph::Y, "Save Over"});
-        }
-        guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-        guide.push_back({ButtonGlyph::A, choice_.focus() == 0 ? "OK" : "Load", PromptRole::ActsOnSelection});
-    } else {
-        guide.push_back({ButtonGlyph::Minus, "Profiles"});
-        guide.push_back({ButtonGlyph::X, "Reset to Default"});
-        if (can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
-        guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-        guide.push_back({ButtonGlyph::A, on_sideways() ? "OK" : "Change", PromptRole::ActsOnSelection});
-    }
+    guide.push_back({ButtonGlyph::X, "Reset to Default"});
+    if (button_focus_ < 0 && can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
+    guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+    guide.push_back({ButtonGlyph::A, button_focus_ >= 0 || on_sideways() ? "OK" : "Change",
+                     PromptRole::ActsOnSelection});
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 
     if (choice_.is_open()) {
-        // Mapping Profiles stay where they opened, at the top of the page.
-        if (!profiles_up_) choice_.set_row(geometry.rows[static_cast<std::size_t>(focus_)]);
+        choice_.set_row(geometry.rows[static_cast<std::size_t>(focus_)]);
         choice_.render(quads, text, output_width, output_height);
     }
     if (confirming_) {
@@ -1269,6 +1323,68 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
                    confirm_cursor_.focus(), confirm_cursor_.shown());
         draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w,
                         output_height);
+    }
+    naming_.render(quads, text, output_width, output_height);
+}
+
+void ButtonMappingScreen::render_page(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                      float output_width, float output_height) {
+    const ShownScroll shown(page_scroll_, scroll_ease_, page_drag_.dragging(), 1 + static_cast<int>(page_));
+    const UiTheme& theme = ui_theme();
+    const PageFrame frame = page_frame(output_width, output_height);
+    const PageGeometry geometry = compute_page_geometry(output_width, output_height);
+    const float scale = geometry.scale;
+    const float line = geometry.line;
+    draw_page_background(quads, output_width, output_height, over_game_);
+    const bool load = page_ == ProfilePage::Load;
+    draw_page_header(quads, text, frame, load ? "Load Profile" : "Save Profile",
+                     wii_u_ ? detail_ : console_name());
+    const float pad = menu_row_pad(line);
+    const float row_scale = scale * 1.1f;
+    quads.set_clip(menu_list_clip(geometry.list, scale));
+    const std::size_t count = geometry.rows.size();
+    for (std::size_t index = 0; index < count; ++index) {
+        const PixelRect& row = geometry.rows[index];
+        const bool focused = static_cast<int>(index) == page_focus_ && !confirming_ && !naming_.is_open();
+        draw_menu_row(quads, row, focused, scale, index + 1 == count, static_cast<int>(index) == page_focus_ + 1);
+        const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
+        const int profile = profile_of_row(static_cast<int>(index));
+        const std::string label =
+            profile < 0 ? std::string("New Profile\u2026") : profile_names_[static_cast<std::size_t>(profile)];
+        // The profile the mapping is now, said at the end of its row.
+        const bool in_use = profile >= 0 && profile == profile_current_;
+        const float value_width = in_use ? TextRenderer::measure_width("In Use", row_scale) + line : 0.0f;
+        text.draw(quads, TextRenderer::elide_right(label, row.w - pad * 2.0f - value_width, row_scale), row.x + pad,
+                  baseline, row_scale, menu_row_text(focused));
+        if (in_use) {
+            text.draw(quads, "In Use", row.x + row.w - pad, baseline, row_scale, theme.text_dim, TextAlign::Right);
+        }
+    }
+    quads.clear_clip();
+    if (geometry.content_height > geometry.list.h + 0.5f) {
+        draw_scroll_bar(quads, geometry.list, page_scroll_ / geometry.content_height,
+                        geometry.list.h / geometry.content_height, line, scale);
+    }
+    if (count == 0) {
+        text.draw(quads, "No profiles are saved yet.", frame.panel.x + frame.panel.w * 0.5f,
+                  std::round(geometry.list.y + line * 2.0f), scale, theme.text_dim, TextAlign::Center);
+    }
+
+    std::vector<GuidePrompt> guide;
+    if (load && count > 0) guide.push_back({ButtonGlyph::X, "Delete"});
+    guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+    if (count > 0) {
+        guide.push_back({ButtonGlyph::A, load ? "Load" : page_focus_ == 0 ? "OK" : "Save",
+                         PromptRole::ActsOnSelection});
+    }
+    guide_hits_.clear();
+    draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
+
+    if (confirming_) {
+        const PopupGeometry popup = confirm_popup(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(), confirm_cursor_.focus(),
+                   confirm_cursor_.shown());
+        draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w, output_height);
     }
     naming_.render(quads, text, output_width, output_height);
 }
@@ -1362,7 +1478,9 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     if (!open_) open();
     last_width_ = output_width;
     last_height_ = output_height;
-    focus_ = std::clamp(static_cast<int>(view.focus), 0, row_count() - 1);
+    // The cursor on a button over the console, said past the rows.
+    button_focus_ = view.focus >= kButtonFocusBase ? std::min(1, view.focus - kButtonFocusBase) : -1;
+    if (button_focus_ < 0) focus_ = std::clamp(static_cast<int>(view.focus), 0, row_count() - 1);
     // The other device's cursor brings the list with it when it moves;
     // otherwise the list is where a finger here left it.
     if (focus_ != mirrored_focus_) {
@@ -1371,19 +1489,31 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
         mirrored_focus_ = focus_;
     }
     set_profiles(view.profile_names, view.profile_current, view.profile_heading);
-    if (view.choice_focus == 0) {
+    // A profile page, its cursor where the picker's would be.
+    const ProfilePage page = static_cast<ProfilePage>(std::min<uint8_t>(view.profile_page, 2));
+    if (page != ProfilePage::None) {
         choice_.close();
-        profiles_up_ = false;
-    holding_up_ = false;
-    } else if (view.profiles) {
-        if (!profiles_open()) open_profiles(view.choice_focus - 1);
-        if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
-    } else if (view.holding) {
-        if (!hold_choice_open()) open_hold_choice();
-        if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
+        if (page_ != page) open_page(page, std::max(0, view.choice_focus - 1));
+        if (page_focus_ != view.choice_focus - 1) {
+            page_focus_ = std::clamp(view.choice_focus - 1, 0, std::max(0, page_rows() - 1));
+            const PageGeometry geometry = compute_page_geometry(output_width, output_height);
+            if (page_focus_ < static_cast<int>(geometry.rows.size())) {
+                const PixelRect& row = geometry.rows[static_cast<std::size_t>(page_focus_)];
+                if (row.y < geometry.list.y) page_scroll_ -= geometry.list.y - row.y;
+                if (row.y + row.h > geometry.list.y + geometry.list.h) {
+                    page_scroll_ += row.y + row.h - geometry.list.y - geometry.list.h;
+                }
+                page_scroll_ = std::clamp(page_scroll_, 0.0f, geometry.max_scroll());
+            }
+        }
     } else {
-        if (!choice_.is_open() || profiles_up_ || holding_up_) open_choice(output_width, output_height);
-        if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
+        page_ = ProfilePage::None;
+        if (view.choice_focus == 0) {
+            choice_.close();
+        } else {
+            if (!choice_.is_open()) open_choice(output_width, output_height);
+            if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
+        }
     }
     // A new profile's name, as the other device has it -- unless typed here
     // just now.
@@ -1429,6 +1559,11 @@ bool ButtonMappingScreen::scroll(const std::vector<PointerEvent>& pointers, floa
     if (naming_.is_open()) return false;
     if (choice_.is_open()) return choice_.scroll(pointers, output_width, output_height);
     if (confirming_ || placing_) return false;
+    if (page_ != ProfilePage::None) {
+        const PageGeometry geometry = compute_page_geometry(output_width, output_height);
+        page_drag_.update(pointers, geometry.list, page_scroll_, geometry.max_scroll());
+        return page_drag_.release_was_drag();
+    }
     const Geometry geometry = compute_geometry(output_width, output_height);
     drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
     return drag_.release_was_drag();
@@ -1454,7 +1589,17 @@ int ButtonMappingScreen::entry_at(float x, float y, float output_width, float ou
         const int button = popup_button_at(confirm_popup(output_width, output_height), x, y);
         return button >= 0 ? kConfirmEntryBase + button : -1;
     }
+    if (page_ != ProfilePage::None) {
+        const PageGeometry geometry = compute_page_geometry(output_width, output_height);
+        if (!geometry.list.contains(x, y)) return -1;
+        for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
+            if (geometry.rows[index].contains(x, y)) return kPageEntryBase + static_cast<int>(index);
+        }
+        return -1;
+    }
     const Geometry geometry = compute_geometry(output_width, output_height);
+    if (geometry.save_button.contains(x, y)) return kProfileButtonEntry;
+    if (geometry.load_button.contains(x, y)) return kProfileButtonEntry + 1;
     if (!geometry.list.contains(x, y)) return -1;
     for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
         if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
@@ -1471,12 +1616,19 @@ bool ButtonMappingScreen::off_popup(float x, float y, float output_width, float 
 
 std::vector<float> ButtonMappingScreen::scroll_state(float output_width, float output_height) const {
     const Geometry geometry = compute_geometry(output_width, output_height);
+    if (page_ != ProfilePage::None) return {scroll_in_lines(page_scroll_, geometry.scale), 0.0f};
     return {scroll_in_lines(scroll_, geometry.scale), choice_.is_open() ? choice_.scroll_rows() : 0.0f};
 }
 
 void ButtonMappingScreen::set_scroll_state(const std::vector<float>& state, float output_width,
                                            float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
+    if (page_ != ProfilePage::None) {
+        page_scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f,
+                                  compute_page_geometry(output_width, output_height).max_scroll());
+        page_drag_.stop();
+        return;
+    }
     scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f, geometry.max_scroll());
     drag_.stop();
     if (choice_.is_open()) choice_.set_scroll_rows(scroll_at(state, 1));
@@ -1487,7 +1639,9 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     if (confirming_) mix_sound_state(view.focus, static_cast<uint64_t>(confirm_cursor_.focus() + 2000));
     if (naming_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(naming_.focus() + 3000));
-    mix_sound_state(view.rest, profiles_up_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(page_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(button_focus_ + 1 + 4000));
+    if (page_ != ProfilePage::None) mix_sound_state(view.focus, static_cast<uint64_t>(page_focus_ + 5000));
     mix_sound_state(view.rest, naming_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(profile_current_ + 1));
     mix_sound_state(view.rest, static_cast<uint64_t>(profile_names_.size()));
@@ -1513,11 +1667,13 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     net::ButtonMappingViewMessage view;
     view.open = screen.is_open();
     if (!view.open) return view;
-    view.focus = static_cast<uint8_t>(screen.focus());
+    view.focus = static_cast<uint8_t>(screen.button_focus() >= 0
+                                          ? ButtonMappingScreen::kButtonFocusBase + screen.button_focus()
+                                          : screen.focus());
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
+    view.profile_page = static_cast<uint8_t>(screen.profile_page());
+    if (view.profile_page != 0) view.choice_focus = static_cast<uint8_t>(std::min(254, screen.page_focus()) + 1);
     view.confirm_focus = screen.confirming() ? static_cast<uint8_t>(screen.confirm_focus() + 1) : 0;
-    view.profiles = screen.profiles_open();
-    view.holding = screen.hold_choice_open();
     view.profile_names = screen.profile_names();
     view.profile_current = screen.profile_current();
     view.profile_heading = screen.profile_heading();

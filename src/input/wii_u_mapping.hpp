@@ -102,10 +102,6 @@ struct WiiUMapping {
     // player holds it, so a button on Up presses the remote's Right, which
     // points up held so. What each button is chosen as is the same either way.
     bool sideways = false;
-    // A mapping profile to switch to when a button is held -- see
-    // ProfileHold -- by its name; empty for none. The button still does what
-    // it does when tapped.
-    std::array<std::string, kPadControls> hold_profile{};
 
     WiiUAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     WiiUAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
@@ -113,20 +109,41 @@ struct WiiUMapping {
     WiiUAction turbo(PadControl control) const { return turbo_of[static_cast<std::size_t>(control)]; }
     // What `control` does, Standard looked up.
     WiiUAction resolved(PadControl control, WiiUController controller) const;
-    std::string& held(PadControl control) { return hold_profile[static_cast<std::size_t>(control)]; }
-    const std::string& held(PadControl control) const { return hold_profile[static_cast<std::size_t>(control)]; }
-    // Which buttons switch profile when held, as PadControl bits.
-    uint32_t hold_controls() const;
     // Whether every button does what the standard mapping has it do, held
-    // sideways or not, and none switches profile.
+    // sideways or not.
     bool is_standard(WiiUController controller) const;
 
     bool operator==(const WiiUMapping& other) const {
-        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways &&
-               hold_profile == other.hold_profile;
+        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways;
     }
     bool operator!=(const WiiUMapping& other) const { return !(*this == other); }
 };
+
+// Profile Switching, on a player's page: - or + held moves the player on to
+// the next of `profiles` -- by name, in the order they were saved -- after
+// the one it has now, round from the last to the first. Kept with the game,
+// apart from any mapping, for each player as each controller.
+struct ProfileSwitching {
+    // Minus or Plus; Count for Off.
+    PadControl button = PadControl::Count;
+    std::vector<std::string> profiles;
+
+    bool on() const { return button == PadControl::Minus || button == PadControl::Plus; }
+    bool includes(const std::string& name) const;
+    // Which button switches, as PadControl bits: none while Off or with no
+    // profile to switch to.
+    uint32_t hold_controls() const;
+    bool operator==(const ProfileSwitching& other) const {
+        return button == other.button && profiles == other.profiles;
+    }
+};
+
+// The profile Profile Switching moves on to from `current` (empty for none):
+// the next of `saved` -- every profile there is for the controller, in order
+// -- that `switching` includes, round from the last to the first. Empty if
+// none is.
+std::string next_switching_profile(const ProfileSwitching& switching, const std::vector<std::string>& saved,
+                                   const std::string& current);
 
 // A controller's buttons that switch profile when held, as Steam Input's long
 // press is: each one's press held back from the game until it is let go --
