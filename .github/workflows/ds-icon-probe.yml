@@ -10,20 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch vgmuseum's DS icons
+      - name: Fetch release pages
         run: |
-          mkdir -p vgm
-          curl -sS https://www.vgmuseum.com/features/icons/ -o vgm/index.html
-          grep -oiE '(src|href)="[^"]+\.(png|gif|jpg)"' vgm/index.html | sed -E 's/^(src|href)="//I; s/"$//' | sort -u > vgm/urls.txt
-          wc -l vgm/urls.txt; head -3 vgm/urls.txt
-          mkdir -p vgm/files
-          cd vgm/files
-          while read u; do
-            case "$u" in http*) url="$u";; /*) url="https://www.vgmuseum.com$u";; *) url="https://www.vgmuseum.com/features/icons/$u";; esac
-            curl -sSf -O "$url" || echo "failed $url" >> ../failed.txt
-          done < ../urls.txt
-          ls | wc -l
+          mkdir -p pages
+          get() { curl -sSL -A "Mozilla/5.0" -o "pages/$1" -w "$1 %{http_code} %{size_download} %{url_effective}\n" "$2" >> pages/log.txt 2>&1 || echo "$1 failed" >> pages/log.txt; }
+          get dsscene-releases.html "https://www.ds-scene.net/?s=releases"
+          get advanscene-index.html "https://www.advanscene.com/html/index.php"
+          get advanscene-nds.html "https://www.advanscene.com/html/Releases/index.php?gt=nds"
+          get advanscene-rel1.html "https://www.advanscene.com/html/Releases/dbrelds.php?id=1"
+          get advanscene-rel3000.html "https://www.advanscene.com/html/Releases/dbrelds.php?id=3000"
+          get dsscene-rel1.html "https://www.ds-scene.net/?s=viewrelease&id=1"
       - name: Keep
         run: |
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
-          git add vgm && git commit -qm "probe results" && git push
+          git add pages && git commit -qm "probe results" && git push
