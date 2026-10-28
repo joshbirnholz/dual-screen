@@ -49,4 +49,13 @@ bool parse_ds_rom_info(const uint8_t* header, std::size_t header_size, const uin
 // transparent. Empty unless `icon` is kDsIconBytes long.
 std::vector<uint32_t> decode_ds_icon(const std::vector<uint8_t>& icon);
 
+// The name the icon is kept under for Discord to show (see
+// util/discord_presence.hpp), worked out from the picture alone, since the
+// collection it comes from knows releases rather than game codes: every
+// pixel, row by row -- colour 0 as its colour, not see-through -- as BGR555
+// in a little-endian 16-bit number, and the SHA-1 of those 2048 bytes.
+// tools/build_ds_icons.py on the icons branch names them the same way.
+// Empty unless `icon` is kDsIconBytes long.
+std::string ds_icon_key(const std::vector<uint8_t>& icon);
+
 }  // namespace ds

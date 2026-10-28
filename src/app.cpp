@@ -146,11 +146,18 @@ constexpr double kResumePointIntervalSeconds = 30.0;
 // game is going ("Playing Dualscreen"). See util/discord_presence.hpp.
 constexpr const char* kDiscordApplicationId = "1564808519046271126";
 
-// Which of the icons Discord can be shown is this game's: "3ds/<title ID>" or
-// "wiiu/<title ID>", or empty for a game with none -- a DS game, for now.
+// Which of the icons Discord can be shown is this game's: "3ds/<title ID>",
+// "wiiu/<title ID>" or "ds/<the icon's own SHA-1>", or empty for a game with
+// none to look for.
 std::string game_icon_key(const std::string& rom_path) {
     SystemId system = SystemId::Ds;
-    if (!system_for_rom(rom_path, system) || system == SystemId::Ds) return std::string();
+    if (!system_for_rom(rom_path, system)) return std::string();
+    if (system == SystemId::Ds) {
+        DsRomInfo rom;
+        if (!read_ds_rom_info(rom_path, rom, nullptr)) return std::string();
+        const std::string key = ds_icon_key(rom.icon);
+        return key.empty() ? std::string() : "ds/" + key;
+    }
     ConsoleTitleInfo info;
     const bool read = system == SystemId::ThreeDs ? read_3ds_title_info(rom_path, info, nullptr)
                       : path_extension_lower(rom_path) == "wua"

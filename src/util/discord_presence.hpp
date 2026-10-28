@@ -87,7 +87,8 @@ private:
 std::string discord_frame(uint32_t opcode, const std::string& json);
 // Where a game's own icon is kept for Discord to show: the icons branch of
 // this app's repository, filled once from Nintendo's own icon servers (see
-// tools/build_icons.py there). `key` is "3ds/<title ID>" or "wiiu/<title ID>".
+// tools/build_icons.py there) and DS-Scene's DS icons. `key` is
+// "3ds/<title ID>", "wiiu/<title ID>" or "ds/<ds_icon_key()>".
 std::string discord_game_icon_url(const std::string& key);
 
 // The SET_ACTIVITY command for `activity`, or the one that clears it when its
