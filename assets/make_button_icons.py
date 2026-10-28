@@ -53,14 +53,14 @@ CELLS = [
     "xbox_dpad_up_outline", "xbox_dpad_down_outline",
     "xbox_dpad_left_outline", "xbox_dpad_right_outline", "xbox_dpad",
     "xbox_stick_l", "xbox_stick_r", "xbox_guide", "xbox_button_share",
-    # Positional: four dots with the one to press filled in, east, south,
+    # Generic: four dots with the one to press filled in, east, south,
     # north, west -- and a Steam Controller's plain shoulders and triggers,
-    # and its options and view for start and select.
+    # and its start and back for start and select.
     "switch_buttons_right_outline", "switch_buttons_down_outline",
     "switch_buttons_up_outline", "switch_buttons_left_outline",
     "controller_button_l1", "controller_button_r1",
     "controller_button_l2", "controller_button_r2",
-    "controller_button_options", "controller_button_view",
+    "steam_button_start_icon", "steam_button_back_icon",
 ]
 
 

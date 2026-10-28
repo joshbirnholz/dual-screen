@@ -50,16 +50,16 @@ void test_playstation_is_shapes() {
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Y) == GlyphCell::Square);
 }
 
-// Positional names each button by where it is, and nothing else: the dots
+// Generic names each button by where it is, and nothing else: the dots
 // for its own corner, and a Steam Controller's plain options and view for
 // start and select, which have none.
 void test_positional_prompts_are_the_four_corners() {
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::A) == GlyphCell::DotsEast);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::B) == GlyphCell::DotsSouth);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::X) == GlyphCell::DotsNorth);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Y) == GlyphCell::DotsWest);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Plus) == GlyphCell::SteamOptions);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Minus) == GlyphCell::SteamView);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::A) == GlyphCell::DotsEast);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::B) == GlyphCell::DotsSouth);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::X) == GlyphCell::DotsNorth);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::Y) == GlyphCell::DotsWest);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::Plus) == GlyphCell::SteamStart);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::Minus) == GlyphCell::SteamBack);
 }
 
 // Four face buttons, four different symbols, in every style. A table that
@@ -86,7 +86,7 @@ void test_the_stick_clicks() {
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::RightStick) == GlyphCell::PlayStationR3);
     CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::LeftStick) == GlyphCell::XboxLS);
     CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::RightStick) == GlyphCell::XboxRS);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::LeftStick) == GlyphCell::LeftStick);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::LeftStick) == GlyphCell::LeftStick);
 }
 
 // The shoulders, triggers, start and select, as each pad prints them;
@@ -104,8 +104,8 @@ void test_the_shoulders() {
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::ZR) == GlyphCell::PlayStationR2);
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Plus) == GlyphCell::PlayStationOptions);
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Minus) == GlyphCell::PlayStationCreate);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::L) == GlyphCell::SteamL1);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::ZR) == GlyphCell::SteamR2);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::L) == GlyphCell::SteamL1);
+    CHECK(glyph_cell(PadGlyphStyle::Generic, ButtonGlyph::ZR) == GlyphCell::SteamR2);
 }
 
 // Every button a pad has, drawn as something of that pad's own: no two
@@ -147,6 +147,9 @@ void test_a_style_survives_the_round_trip_through_settings_json() {
     PadGlyphStyle kept = PadGlyphStyle::Xbox;
     CHECK(!pad_glyph_style_from_string("SteamDeck", kept));
     CHECK(kept == PadGlyphStyle::Xbox);
+    // Generic, saved under its old name.
+    CHECK(pad_glyph_style_from_string("Positional", kept));
+    CHECK(kept == PadGlyphStyle::Generic);
 }
 
 // Choosing which button means yes changes the picture and nothing else.

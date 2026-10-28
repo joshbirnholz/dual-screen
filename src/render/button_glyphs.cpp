@@ -14,13 +14,18 @@ const char* to_string(PadGlyphStyle style) {
         case PadGlyphStyle::Nintendo: return "Nintendo";
         case PadGlyphStyle::PlayStation: return "PlayStation";
         case PadGlyphStyle::Xbox: return "Xbox";
-        case PadGlyphStyle::Positional: return "Positional";
+        case PadGlyphStyle::Generic: return "Generic";
         case PadGlyphStyle::Count: break;
     }
     return "Nintendo";
 }
 
 bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out) {
+    // Generic's name before it had this one.
+    if (text == "Positional") {
+        out = PadGlyphStyle::Generic;
+        return true;
+    }
     for (int index = 0; index < static_cast<int>(PadGlyphStyle::Count); ++index) {
         const PadGlyphStyle style = static_cast<PadGlyphStyle>(index);
         if (text == to_string(style)) {
@@ -37,9 +42,9 @@ bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out) {
 //   Nintendo   A           B           X           Y
 //   Xbox       B           A           Y           X
 //   Sony       circle      cross       triangle    square
-//   Positional four dots, the one in that corner filled in
+//   Generic    four dots, the one in that corner filled in
 //
-// and every other button as that pad prints it. Positional has no printing
+// and every other button as that pad prints it. Generic has no printing
 // of its own past the face buttons: a Switch's, but for the shoulders,
 // triggers, start and select, a Steam Controller's plain ones.
 GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
@@ -64,9 +69,9 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
         C::XboxLB, C::XboxRB, C::XboxLT, C::XboxRT, C::XboxDpadUp, C::XboxDpadDown,
         C::XboxDpadLeft, C::XboxDpadRight, C::XboxDpad, C::XboxStickL, C::XboxStickR,
         C::XboxGuide, C::XboxShare};
-    static constexpr GlyphCell kPositional[kGlyphs] = {
+    static constexpr GlyphCell kGeneric[kGlyphs] = {
         C::DotsEast, C::DotsSouth, C::DotsNorth, C::DotsWest, C::LeftStick, C::RightStick,
-        C::SteamOptions, C::SteamView, C::SteamL1, C::SteamR1, C::SteamL2, C::SteamR2, C::SwitchDpadUp,
+        C::SteamStart, C::SteamBack, C::SteamL1, C::SteamR1, C::SteamL2, C::SteamR2, C::SwitchDpadUp,
         C::SwitchDpadDown, C::SwitchDpadLeft, C::SwitchDpadRight, C::SwitchDpad, C::SwitchStickL,
         C::SwitchStickR, C::SwitchHome, C::SwitchCapture};
     const int index = static_cast<int>(glyph);
@@ -74,7 +79,7 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
     switch (style) {
         case PadGlyphStyle::PlayStation: return kPlayStation[index];
         case PadGlyphStyle::Xbox: return kXbox[index];
-        case PadGlyphStyle::Positional: return kPositional[index];
+        case PadGlyphStyle::Generic: return kGeneric[index];
         default: return kNintendo[index];
     }
 }

@@ -2006,7 +2006,7 @@ void Client::run() {
         // or, with one Joy-Con held sideways, their positions, as they draw
         // those. The same rule as a game played here: see the desktop app's
         // apply_button_style().
-        button_glyphs_.set_style(input_.single_joycon_in_use() ? PadGlyphStyle::Positional
+        button_glyphs_.set_style(input_.single_joycon_in_use() ? PadGlyphStyle::Generic
                                                                : PadGlyphStyle::Nintendo);
 #elif DS_LOCAL_PLAY && !defined(DS_APPLE_TELEVISION)
         // Everywhere else that has Settings -- an Android device, a desktop --

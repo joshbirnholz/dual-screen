@@ -212,7 +212,7 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
                     east = "Circle";
                     south = "Cross";
                     break;
-                case PadGlyphStyle::Positional:
+                case PadGlyphStyle::Generic:
                     east = "Right button";
                     south = "Bottom button";
                     break;

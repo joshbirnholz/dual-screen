@@ -1703,10 +1703,10 @@ void App::Impl::apply_button_style() {
     // position instead and so does this. Asked every pass, since which
     // controller is in the player's hands can change at any press.
     const PadGlyphStyle style =
-        input.single_joycon_in_use() ? PadGlyphStyle::Positional : PadGlyphStyle::Nintendo;
+        input.single_joycon_in_use() ? PadGlyphStyle::Generic : PadGlyphStyle::Nintendo;
     if (style != button_glyphs.style()) {
         button_glyphs.set_style(style);
-        log_info(style == PadGlyphStyle::Positional
+        log_info(style == PadGlyphStyle::Generic
                      ? "button prompts: by position, for a single Joy-Con"
                      : "button prompts: the Switch's letters");
     }

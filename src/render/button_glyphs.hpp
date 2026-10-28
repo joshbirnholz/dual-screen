@@ -54,12 +54,12 @@ enum class ButtonGlyph {
 // faster than they read the letter that happens to be under their thumb, and
 // somebody streaming to a phone has no pad under their thumb at all.
 //
-// Positional draws no letters at all: four dots with the one to press filled
+// Generic draws no letters at all: four dots with the one to press filled
 // in, as Nintendo draws them where it will not say which letter is meant. For
 // a pad whose printing disagrees with the prompt's -- a Switch pad read by
 // position, a Steam Input layout that swapped things round -- the position is
 // the one thing that is always right.
-enum class PadGlyphStyle { Nintendo, PlayStation, Xbox, Positional, Count };
+enum class PadGlyphStyle { Nintendo, PlayStation, Xbox, Generic, Count };
 
 const char* to_string(PadGlyphStyle style);
 bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out);
@@ -133,9 +133,9 @@ enum class GlyphCell {
     XboxStickR,
     XboxGuide,
     XboxShare,
-    // Four dots, the one to press filled in -- see PadGlyphStyle::Positional
-    // -- and a Steam Controller's shoulders, triggers, options and view, the
-    // plainest.
+    // Four dots, the one to press filled in -- see PadGlyphStyle::Generic
+    // -- and a Steam Controller's shoulders and triggers, the plainest, and
+    // its start and back for start and select.
     DotsEast,
     DotsSouth,
     DotsNorth,
@@ -144,8 +144,8 @@ enum class GlyphCell {
     SteamR1,
     SteamL2,
     SteamR2,
-    SteamOptions,
-    SteamView,
+    SteamStart,
+    SteamBack,
     Count
 };
 
