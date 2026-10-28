@@ -91,6 +91,7 @@
 #include "update/desktop_updater.hpp"
 #include "update/updater.hpp"
 #include "util/child_process.hpp"
+#include "util/discord_presence.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 #include "util/shutdown_watchdog.hpp"
@@ -140,6 +141,10 @@ constexpr double kSpeedReportSeconds = 10.0;
 // this is for what gives no warning at all -- a battery running out, a crash --
 // and says how far back that can land.
 constexpr double kResumePointIntervalSeconds = 30.0;
+
+// The Discord application whose name heads the status Discord shows while a
+// game is going ("Playing Dualscreen"). See util/discord_presence.hpp.
+constexpr const char* kDiscordApplicationId = "1564808519046271126";
 
 std::string next_argument(int argc, char** argv, int& index, const char* flag, std::string& error) {
     if (index + 1 >= argc) {
@@ -1014,6 +1019,10 @@ struct App::Impl {
     bool is_companion() const;
     // The name of the game being played: on a companion, the host's.
     const std::string& shown_game_title() const;
+    // What Discord shows under the player's name -- see update_discord().
+    std::unique_ptr<DiscordPresence> discord;
+    DiscordActivity discord_activity;
+    void update_discord();
     // Whether this device is the one being held as the GamePad, which is the
     // one showing the GamePad's screen -- the bottom one. With a companion
     // connected that is whichever screen the companion did not take; alone it
@@ -2112,6 +2121,25 @@ bool App::Impl::is_companion() const {
 
 const std::string& App::Impl::shown_game_title() const {
     return is_companion() ? companion_session->game_title() : game_title;
+}
+
+// The game's name, and the console it is played as -- or, joined to another
+// device, whose game it is. The clock starts again whenever either changes.
+void App::Impl::update_discord() {
+    if (!discord) return;
+    DiscordActivity activity;
+    if (is_companion()) {
+        activity.details = companion_session->game_title();
+        if (!joining_host.device_name.empty()) activity.state = "Second screen for " + joining_host.device_name;
+    } else if ((source || external_source) && !game_title.empty()) {
+        activity.details = game_title;
+        activity.state = system_profile(system).name;
+    }
+    if (activity.details != discord_activity.details || activity.state != discord_activity.state) {
+        activity.started = activity.details.empty() ? 0 : std::time(nullptr);
+        discord_activity = activity;
+        discord->show(discord_activity);
+    }
 }
 
 bool App::Impl::gamepad_is_here() const {
@@ -7500,6 +7528,11 @@ int App::run(const AppOptions& options) {
     }
 #endif
     impl.start_updater(options);
+    // Not in the tests' runs, which would otherwise tell the Discord of
+    // whoever runs them about each mock game.
+    if (options.exit_after_frames <= 0 && options.exit_after_seconds <= 0.0) {
+        impl.discord.reset(new DiscordPresence(kDiscordApplicationId));
+    }
     impl.active_layout_id = kNewGameLayoutId;
     // A starting guess for the settings screen. Loading a game replaces it with
     // the core for whichever console that game is for.
@@ -7720,6 +7753,7 @@ int App::run(const AppOptions& options) {
         impl.cursor.update(elapsed);
         impl.input.begin_frame();
         impl.tick_identify();
+        impl.update_discord();
 
         // Test hook: hold a touch at a fixed spot by pushing the same events a
         // real device would, so everything downstream is the production path.
