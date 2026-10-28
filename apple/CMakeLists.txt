@@ -451,8 +451,8 @@ else()
     set(DUALSCREEN_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info-tvOS.plist.in")
 endif()
 
-# An icon on the Mac, built from the artwork already in the repository rather
-# than committed again as a second copy of the same picture. iconutil and sips
+# An icon on the Mac, built from assets/app_icon_macos.png (the app icon on the
+# Mac's rounded-square grid) rather than a committed .icns. iconutil and sips
 # are part of macOS, so this needs nothing installed -- but it is not worth
 # failing a build over, so a missing tool means a bundle with the generic icon
 # on it.
@@ -464,7 +464,7 @@ endif()
 set(DUALSCREEN_ICON_FILE "")
 if(NOT DUALSCREEN_EMBEDDED)
     set(ICON_NAME "Dualscreen")
-    set(ICON_SOURCE "${DUALSCREEN_ROOT}/assets/ds_bezel.png")
+    set(ICON_SOURCE "${DUALSCREEN_ROOT}/assets/app_icon_macos.png")
     set(ICONSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.iconset")
     set(ICNS_FILE "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.icns")
     find_program(SIPS_TOOL sips)
@@ -473,9 +473,7 @@ if(NOT DUALSCREEN_EMBEDDED)
         add_custom_command(
             OUTPUT "${ICNS_FILE}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${ICONSET_DIR}"
-            # The sizes iconutil insists on. A square crop of a picture that is
-            # not square is what sips -z does here, which is the right shape
-            # even if it is not yet the right picture -- see apple/README.md.
+            # The sizes iconutil insists on.
             COMMAND ${SIPS_TOOL} -z 16 16     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16.png" > /dev/null
             COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16@2x.png" > /dev/null
             COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_32x32.png" > /dev/null

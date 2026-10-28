@@ -739,13 +739,11 @@ The handful of places the shared code knows it is on an Apple platform:
 
 ## The icon
 
-**On a Mac**, built at build time from `assets/ds_bezel.png` with `sips` and
-`iconutil`, both part of macOS, rather than committing a second copy of a
-picture already in the repository. That artwork is a photograph of a DS,
-square-cropped — it is the right shape and is not really the right picture. A
-purpose-drawn `Dualscreen.icns` dropped in beside this file and named in
-`CMakeLists.txt` would be better. A machine without those two tools builds a
-bundle with the generic icon on it rather than failing.
+**On a Mac**, built at build time from `assets/app_icon_macos.png` with `sips`
+and `iconutil`, both part of macOS, rather than committing an `.icns`. That
+picture is the app icon (`assets/app_icon.svg`) drawn on the Mac's rounded-square
+grid. A machine without those two tools builds a bundle with the generic icon
+on it rather than failing.
 
 **On iOS and tvOS there is no icon**, and that is deliberate. Those platforms
 want an asset catalog rather than an `.icns`, built by a different tool, and a
