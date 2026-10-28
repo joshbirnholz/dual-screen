@@ -1,0 +1,29 @@
+name: DS icon probe
+on:
+  push:
+    branches: [claude/ds-icon-probe]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    if: ${{ !contains(github.event.head_commit.message, 'probe results') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch vgmuseum's DS icons
+        run: |
+          mkdir -p vgm
+          curl -sS https://www.vgmuseum.com/features/icons/ -o vgm/index.html
+          grep -oiE '(src|href)="[^"]+\.(png|gif|jpg)"' vgm/index.html | sed -E 's/^(src|href)="//I; s/"$//' | sort -u > vgm/urls.txt
+          wc -l vgm/urls.txt; head -3 vgm/urls.txt
+          mkdir -p vgm/files
+          cd vgm/files
+          while read u; do
+            case "$u" in http*) url="$u";; /*) url="https://www.vgmuseum.com$u";; *) url="https://www.vgmuseum.com/features/icons/$u";; esac
+            curl -sSf -O "$url" || echo "failed $url" >> ../failed.txt
+          done < ../urls.txt
+          ls | wc -l
+      - name: Keep
+        run: |
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git add vgm && git commit -qm "probe results" && git push
