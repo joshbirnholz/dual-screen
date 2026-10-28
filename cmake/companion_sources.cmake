@@ -115,6 +115,7 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/forwarder/steamgriddb.cpp
     src/ui/forwarder_screen.cpp
     src/util/child_process.cpp
+    src/util/discord_presence.cpp
     src/update/updater.cpp
     src/update/desktop_updater.cpp
     src/update/zip_extract.cpp
