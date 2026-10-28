@@ -4,3 +4,7 @@ advanscene-nds.html 404 18 https://www.advanscene.com/html/Releases/index.php?gt
 advanscene-rel1.html 200 65 https://www.advanscene.com/html/Releases/dbrelds.php?id=1
 advanscene-rel3000.html 200 65 https://www.advanscene.com/html/Releases/dbrelds.php?id=3000
 dsscene-rel1.html 200 8 https://www.ds-scene.net/?s=viewrelease&id=1
+dats.html 200 15840 https://www.advanscene.com/html/dats.php
+ndslist.html 200 30101 https://www.advanscene.com/html/dbndslst.php
+dsscene-releases.xml 200 32793 https://www.ds-scene.net/releases.xml
+dsscene-topic.html 200 65275 https://www.ds-scene.net/?s=viewtopic&nid=13522
