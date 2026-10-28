@@ -24,6 +24,8 @@ import subprocess
 import sys
 import threading
 
+import ssl
+
 import requests
 from Crypto.Cipher import AES
 from PIL import Image
@@ -42,11 +44,21 @@ CA = os.environ.get("NINTENDO_CDN_CERT")  # the server's own certificate, pinned
 local = threading.local()
 
 
+class PinnedAdapter(requests.adapters.HTTPAdapter):
+    # Nintendo's CDN is signed by Nintendo's own CA, which no system trusts;
+    # its certificate is trusted directly instead, and checked as usual.
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context(cafile=CA)
+        context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        kwargs["ssl_context"] = context
+        return super().init_poolmanager(*args, **kwargs)
+
+
 def session():
     if not hasattr(local, "s"):
         local.s = requests.Session()
-        local.s.verify = CA if CA else True
-        adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=3)
+        adapter = (PinnedAdapter if CA else requests.adapters.HTTPAdapter)(
+            pool_connections=4, pool_maxsize=4, max_retries=3)
         local.s.mount("https://", adapter)
     return local.s
 
