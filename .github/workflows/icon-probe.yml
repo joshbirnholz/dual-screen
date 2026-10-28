@@ -13,17 +13,25 @@ jobs:
       - name: Nintendo servers
         run: |
           exec > probe-results.txt 2>&1
-          probe() { echo "== $1"; curl -sS -o out.bin -w 'status %{http_code} type %{content_type} bytes %{size_download}\n' "$1" 2>&1 || true; head -c 300 out.bin | strings | head -5; echo; }
-          probe https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
-          probe http://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe
-          probe https://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
-          probe http://idbe-ctr.cdn.nintendo.net/icondata/10/0004000000030800.idbe
-          probe "https://samurai.wup.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=2"
-          probe "https://samurai.ctr.shop.nintendo.net/samurai/ws/US/titles?offset=0&limit=3&shop_id=1"
-          probe "https://tagaya-wup.cdn.nintendo.net/tagaya/versionlist/EUR/EU/latest_version"
-          probe https://art.gametdb.com/wiiu/coverHQ/US/ARKE01.jpg
-          probe https://www.gametdb.com/wiiutdb.zip
-          probe https://www.gametdb.com/dstdb.zip
+          probe() { echo "== $1"; curl -sS -o out.bin -w 'status %{http_code} type %{content_type} bytes %{size_download}\n' "${@:2}" "$1" 2>&1 || true; head -c 400 out.bin 2>/dev/null | strings | head -6; echo; }
+          echo "#### TLS chain of the icon server"
+          echo | openssl s_client -connect idbe-wup.cdn.nintendo.net:443 -servername idbe-wup.cdn.nintendo.net -showcerts 2>/dev/null > chain.txt
+          grep -E "^ *[0-9] s:|^ *i:" chain.txt
+          awk '/BEGIN CERT/,/END CERT/' chain.txt > chain.pem
+          probe https://idbe-wup.cdn.nintendo.net/icondata/10/000500001010EC00.idbe --cacert chain.pem
+          echo "#### GameTDB"
+          curl -sS -o wiiu.zip https://www.gametdb.com/wiiutdb.zip && unzip -oq wiiu.zip
+          curl -sS -o ds.zip https://www.gametdb.com/dstdb.zip && unzip -oq ds.zip
+          ls -la *.xml
+          grep -m1 -n "<game " wiiutdb.xml; awk '/<game /{n++} n==3' wiiutdb.xml | head -40
+          grep -c "<game " wiiutdb.xml dstdb.xml
+          grep -o "<[a-z_]*" wiiutdb.xml | sort | uniq -c | sort -rn | head -40
+          awk '/<game /{n++} n==3' dstdb.xml | head -40
+          echo "#### DS icon sites"
+          probe https://www.advanscene.com/
+          probe https://art.gametdb.com/ds/
+          probe https://art.gametdb.com/ds/icon/US/AMCE.png
+          probe https://art.gametdb.com/ds/coverS/US/AMCE.png
       - name: Keep the results
         run: |
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
