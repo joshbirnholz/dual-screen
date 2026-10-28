@@ -176,12 +176,14 @@ def main():
         ids = three_ds_title_ids()
         if os.environ.get("LIMIT"):
             ids = ids[: int(os.environ["LIMIT"])]
-        index["3ds"] = run("3DS", ids, three_ds)
+        index.setdefault("3ds", {}).update(run("3DS", ids, three_ds))
     if "wiiu" in which:
         first = int(os.environ.get("WIIU_FIRST", "101000"), 16)
         last = int(os.environ.get("WIIU_LAST", "101FFF"), 16)
         ids = [(0x00050000 << 32) | (n << 8) for n in range(first, last + 1)]
-        index["wiiu"] = run("Wii U", ids, wii_u)
+        if os.environ.get("WIIU_IDS"):  # asking again for ones that timed out
+            ids = [int(t, 16) for t in os.environ["WIIU_IDS"].split(",")]
+        index.setdefault("wiiu", {}).update(run("Wii U", ids, wii_u))
     with open(index_path, "w") as f:
         json.dump(index, f, indent=1, ensure_ascii=False, sort_keys=True)
 

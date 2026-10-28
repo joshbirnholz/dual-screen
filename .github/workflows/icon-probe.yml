@@ -5,33 +5,33 @@ on:
 permissions:
   contents: write
 jobs:
-  fill:
+  retry:
     if: ${{ !contains(github.event.head_commit.message, 'probe results') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: icons
+          path: icons
+      - uses: actions/checkout@v4
+        with:
+          path: probe
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Fetch every icon
+      - name: Ask again for the ones that timed out
         run: |
           pip install -q requests pycryptodome pillow
           echo | openssl s_client -connect idbe-wup.cdn.nintendo.net:443 -servername idbe-wup.cdn.nintendo.net 2>/dev/null | openssl x509 > /tmp/cdn.pem
           export NINTENDO_CDN_CERT=/tmp/cdn.pem
-          mkdir -p /tmp/icons/tools
-          cp tools/build_icons.py tools/ICONS_README.md /tmp/icons/
-          mv /tmp/icons/ICONS_README.md /tmp/icons/README.md
-          mv /tmp/icons/build_icons.py /tmp/icons/tools/
-          cd /tmp && WIIU_FIRST=100000 WIIU_LAST=10FFFF python /tmp/icons/tools/build_icons.py /tmp/icons 2>&1 | tee /tmp/fill-log.txt
-      - name: Publish the icons branch
+          cp probe/tools/build_icons.py icons/tools/build_icons.py
+          cd /tmp && CONSOLES=wiiu WIIU_IDS=0005000010082900,0005000010082C00,0005000010082D00,0005000010082E00,0005000010082F00,0005000010083200,0005000010083300,0005000010083500,0005000010083700,0005000010083900,0005000010083B00,0005000010083C00,0005000010083D00,0005000010083E00,0005000010084000,0005000010084100,0005000010084400,0005000010084600,0005000010084A00,0005000010084D00,0005000010084E00,0005000010084F00,0005000010085000,0005000010085400,0005000010085600,0005000010085700,0005000010085900,0005000010085A00,0005000010085B00,0005000010085C00,0005000010085E00,0005000010107600,0005000010107900,000500001010C000,000500001010C200,000500001010D700,000500001010E400,000500001010E600,000500001010EA00,000500001010EB00,0005000010111700,0005000010111B00,0005000010111C00,0005000010112600,0005000010112C00,0005000010115700,0005000010115800,0005000010115D00,0005000010116900,0005000010116C00,0005000010116E00,0005000010117000,000500001024A900,000500001024AA00,000500001024AB00,000500001024AC00,000500001024BB00,00050000102CD200,00050000102CDC00,00050000102CDD00,00050000102D2600,00050000102D2800,00050000102D2F00,00050000102D4C00,00050000102D4D00,0005000010363600,0005000010363A00,0005000010363C00,0005000010364D00,00050000103EAF00,00050000103EE900,00050000103EEA00,00050000103EEC00,0005000010478200,0005000010478300,0005000010478700,0005000010478A00,0005000010478C00,000500001047B200,0005000010501B00,0005000010586800,0005000010959F00,0005000010E30500 python $GITHUB_WORKSPACE/icons/tools/build_icons.py $GITHUB_WORKSPACE/icons 2>&1 | tee /tmp/retry-log.txt
+      - name: Publish
         run: |
-          cd /tmp/icons
-          cp /tmp/fill-log.txt tools/fill-log.txt
-          git init -q -b icons
+          cd icons
+          cp /tmp/retry-log.txt tools/retry-log.txt
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
-          git add -A && git commit -qm "Official 3DS and Wii U icons, from Nintendo's icon servers"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" icons:icons
-          cd $GITHUB_WORKSPACE && tail -5 /tmp/fill-log.txt > probe-results.txt && ls /tmp/icons/3ds | wc -l >> probe-results.txt && ls /tmp/icons/wiiu | wc -l >> probe-results.txt
+          git add -A && git commit -qm "Wii U icons that timed out the first time" && git push origin icons
+          cd ../probe && tail -3 /tmp/retry-log.txt > probe-results.txt
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
           git add probe-results.txt && git commit -m "probe results" && git push
