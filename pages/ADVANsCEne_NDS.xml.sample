@@ -1,0 +1,67 @@
+67:		<game>
+68-			<imageNumber>1</imageNumber>
+69-			<releaseNumber>1</releaseNumber>
+70-			<title>Metroid Prime Hunters - First Hunt (Demo)</title>
+71-			<saveType>None</saveType>
+72-			<romSize>16777216</romSize>
+73-			<publisher>Nintendo</publisher>
+74-			<location>1</location>
+75-			<sourceRom>Darkfader</sourceRom>
+76-			<language>2</language>
+77-			<files>
+78-				<romCRC extension=".nds">C2FB5233</romCRC>
+79-			</files>
+80-			<im1CRC>789F71C4</im1CRC>
+81-			<im2CRC>633C8693</im2CRC>
+82-			<comment>x001</comment>
+83-			<duplicateID>30</duplicateID>
+84-		</game>
+85:		<game>
+86-			<imageNumber>2</imageNumber>
+87-			<releaseNumber>2</releaseNumber>
+88-			<title>Electroplankton</title>
+89-			<saveType>None</saveType>
+90-			<romSize>16777216</romSize>
+91-			<publisher>Nintendo</publisher>
+92-			<location>7</location>
+93-			<sourceRom>Trashman</sourceRom>
+94-			<language>256</language>
+95-			<files>
+96-				<romCRC extension=".nds">94767CD4</romCRC>
+97-			</files>
+98-			<im1CRC>4CF966EA</im1CRC>
+99-			<im2CRC>82AA0065</im2CRC>
+100-			<comment>0001</comment>
+101-			<duplicateID>72</duplicateID>
+102-		</game>
+103:		<game>
+104-			<imageNumber>3</imageNumber>
+105-			<releaseNumber>3</releaseNumber>
+106-			<title>Need for Speed - Underground 2</title>
+107-			<saveType>Eeprom - 64 kbit</saveType>
+108-			<romSize>33554432</romSize>
+109-			<publisher>Electronic Arts</publisher>
+110-			<location>1</location>
+111-			<sourceRom>Trashman</sourceRom>
+112-			<language>4291</language>
+113-			<files>
+114-				<romCRC extension=".nds">C37AB273</romCRC>
+115-			</files>
+116-			<im1CRC>8C84BB28</im1CRC>
+117-			<im2CRC>03FE72D8</im2CRC>
+118-			<comment>0002</comment>
+119-			<duplicateID>34</duplicateID>
+120-		</game>
+121-		<game>
+122-			<imageNumber>4</imageNumber>
+123-			<releaseNumber>4</releaseNumber>
+124-			<title>Yoshi Touch &amp; Go</title>
+125-			<saveType>Eeprom - 64 kbit</saveType>
+126-			<romSize>16777216</romSize>
+127-			<publisher>Nintendo</publisher>
+128-			<location>1</location>
+129-			<sourceRom>Trashman</sourceRom>
+130-			<language>2</language>
+131-			<files>
+132-				<romCRC extension=".nds">03D56334</romCRC>
+133-			</files>

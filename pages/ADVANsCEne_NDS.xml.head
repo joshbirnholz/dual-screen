@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<dat xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="datas.xsd">
+	<configuration>
+		<datName>ADVANsCEne Nintendo DS Collection</datName>
+		<datVersion>2617</datVersion>
+		<system>Nintendo DS</system>
+		<screenshotsWidth>256</screenshotsWidth>
+		<screenshotsHeight>384</screenshotsHeight>
+		<infos>
+			<title visible="false" inNamingOption="true" default="false"/>
+			<location visible="true" inNamingOption="true" default="true"/>
+			<publisher visible="true" inNamingOption="true" default="true"/>
+			<sourceRom visible="true" inNamingOption="true" default="true"/>
+			<saveType visible="true" inNamingOption="true" default="true"/>
+			<romSize visible="true" inNamingOption="true" default="true"/>
+			<releaseNumber visible="true" inNamingOption="true" default="false"/>
+			<languageNumber visible="true" inNamingOption="true" default="false"/>
+			<comment visible="true" inNamingOption="true" default="false"/>
+			<romCRC visible="true" inNamingOption="true" default="true"/>
+			<im1CRC visible="true" inNamingOption="false" default="false"/>
+			<im2CRC visible="true" inNamingOption="false" default="false"/>
+			<languages visible="true" inNamingOption="true" default="true"/>
+		</infos>
+		<canOpen>
+			<extension>.nds</extension>
+			<extension>.neo</extension>
+			<extension>.ids</extension>
+            <extension>.dsi</extension>
+		</canOpen>
+		<newDat>
+ 			<datVersionURL>http://www.advanscene.com/offline/version/ADVANsCEne_NDS.txt</datVersionURL>
+			<datURL fileName="ADVANsCEne_NDS.zip">http://www.advanscene.com/offline/datas/ADVANsCEne_NDS.zip</datURL>
+			<imURL>http://www.advanscene.com/offline/imgs/ADVANsCEne_NDS/</imURL>
+		</newDat>
+		<search>
+			<to value="location" default="true" auto="true"/>
+			<to value="romSize" default="true" auto="false">
+                <find operation="=" value="1048576">8Mbits</find>
+                <find operation="=" value="2097152">16Mbits</find>
+                <find operation="=" value="4194304">32Mbits</find>
+				<find operation="=" value="8388608">64Mbits</find>
+				<find operation="=" value="16777216">128Mbits</find>
+				<find operation="=" value="33554432">256Mbits</find>
+				<find operation="=" value="67108864">512Mbits</find>
+				<find operation="=" value="134217728">1024Mbits</find>
+                <find operation="=" value="268435456">2048Mbits</find>
+                <find operation="=" value="536870912">4096Mbits</find>
+			</to>
+			<to value="languages" default="true" auto="true"/>
+			<to value="saveType" default="true" auto="false">
+				<find operation="inNoCase" value="EEPROM - 4 kbit">Eeprom - 4 kbit</find>
+				<find operation="inNoCase" value="EEPROM - 64 kbit">Eeprom - 64 kbit</find>
+				<find operation="inNoCase" value="EEPROM - 512 kbit">Eeprom - 512 kbit</find>
+				<find operation="inNoCase" value="FLASH - 2 mbit">Flash - 2 mbit</find>
+				<find operation="inNoCase" value="FLASH - 4 mbit">Flash - 4 mbit</find>
+      
