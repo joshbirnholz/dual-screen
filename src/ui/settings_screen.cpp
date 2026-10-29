@@ -72,99 +72,56 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
     cores_ = cores;
     scroll_ = 0.0f;
     page_ = Page::Main;
-    pairing_ = false;
+    asking_remote_start_ = false;
     notice_.clear();
 #if DS_REMOTE_START_HOST
     remote_start_on_ = service_starts_at_login();
-    paired_now_ = net::RemoteStartRecord(remote_start_record()).paired_devices();
 #endif
 }
 
+void SettingsScreen::toggle_remote_start() {
 #if DS_REMOTE_START_HOST
-void SettingsScreen::open_pairing() {
-    net::RemoteStartRecord record(remote_start_record());
-    const int64_t now = static_cast<int64_t>(std::time(nullptr));
-    pair_code_ = record.show_code(now);
-    pair_until_ = now + net::kPairingCodeSeconds;
-    paired_now_ = record.paired_devices();
-    paired_before_ = paired_now_.size();
-    paired_name_.clear();
-    pair_checked_ = 0.0;
-    pairing_ = true;
-    // On Done, so A puts it away.
-    alert_cursor_.reset(static_cast<int>(pairing_buttons().size()), static_cast<int>(pairing_buttons().size()) - 1);
-}
-
-void SettingsScreen::close_pairing() {
-    pairing_ = false;
-    net::RemoteStartRecord(remote_start_record()).hide_code();
-}
-
-void SettingsScreen::refresh_pairing() {
-    // Read again twice a second: the service writes the record when a
-    // device pairs.
-    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (now - pair_checked_ < 0.5) return;
-    pair_checked_ = now;
-    net::RemoteStartRecord record(remote_start_record());
-    const std::size_t buttons_before = pairing_buttons().size();
-    paired_now_ = record.paired_devices();
-    if (paired_now_.size() > paired_before_) {
-        // Paired: the code is used up, and the alert says who.
-        paired_name_ = paired_now_.back();
-        paired_before_ = paired_now_.size();
-        pair_code_.clear();
-    } else if (!pair_code_.empty() && static_cast<int64_t>(std::time(nullptr)) > pair_until_) {
-        // Run out while it was up: a new one in its place.
-        const int64_t wall = static_cast<int64_t>(std::time(nullptr));
-        pair_code_ = record.show_code(wall);
-        pair_until_ = wall + net::kPairingCodeSeconds;
+    std::string error;
+    const bool on = !remote_start_on_;
+    if (!set_service_starts_at_login(on, &error)) {
+        notice_ = std::string("Remote Start could not be ") + (on ? "enabled" : "disabled") + ": " + error + ".";
+        alert_cursor_.reset(1, 0);
+        return;
     }
-    if (pairing_buttons().size() != buttons_before) {
-        alert_cursor_.reset(static_cast<int>(pairing_buttons().size()),
-                            static_cast<int>(pairing_buttons().size()) - 1);
-    }
-}
-#else
-void SettingsScreen::open_pairing() {}
-void SettingsScreen::close_pairing() { pairing_ = false; }
-void SettingsScreen::refresh_pairing() {}
+    remote_start_on_ = on;
+    // Off forgets every device let in, so enabling it again lets in only
+    // the ones that join a game here again.
+    if (!on) net::RemoteStartRecord(remote_start_record()).forget_devices();
 #endif
-
-std::vector<PopupButton> SettingsScreen::pairing_buttons() const {
-    if (paired_now_.empty()) return {{"Done", ""}};
-    return {{"Forget Paired Devices", ""}, {"Done", ""}};
 }
 
-PopupText SettingsScreen::pairing_text() const {
+std::vector<PopupButton> SettingsScreen::remote_start_buttons() const {
+    return {{"Cancel", ""}, {remote_start_on_ ? "Disable" : "Enable", ""}};
+}
+
+PopupText SettingsScreen::remote_start_text() const {
     PopupText words;
-    if (!paired_name_.empty()) {
-        words.message = paired_name_ + " can start games here now.";
-        words.lines.push_back("On it, choose Start a Game under " + settings_.device_name +
-                              " in the list of devices to connect to.");
+    if (remote_start_on_) {
+        words.message = "Remote Start will be disabled, and its background service will be removed from this "
+                        "computer.";
+        words.lines.push_back("Other devices will no longer be able to start games here. To let one again, enable "
+                              "Remote Start and join a game here from it once.");
         return words;
     }
-    words.message = "On the other device, choose Start a Game under " + settings_.device_name +
-                    " in the list of devices to connect to, then enter this code.";
-    // The code itself is drawn large between these -- see
-    // pairing_code_height().
-    words.lines.push_back(paired_now_.empty() ? std::string("No devices are paired yet.")
-                                              : std::to_string(paired_now_.size()) +
-                                                    (paired_now_.size() == 1 ? " device is" : " devices are") +
-                                                    " paired already.");
+    words.message = "Remote Start will install a small background service on this computer.";
+    words.lines.push_back("The service will start each time you log in, in Game Mode too, and keep running with "
+                          "Dualscreen closed.");
+    words.lines.push_back("Any device that joins a game here will then show the games you play here on its home "
+                          "screen, and can start one here from there, waking this computer first if it is asleep "
+                          "and Wake-on-LAN is on.");
+    words.lines.push_back("Disable Remote Start will remove the service.");
     return words;
 }
 
-float SettingsScreen::pairing_code_height(float output_height) const {
-    if (pair_code_.empty() || !paired_name_.empty()) return 0.0f;
-    return std::round(TextRenderer::line_height(popup_scale(output_height)) * 4.0f);
-}
-
-PopupGeometry SettingsScreen::pairing_geometry(float output_width, float output_height) const {
+PopupGeometry SettingsScreen::remote_start_geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    return popup_geometry(output_width, output_height,
-                          popup_text_height(pairing_text(), width, output_height) + pairing_code_height(output_height),
-                          pairing_buttons());
+    return popup_geometry(output_width, output_height, popup_text_height(remote_start_text(), width, output_height),
+                          remote_start_buttons());
 }
 
 PopupGeometry SettingsScreen::notice_geometry(float output_width, float output_height) const {
@@ -560,7 +517,8 @@ const char* SettingsScreen::row_description(int index) const {
     }
 #if DS_REMOTE_START_HOST
     if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::RemoteStart)) {
-        return "Lets paired devices start games here, even with Dualscreen closed.";
+        return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
+                                : "Installs a background service so other devices can start games here.";
     }
 #endif
     return nullptr;
@@ -733,23 +691,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             break;
 #endif
 #if DS_REMOTE_START_HOST
-        case Row::RemoteStart: {
-            std::string error;
-            if (set_service_starts_at_login(!remote_start_on_, &error)) {
-                remote_start_on_ = !remote_start_on_;
-            } else {
-                notice_ = "Remote Start could not be turned on: " + error + ".";
-                alert_cursor_.reset(1, 0);
-            }
-            break;
-        }
-        case Row::PairDevice:
-            if (remote_start_on_) {
-                open_pairing();
-            } else {
-                notice_ = "Turn on Remote Start first, so the other device can reach this one.";
-                alert_cursor_.reset(1, 0);
-            }
+        case Row::RemoteStart:
+            // Asked first: it installs or removes a service.
+            asking_remote_start_ = true;
+            alert_cursor_.reset(static_cast<int>(remote_start_buttons().size()), 1);
             break;
 #endif
         case Row::UiSounds:
@@ -837,24 +782,12 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
         }
         return result;
     }
-    if (pairing_) {
-        refresh_pairing();
-        const int answer = alert_cursor_.update(actions, pointers, pairing_geometry(output_width, output_height));
+    if (asking_remote_start_) {
+        const int answer =
+            alert_cursor_.update(actions, pointers, remote_start_geometry(output_width, output_height));
         if (answer == PopupCursor::kNone) return result;
-#if DS_REMOTE_START_HOST
-        if (answer == 0 && pairing_buttons().size() > 1) {
-            // Every paired device asked for a code again next time.
-            net::RemoteStartRecord(remote_start_record()).forget_devices();
-            paired_now_.clear();
-            paired_before_ = 0;
-            paired_name_.clear();
-            if (pair_code_.empty()) open_pairing();
-            alert_cursor_.reset(static_cast<int>(pairing_buttons().size()),
-                                static_cast<int>(pairing_buttons().size()) - 1);
-            return result;
-        }
-#endif
-        close_pairing();
+        asking_remote_start_ = false;
+        if (answer == 1) toggle_remote_start();
         return result;
     }
     // A row's choices, up beside it, take every press until put away.
@@ -1004,9 +937,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Discord Rich Presence", settings_.discord_status ? "On" : "Off"},
 #endif
 #if DS_REMOTE_START_HOST
-        {"Remote Start", remote_start_on_ ? "On" : "Off"},
-        {"Pair a Device", paired_now_.empty() ? std::string()
-                                              : std::to_string(paired_now_.size()) + " paired"},
+        {remote_start_on_ ? "Disable Remote Start" : "Enable Remote Start", ""},
 #endif
         {"Sound Effects", settings_.ui_sounds ? "On" : "Off"},
     };
@@ -1140,28 +1071,11 @@ void SettingsScreen::render(QuadRenderer& quads,
     glyph_aspect_ = glyphs.width_for(1.0f);
     choice_.render(quads, text, output_width, output_height, &glyphs);
     text_entry_.render(quads, text, output_width, output_height);
-    if (pairing_) {
-        const PopupGeometry popup = pairing_geometry(output_width, output_height);
-        const std::vector<PopupButton> buttons = pairing_buttons();
-        draw_popup(quads, text, output_width, output_height, popup, buttons, alert_cursor_.focus(),
+    if (asking_remote_start_) {
+        const PopupGeometry popup = remote_start_geometry(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, remote_start_buttons(), alert_cursor_.focus(),
                    alert_cursor_.shown());
-        const PopupText words = pairing_text();
-        float y = draw_popup_text(quads, text, PopupText{words.message, {}, 0}, popup.body.x, popup.body.y,
-                                  popup.body.w, output_height);
-        if (const float code_height = pairing_code_height(output_height); code_height > 0.0f) {
-            // Large, in two halves as it is read out.
-            const float code_scale = popup_scale(output_height) * 2.4f;
-            const std::string code = pair_code_.size() == 6 ? pair_code_.substr(0, 3) + " " + pair_code_.substr(3)
-                                                            : pair_code_;
-            text.draw(quads, code, popup.body.x + popup.body.w * 0.5f,
-                      std::round(y + (code_height - TextRenderer::line_height(code_scale)) * 0.5f), code_scale,
-                      ui_theme().text, TextAlign::Center);
-            y += code_height;
-        }
-        // Less the half line draw_popup_text() puts before the first.
-        draw_popup_text(quads, text, PopupText{std::string(), words.lines, words.plain}, popup.body.x,
-                        y - std::round(TextRenderer::line_height(popup_scale(output_height)) * 0.5f), popup.body.w,
-                        output_height);
+        draw_popup_text(quads, text, remote_start_text(), popup.body.x, popup.body.y, popup.body.w, output_height);
     } else if (!notice_.empty()) {
         const PopupGeometry popup = notice_geometry(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, {{"OK", ""}}, alert_cursor_.focus(),
@@ -1192,15 +1106,15 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, text_entry_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, remote_start_on_ ? 1u : 0u);
-    mix_sound_state(view.rest, pairing_ ? 1u : 0u);
+    mix_sound_state(view.rest, asking_remote_start_ ? 1u : 0u);
     mix_sound_state(view.rest, notice_.empty() ? 0u : 1u);
-    if (pairing_ || !notice_.empty()) mix_sound_state(view.focus, static_cast<uint64_t>(alert_cursor_.focus() + 2000));
+    if (asking_remote_start_ || !notice_.empty()) mix_sound_state(view.focus, static_cast<uint64_t>(alert_cursor_.focus() + 2000));
     mix_sound_state(view.rest, settings_.ds_nickname);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.ds_favorite_color + 1));
     if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
     // The switches: the rows drawn as one -- see render().
-    if (page_ == Page::Main && !choice_.is_open() && !text_entry_.is_open() && !pairing_ && notice_.empty()) {
+    if (page_ == Page::Main && !choice_.is_open() && !text_entry_.is_open() && !asking_remote_start_ && notice_.empty()) {
         const int row = focus_ - first_setting_row();
         if (row >= 0 && row < kRowCount) {
             switch (static_cast<Row>(row)) {
@@ -1208,9 +1122,6 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
 #if DS_PLAYS_WII_U
                 case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
                 case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
-#endif
-#if DS_REMOTE_START_HOST
-                case Row::RemoteStart: view.toggle = remote_start_on_ ? 1 : 0; break;
 #endif
                 case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
                 default: break;

@@ -31,5 +31,8 @@ std::string this_program();
 // starts it now; off stops it.
 bool service_starts_at_login();
 bool set_service_starts_at_login(bool on, std::string* error);
+// When it is on: its unit rewritten, and the service restarted, if an older
+// build wrote it -- so the service always runs this version.
+bool refresh_service();
 
 }  // namespace ds

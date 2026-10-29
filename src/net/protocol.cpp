@@ -1141,6 +1141,39 @@ bool decode_update_request(const uint8_t* data, std::size_t size, UpdateRequestM
     return true;
 }
 
+void encode_remote_start_grant(const RemoteStartGrantMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_string(out, message.host_id);
+    put_string(out, message.name);
+    put_string(out, message.kind);
+    put_u16(out, message.port);
+    put_string(out, message.token);
+    const uint8_t count = static_cast<uint8_t>(std::min<std::size_t>(message.macs.size(), 16));
+    put_u8(out, count);
+    for (uint8_t index = 0; index < count; ++index) put_string(out, message.macs[index]);
+    finish_message(out, start, MessageType::RemoteStartGrant);
+}
+
+bool decode_remote_start_grant(const uint8_t* data, std::size_t size, RemoteStartGrantMessage& out) {
+    Reader reader(data, size);
+    RemoteStartGrantMessage message;
+    uint8_t count = 0;
+    reader.string(message.host_id);
+    reader.string(message.name);
+    reader.string(message.kind);
+    reader.u16(message.port);
+    reader.string(message.token);
+    reader.u8(count);
+    for (uint8_t index = 0; index < count && reader.ok(); ++index) {
+        std::string mac;
+        reader.string(mac);
+        message.macs.push_back(mac);
+    }
+    if (!reader.ok() || message.host_id.empty() || message.token.empty()) return false;
+    out = std::move(message);
+    return true;
+}
+
 void encode_update_answer(const UpdateAnswerMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_u8(out, static_cast<uint8_t>(message.answer));

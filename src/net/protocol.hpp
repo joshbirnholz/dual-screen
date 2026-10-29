@@ -149,6 +149,11 @@ enum class MessageType : uint16_t {
     // while it is up -- see WiiUPlayerViewMessage. Sent when it changes, and
     // once more when it closes.
     WiiUPlayerView = 30,
+    // host -> companion: this device may start games on the host's computer
+    // from now on, with this token -- see RemoteStartGrantMessage. Sent on
+    // joining, when Remote Start is on there. A companion from before this
+    // ignores it.
+    RemoteStartGrant = 31,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -714,6 +719,20 @@ struct UpdateAnswerMessage {
     bool restarts = true;
 };
 
+// What a companion needs to start games on the host's computer later, from
+// its own first screen, with nobody at the computer: who the computer is to
+// net::LaunchService, the token that service will take from this device,
+// and how to wake it. Handed over on joining a game there, which is all the
+// pairing there is.
+struct RemoteStartGrantMessage {
+    std::string host_id;
+    std::string name;
+    std::string kind;
+    uint16_t port = 0;
+    std::string token;
+    std::vector<std::string> macs;
+};
+
 struct GraphicPacksViewChoice {
     std::string category;
     std::vector<std::string> presets;
@@ -1034,6 +1053,7 @@ void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_update_request(const UpdateRequestMessage& message, std::vector<uint8_t>& out);
+void encode_remote_start_grant(const RemoteStartGrantMessage& message, std::vector<uint8_t>& out);
 void encode_update_answer(const UpdateAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
@@ -1096,6 +1116,7 @@ bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerV
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 bool decode_update_request(const uint8_t* data, std::size_t size, UpdateRequestMessage& out);
+bool decode_remote_start_grant(const uint8_t* data, std::size_t size, RemoteStartGrantMessage& out);
 bool decode_update_answer(const uint8_t* data, std::size_t size, UpdateAnswerMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one

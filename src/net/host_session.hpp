@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -114,6 +115,10 @@ public:
         // Rate the game's audio is produced at, so the companion can open its
         // own output to match.
         uint32_t audio_sample_rate = 0;
+        // Asked as each companion joins, by the name it gave: the token for
+        // it to start games on this computer later, when Remote Start is on
+        // -- see RemoteStartGrantMessage. False, or none, hands it nothing.
+        std::function<bool(const std::string& device, RemoteStartGrantMessage& out)> remote_start_grant;
     };
 
     HostSession() = default;

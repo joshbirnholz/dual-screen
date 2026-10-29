@@ -20,6 +20,7 @@ const char* title_for(LauncherChoice choice) {
         case LauncherChoice::ConnectAsBottomScreen: return "Connect as Bottom Screen";
         case LauncherChoice::Settings: return "Settings";
         case LauncherChoice::Quit: return "Quit";
+        case LauncherChoice::StartRecent:
         case LauncherChoice::None: break;
     }
     return "";
@@ -86,14 +87,14 @@ std::vector<PixelRect> LauncherScreen::compute_tiles(float output_width, float o
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     const float below = rows.empty() ? frame.content_top : rows.back().y + rows.back().h;
-    // Two rows in what is left under the menu, along the foot of the page,
+    // One row in what is left under the menu, along the foot of the page,
     // as a Wii U GamePad's Quick Start lays its icons out.
     const float gap = std::round(frame.line * 1.2f);
     const float room = frame.content_bottom - below - gap;
-    const float tile = std::round(std::min(frame.line * 6.0f, (room - gap) / 2.0f));
+    const float tile = std::round(std::min(frame.line * 7.0f, room));
     if (tile < frame.line * 2.5f) return tiles;
     columns = std::max(1, static_cast<int>((frame.panel.w + gap) / (tile + gap)));
-    const int shown = std::min(static_cast<int>(tiles_.size()), columns * 2);
+    const int shown = std::min(static_cast<int>(tiles_.size()), columns);
     const int lines = (shown + columns - 1) / columns;
     const float top = frame.content_bottom - lines * tile - (lines - 1) * gap;
     for (int index = 0; index < shown; ++index) {
@@ -347,7 +348,6 @@ int HostPickerScreen::entry_at(float x, float y, float output_width, float outpu
 }
 
 HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredHost>& hosts,
-                                          const std::vector<ds::net::LaunchHost>& computers,
                                           const std::vector<UiAction>& actions,
                                           const std::vector<PointerEvent>& pointers,
                                           float output_width,
@@ -357,18 +357,11 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
         return result;
     }
 
-    const int count = static_cast<int>(hosts.size() + computers.size());
-    host_count_ = hosts.size() + computers.size();
-    // The row at `index`, chosen: a game to join, or a computer to start
-    // one on.
+    const int count = static_cast<int>(hosts.size());
+    host_count_ = hosts.size();
     const auto choose = [&](int index) {
-        if (index < static_cast<int>(hosts.size())) {
-            result.chosen = true;
-            result.host = hosts[static_cast<std::size_t>(index)];
-        } else {
-            result.start_on = true;
-            result.launch_host = computers[static_cast<std::size_t>(index) - hosts.size()];
-        }
+        result.chosen = true;
+        result.host = hosts[static_cast<std::size_t>(index)];
     };
 
     for (const UiAction action : actions) {
@@ -398,7 +391,7 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
         if (index < count && tap_chooses(focus_, index)) choose(index);
     }
 
-    if (result.chosen || result.cancelled || result.start_on) {
+    if (result.chosen || result.cancelled) {
         open_ = false;
     }
     return result;
@@ -428,7 +421,6 @@ void HostPickerScreen::render(QuadRenderer& quads,
                               float output_width,
                               float output_height,
                               const std::vector<ds::net::DiscoveredHost>& hosts,
-                              const std::vector<ds::net::LaunchHost>& computers,
                               const std::string& status) {
     if (!open_) {
         return;
@@ -437,7 +429,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
     const UiTheme& theme = ui_theme();
     float scale = 1.0f;
     const std::vector<PixelRect> rows =
-        compute_rows(hosts.size() + computers.size(), output_width, output_height, scale);
+        compute_rows(hosts.size(), output_width, output_height, scale);
     const float line = TextRenderer::line_height(scale);
     const PageFrame frame = page_frame(output_width, output_height);
 
@@ -449,7 +441,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
     draw_page_header(quads, text, frame, heading);
     draw_page_status(quads, text, glyphs, frame, status, theme.text_dim);
 
-    if (hosts.empty() && computers.empty()) {
+    if (hosts.empty()) {
         text.draw_wrapped(quads,
                           "No devices found yet. Make sure a game is running on the other device, "
                           "and that both are on the same network.",
@@ -458,28 +450,6 @@ void HostPickerScreen::render(QuadRenderer& quads,
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
-        if (index >= hosts.size()) {
-            // A computer with nothing running: its name, and what choosing
-            // it does.
-            const ds::net::LaunchHost& computer = computers[index - hosts.size()];
-            const bool focused = static_cast<int>(index) == focus_;
-            draw_menu_row(quads, row, focused, scale, index + 1 == rows.size(),
-                          static_cast<int>(index) == focus_ + 1);
-            const float pad = menu_row_pad(line);
-            const float icon_size = line * 2.0f;
-            const PixelRect icon_rect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size};
-            quads.draw_rounded_rect(icon_rect, icon_rect.w * 0.12f,
-                                    Color{theme.text_dim.r, theme.text_dim.g, theme.text_dim.b, theme.text_dim.a * 0.35f});
-            const float text_x = row.x + pad * 1.8f + icon_size;
-            const float sub_scale = scale * 0.75f;
-            const float step = line * 1.3f;
-            const float top = row.y + (row.h - step - TextRenderer::line_height(sub_scale)) * 0.5f;
-            text.draw(quads, "Start a Game", text_x, top, scale, menu_row_text(focused));
-            // One not answering, remembered from before, will be woken first.
-            text.draw(quads, computer.asleep ? computer.name + "   asleep, will be woken" : computer.name, text_x,
-                      top + step, sub_scale, theme.text_dim);
-            continue;
-        }
         const ds::net::DiscoveredHost& host = hosts[index];
         const bool focused = (static_cast<int>(index) == focus_);
         const bool available = host.offers(wanted_screen_);

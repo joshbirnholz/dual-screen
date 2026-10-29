@@ -207,10 +207,10 @@ private:
         DiscordStatus,
 #endif
 #if DS_REMOTE_START_HOST
-        // Whether paired devices can start games here, and pairing one --
-        // an alert showing the code to enter on it.
+        // Enable or Disable Remote Start: installing the background service
+        // that lets devices start games here, or removing it, each asked
+        // first in an alert that says what it will do.
         RemoteStart,
-        PairDevice,
 #endif
         UiSounds,
         Count
@@ -328,28 +328,18 @@ private:
     float glyph_aspect_ = 1.0f;
     // Remote Start, as the system has it: whether its unit is installed.
     bool remote_start_on_ = false;
-    // Pair a Device's alert, up while `pairing_`: the code it shows, until
-    // when, and the devices paired when it went up, so one pairing while it
-    // is showing is said. `notice_` is an alert with only OK -- Remote
+    // The alert asking before Remote Start is enabled or disabled, up while
+    // `asking_remote_start_`. `notice_` is an alert with only OK -- Remote
     // Start not turning on, say -- when it is not empty.
-    bool pairing_ = false;
-    std::string pair_code_;
-    int64_t pair_until_ = 0;
-    std::size_t paired_before_ = 0;
-    std::vector<std::string> paired_now_;
-    std::string paired_name_;
-    double pair_checked_ = 0.0;
+    bool asking_remote_start_ = false;
     std::string notice_;
     PopupCursor alert_cursor_;
     std::string remote_start_record() const { return paths_.config_dir + "/remote_start.json"; }
-    void open_pairing();
-    void close_pairing();
-    // Brings the alert up to date with what the service has done.
-    void refresh_pairing();
-    std::vector<PopupButton> pairing_buttons() const;
-    PopupText pairing_text() const;
-    float pairing_code_height(float output_height) const;
-    PopupGeometry pairing_geometry(float output_width, float output_height) const;
+    // Enables or disables it, as the alert asked.
+    void toggle_remote_start();
+    std::vector<PopupButton> remote_start_buttons() const;
+    PopupText remote_start_text() const;
+    PopupGeometry remote_start_geometry(float output_width, float output_height) const;
     PopupGeometry notice_geometry(float output_width, float output_height) const;
 
     // The DS nickname being typed -- see type().

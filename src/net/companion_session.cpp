@@ -742,6 +742,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             break;
         }
+        case MessageType::RemoteStartGrant: {
+            RemoteStartGrantMessage grant;
+            if (decode_remote_start_grant(payload.data(), payload.size(), grant)) remote_start_grant_ = grant;
+            break;
+        }
         case MessageType::UpdateRequest: {
             UpdateRequestMessage request;
             if (decode_update_request(payload.data(), payload.size(), request) && update_requests_.size() < 4) {
@@ -3645,6 +3650,13 @@ SystemScreens CompanionSession::screens_geometry() const {
     // build, so the sizes are looked up rather than measured from whatever
     // frame happened to arrive first.
     return system_profile(system_).screens;
+}
+
+bool CompanionSession::take_remote_start_grant(RemoteStartGrantMessage& out) {
+    if (!remote_start_grant_) return false;
+    out = std::move(*remote_start_grant_);
+    remote_start_grant_.reset();
+    return true;
 }
 
 bool CompanionSession::take_update_request(UpdateRequest& out) {

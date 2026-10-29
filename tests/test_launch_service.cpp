@@ -1,7 +1,7 @@
 // Starting a game on a PC from a connected device, over a real socket on
-// loopback: the device finds the PC, is turned away until it has been paired,
-// pairs with the code showing and no other, and then sees the PC's games and
-// starts one -- only ever one the PC listed.
+// loopback: the device finds the PC, is turned away until it has been given
+// a token -- as joining a game there gives one -- and then sees the PC's
+// games and starts one -- only ever one the PC listed.
 
 #include "test_support.hpp"
 
@@ -17,6 +17,7 @@
 
 #include "launch/game_catalog.hpp"
 #include "net/launch_service.hpp"
+#include "net/protocol.hpp"
 
 using namespace ds;
 using namespace ds::net;
@@ -35,7 +36,6 @@ std::string make_sandbox() {
     return directory != nullptr ? std::string(directory) : std::string();
 }
 
-int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
 
 void test_a_device_pairs_then_starts_a_game() {
     const std::string sandbox = make_sandbox();
@@ -96,19 +96,13 @@ void test_a_device_pairs_then_starts_a_game() {
     CHECK(!list_host_games(host, "", games, unpaired, &error));
     CHECK(unpaired);
 
-    // No code showing, or the wrong one: no.
-    std::string token;
-    CHECK(!pair_with_host(host, "123456", "Switch", token, &error));
+    // A token made up: no.
+    CHECK(!list_host_games(host, "0123456789abcdef", games, unpaired, &error));
+    CHECK(unpaired);
+    // The one given as it joined a game there: yes.
     RemoteStartRecord record(record_path);
-    const std::string code = record.show_code(now());
-    CHECK_EQ(code.size(), 6u);
-    const std::string wrong = code == "000000" ? "000001" : "000000";
-    CHECK(!pair_with_host(host, wrong, "Switch", token, &error));
-    // The one showing: yes, once.
-    CHECK_MSG(pair_with_host(host, code, "Switch", token, &error), error);
+    const std::string token = record.grant("Switch");
     CHECK(!token.empty());
-    std::string again;
-    CHECK(!pair_with_host(host, code, "Phone", again, &error));
     CHECK(record.paired_devices() == std::vector<std::string>{"Switch"});
 
     CHECK_MSG(list_host_games(host, token, games, unpaired, &error), error);
@@ -139,19 +133,40 @@ void test_a_device_pairs_then_starts_a_game() {
     service.stop();
 }
 
-void test_a_code_runs_out() {
+// The same device joining again keeps its token; another gets its own.
+void test_a_joining_device_is_given_a_token() {
     const std::string sandbox = make_sandbox();
     RemoteStartRecord record(sandbox + "/remote_start.json");
-    const std::string code = record.show_code(1000);
-    std::string token;
-    CHECK(!record.pair(code, "Switch", 1000 + kPairingCodeSeconds + 1, token));
-    const std::string fresh = record.show_code(2000);
-    record.hide_code();
-    CHECK(!record.pair(fresh, "Switch", 2001, token));
-    const std::string last = record.show_code(3000);
-    CHECK(record.pair(last, "Switch", 3001, token));
-    CHECK(record.paired(token));
+    const std::string token = record.grant("Switch");
+    CHECK(!token.empty());
+    CHECK_STR_EQ(record.grant("Switch"), token);
+    const std::string phone = record.grant("Phone");
+    CHECK(!phone.empty() && phone != token);
+    CHECK(record.paired(token) && record.paired(phone));
     CHECK(!record.paired(""));
+    CHECK_EQ(record.paired_devices().size(), 2u);
+    record.forget_devices();
+    CHECK(!record.paired(token));
+}
+
+// The token handed over in the session, kept on the device: the token, and
+// how to wake that computer.
+void test_the_grant_is_kept() {
+    RemoteStartGrantMessage read;
+    read.host_id = "pc1";
+    read.name = "Den PC";
+    read.token = "abc";
+    read.macs = {"aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"};
+    const std::string path = make_sandbox() + "/remote_start_tokens.json";
+    LaunchHost host;
+    host.id = read.host_id;
+    host.name = read.name;
+    host.address = "192.168.1.20";
+    host.macs = read.macs;
+    CHECK(keep_remote_start_grant(path, host, read.token));
+    CHECK_STR_EQ(remote_start_token(path, "pc1"), "abc");
+    const std::vector<LaunchHost> remembered = remembered_computers(path);
+    CHECK(remembered.size() == 1u && remembered[0].macs == read.macs);
 }
 
 // The device's end: a token kept by the computer's id, found again, and
@@ -165,11 +180,6 @@ void test_a_device_keeps_its_tokens() {
     CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
     CHECK(keep_remote_start_token(path, "pc1", ""));
     CHECK(remote_start_token(path, "pc1").empty());
-    CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
-    // A grid unless the list was chosen.
-    CHECK(remote_start_grid(path));
-    CHECK(keep_remote_start_grid(path, false));
-    CHECK(!remote_start_grid(path));
     CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
 }
 
@@ -349,9 +359,7 @@ void test_the_recent_games_feed() {
         service.stop();
         return;
     }
-    RemoteStartRecord record(config.record_path);
-    std::string token;
-    CHECK_MSG(pair_with_host(hosts[0], record.show_code(now()), "Switch", token, &error), error);
+    const std::string token = RemoteStartRecord(config.record_path).grant("Switch");
     const std::string tokens = sandbox + "/remote_start_tokens.json";
     CHECK(keep_remote_start_token(tokens, hosts[0].id, token));
 
@@ -427,7 +435,8 @@ void test_recent_games_are_kept() {
 
 int main() {
     test_a_device_pairs_then_starts_a_game();
-    test_a_code_runs_out();
+    test_a_joining_device_is_given_a_token();
+    test_the_grant_is_kept();
     test_a_device_keeps_its_tokens();
     test_the_finder_finds_a_computer();
     test_base64();

@@ -24,9 +24,9 @@ namespace ds::net {
 // are none -- and starts the one asked for.
 //
 // Unlike joining a game already on screen, this starts something on a
-// machine nobody may be sitting at, so a device is paired with it once: the
-// PC's Settings show a code while Pair a Device is open, the device sends it
-// back, and is given a token it shows every time after.
+// machine nobody may be sitting at, so only a device given a token may: one
+// that has joined a game on that PC while Remote Start was on there, which
+// the host hands over as it is joined -- see RemoteStartGrantMessage.
 //
 // A search is a broadcast question on kLaunchQueryPort, answered by each PC
 // with who it is. Everything after that is one request and one answer on a
@@ -34,8 +34,6 @@ namespace ds::net {
 
 constexpr uint16_t kLaunchQueryPort = 47825;
 constexpr uint16_t kLaunchPort = 47826;
-// How long a code shown for pairing stays good for.
-constexpr int64_t kPairingCodeSeconds = 300;
 
 // A PC that can start games, as it answered a search.
 struct LaunchHost {
@@ -53,22 +51,19 @@ struct LaunchHost {
     bool asleep = false;
 };
 
-// The PC end's own record: who it is, the code being shown, and the devices
-// paired with it. Kept as JSON in one file, which the app writes the code
-// into and the service reads, so the two need nothing else between them.
+// The PC end's own record: who it is, and the devices given a token. Kept as
+// JSON in one file, which the app writes the tokens into and the service
+// reads, so the two need nothing else between them.
 class RemoteStartRecord {
 public:
     explicit RemoteStartRecord(std::string path) : path_(std::move(path)) {}
 
     // Who this PC is, made up the first time and kept.
     std::string host_id();
-    // A new six-digit code, good for kPairingCodeSeconds from `now`.
-    std::string show_code(int64_t now);
-    // Taken down: the page showing it closed.
-    void hide_code();
-    // The token for `device`, if `code` is the one showing and still good;
-    // the code is used up either way it matches.
-    bool pair(const std::string& code, const std::string& device, int64_t now, std::string& token);
+    // The token for `device` -- a companion joining a game here, which is
+    // all the pairing there is -- made the first time and the same after.
+    // Empty when it could not be kept.
+    std::string grant(const std::string& device);
     bool paired(const std::string& token);
     // Which devices are paired, by name, and forgetting them all.
     std::vector<std::string> paired_devices();
@@ -163,12 +158,10 @@ bool keep_remote_start_token(const std::string& path, const std::string& host_id
 // name, address and hardware addresses -- kept in the same file, so one
 // asleep can still be listed and woken.
 void remember_computer(const std::string& path, const LaunchHost& host);
+// A computer joined that let this device start games there -- the token as
+// well as how to wake it, kept in `path`.
+bool keep_remote_start_grant(const std::string& path, const LaunchHost& host, const std::string& token);
 std::vector<LaunchHost> remembered_computers(const std::string& path);
-
-// Whether the games are shown as a grid of icons rather than a list, kept
-// in the same file -- a grid unless the list was chosen.
-bool remote_start_grid(const std::string& path);
-bool keep_remote_start_grid(const std::string& path, bool grid);
 
 // The games most recently played on every computer found that this device
 // is paired with, newest first, with their icons: the first screen's rows of
@@ -224,9 +217,7 @@ bool keep_recent_games(const std::string& path, const std::vector<RecentGamesFee
 std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path);
 
 // The other end's errors are the player's to read; `unpaired` is set when the
-// token was not one the PC knows, so the device can ask for a code instead.
-bool pair_with_host(const LaunchHost& host, const std::string& code, const std::string& device_name,
-                    std::string& token, std::string* error);
+// token was not one the PC knows -- its devices forgotten since.
 bool list_host_games(const LaunchHost& host, const std::string& token, std::vector<LaunchableGame>& out,
                      bool& unpaired, std::string* error);
 bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id,

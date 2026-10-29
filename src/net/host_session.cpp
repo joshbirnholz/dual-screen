@@ -951,6 +951,12 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             std::vector<uint8_t> out;
             encode_welcome(welcome, out);
             companion_.send(out);
+            RemoteStartGrantMessage grant;
+            if (config_.remote_start_grant && config_.remote_start_grant(companion_name_, grant)) {
+                out.clear();
+                encode_remote_start_grant(grant, out);
+                companion_.send(out);
+            }
             session_state_dirty_ = true;
             save_slots_dirty_ = save_slots_known_;
             controllers_view_dirty_ = !controllers_view_.empty();

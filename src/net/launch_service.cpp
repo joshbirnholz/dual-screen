@@ -120,9 +120,6 @@ bool store_record(const std::string& path, const json& record) {
 }
 
 constexpr int kMaxIconSide = 256;
-// The key the grid's choice is kept under, among the tokens: no computer's
-// id is ever this.
-constexpr const char* kViewKey = "view";
 
 json describe_game(const LaunchableGame& game) {
     return {{"id", game.id}, {"title", game.title}, {"system", game.system}, {"played", game.last_played}};
@@ -180,39 +177,19 @@ std::string RemoteStartRecord::host_id() {
     return id;
 }
 
-std::string RemoteStartRecord::show_code(int64_t now) {
-    std::random_device device;
-    std::uniform_int_distribution<int> digits(0, 999999);
-    char code[8];
-    std::snprintf(code, sizeof(code), "%06d", digits(device));
+std::string RemoteStartRecord::grant(const std::string& device) {
     json record = load_record(path_);
-    record["code"] = code;
-    record["code_until"] = now + kPairingCodeSeconds;
-    store_record(path_, record);
-    return code;
-}
-
-void RemoteStartRecord::hide_code() {
-    json record = load_record(path_);
-    if (!record.contains("code")) return;
-    record.erase("code");
-    record.erase("code_until");
-    store_record(path_, record);
-}
-
-bool RemoteStartRecord::pair(const std::string& code, const std::string& device, int64_t now,
-                             std::string& token) {
-    json record = load_record(path_);
-    const std::string showing = get_or<std::string>(record, "code", "");
-    const int64_t until = get_or<int64_t>(record, "code_until", 0);
-    if (showing.empty() || code != showing || now > until) return false;
-    // Once: a code overheard is no good after it has been used.
-    record.erase("code");
-    record.erase("code_until");
-    token = random_hex(16);
     if (!record.contains("devices") || !record["devices"].is_array()) record["devices"] = json::array();
+    // The same device joining again keeps the token it has.
+    for (const json& entry : record["devices"]) {
+        if (entry.is_object() && get_or<std::string>(entry, "name", "") == device) {
+            const std::string token = get_or<std::string>(entry, "token", "");
+            if (!token.empty()) return token;
+        }
+    }
+    const std::string token = random_hex(16);
     record["devices"].push_back({{"name", device}, {"token", token}});
-    return store_record(path_, record);
+    return store_record(path_, record) ? token : std::string();
 }
 
 bool RemoteStartRecord::paired(const std::string& token) {
@@ -311,19 +288,9 @@ bool LaunchService::start(std::string* error) {
                 json reply = {{"ok", false}};
                 const std::string op = get_or<std::string>(request, "op", "");
                 const std::string token = get_or<std::string>(request, "token", "");
-                const int64_t now = static_cast<int64_t>(std::time(nullptr));
-                if (op == "pair") {
-                    const std::string device = get_or<std::string>(request, "device", connection.stream.peer_address());
-                    std::string new_token;
-                    if (record.pair(get_or<std::string>(request, "code", ""), device, now, new_token)) {
-                        reply = {{"ok", true}, {"token", new_token}};
-                        log_info(device + " can start games here now");
-                    } else {
-                        reply["error"] = "That code is not the one showing on " + config_.name + ".";
-                    }
-                } else if (!record.paired(token)) {
+                if (!record.paired(token)) {
                     reply["unpaired"] = true;
-                    reply["error"] = "This device is not paired with " + config_.name + ".";
+                    reply["error"] = config_.name + " does not let this device start games there.";
                 } else if (op == "list") {
                     json games = json::array();
                     if (config_.games) {
@@ -490,6 +457,13 @@ void remember_computer(const std::string& path, const LaunchHost& host) {
     store_record(path, record);
 }
 
+bool keep_remote_start_grant(const std::string& path, const LaunchHost& host, const std::string& token) {
+    if (host.id.empty() || token.empty()) return false;
+    if (remote_start_token(path, host.id) != token && !keep_remote_start_token(path, host.id, token)) return false;
+    remember_computer(path, host);
+    return true;
+}
+
 std::vector<LaunchHost> remembered_computers(const std::string& path) {
     std::vector<LaunchHost> computers;
     const json record = load_record(path);
@@ -507,12 +481,6 @@ std::vector<LaunchHost> remembered_computers(const std::string& path) {
         computers.push_back(host);
     }
     return computers;
-}
-
-bool remote_start_grid(const std::string& path) { return remote_start_token(path, kViewKey) != "list"; }
-
-bool keep_remote_start_grid(const std::string& path, bool grid) {
-    return keep_remote_start_token(path, kViewKey, grid ? "grid" : "list");
 }
 
 std::string base64_encode(const std::vector<uint8_t>& bytes) {
@@ -787,20 +755,6 @@ std::vector<RecentGamesFeed::Game> RecentGamesFeed::games() const {
 }
 
 uint64_t RecentGamesFeed::version() const { return shared_ ? shared_->version.load() : 0; }
-
-bool pair_with_host(const LaunchHost& host, const std::string& code, const std::string& device_name,
-                    std::string& token, std::string* error) {
-    json reply;
-    if (!exchange(host, {{"op", "pair"}, {"code", code}, {"device", device_name}}, reply, error)) return false;
-    bool unpaired = false;
-    if (!answered_yes(host, reply, unpaired, error)) return false;
-    token = get_or<std::string>(reply, "token", "");
-    if (token.empty()) {
-        if (error != nullptr) *error = host.name + " did not say how to ask again";
-        return false;
-    }
-    return true;
-}
 
 bool list_host_games(const LaunchHost& host, const std::string& token, std::vector<LaunchableGame>& out,
                      bool& unpaired, std::string* error) {

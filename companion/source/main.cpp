@@ -570,20 +570,19 @@ private:
     uint32_t save_slots_shown_ = 0;
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
-    // Computers that can start a game, looked for while the host picker is
-    // up -- see net::LaunchHostFinder -- and one's games.
+    // Computers that can start a game, looked for while the launcher is up
+    // -- see net::LaunchHostFinder -- and the one being asked to.
     net::LaunchHostFinder launch_finder_;
     RemoteStartScreen remote_start_;
     // The games recently played on those computers, for the launcher's foot.
     net::RecentGamesFeed recent_games_;
     uint64_t recent_shown_ = ~uint64_t{0};
-    // Computers paired with before, read when the picker opens: one not
-    // answering is listed anyway, to be woken.
-    std::vector<net::LaunchHost> remembered_;
     static std::string tokens_path() { return AppPaths::resolve().config_dir + "/remote_start_tokens.json"; }
     void follow_recent_games();
-    // What this device calls itself to a host, and to a computer it pairs
-    // with.
+    // A host joined handing this device a token to start games there -- see
+    // net::RemoteStartGrantMessage: kept, with how to wake that computer.
+    void keep_remote_start_grant();
+    // What this device calls itself to a host.
     std::string device_name_;
     // A game just started on a computer from here: the host picker joins it
     // as soon as its beacon comes in from that address.
@@ -594,8 +593,6 @@ private:
         uint64_t until_ms = 0;
     };
     std::optional<AwaitedLaunch> awaited_launch_;
-    // The computers to list: those not already running a game.
-    std::vector<net::LaunchHost> idle_computers() const;
     std::string host_picker_status() const;
     // Where the connecting screen's prompts ended up -- it is a free
     // function rather than an object, so it has nowhere of its own to keep
@@ -842,32 +839,6 @@ void Client::stop() {
     SDL_Quit();
 }
 
-std::vector<net::LaunchHost> Client::idle_computers() const {
-    std::vector<net::LaunchHost> computers = launch_finder_.hosts();
-    // Paired before and not answering now: asleep, as far as this can tell.
-    // Only once the first search has had its time, so a computer that is
-    // awake is not shown asleep for a moment first.
-    if (launch_finder_.searched()) {
-        for (net::LaunchHost remembered : remembered_) {
-            const bool found = std::any_of(computers.begin(), computers.end(),
-                                           [&](const net::LaunchHost& host) { return host.id == remembered.id; });
-            if (found || remembered.macs.empty()) continue;
-            remembered.asleep = true;
-            computers.push_back(remembered);
-        }
-    }
-    const std::vector<net::DiscoveredHost> running = session_.hosts();
-    computers.erase(std::remove_if(computers.begin(), computers.end(),
-                                   [&](const net::LaunchHost& computer) {
-                                       return std::any_of(running.begin(), running.end(),
-                                                          [&](const net::DiscoveredHost& host) {
-                                                              return host.address == computer.address;
-                                                          });
-                                   }),
-                    computers.end());
-    return computers;
-}
-
 std::string Client::host_picker_status() const {
     if (state_ == State::Failed) return failure_;
     if (awaited_launch_) return "Starting " + awaited_launch_->title + " on " + awaited_launch_->computer + "...";
@@ -960,6 +931,23 @@ void Client::start_updater(const AppPaths& paths) {
     }
 }
 
+void Client::keep_remote_start_grant() {
+    net::RemoteStartGrantMessage grant;
+    if (!session_.take_remote_start_grant(grant)) return;
+    net::LaunchHost host;
+    host.id = grant.host_id;
+    host.name = grant.name;
+    host.kind = grant.kind;
+    host.address = session_.host_address();
+    if (grant.port != 0) host.port = grant.port;
+    host.macs = grant.macs;
+    if (net::keep_remote_start_grant(tokens_path(), host, grant.token)) {
+        log_info("games played on " + host.name + " can be started from here");
+    } else {
+        log_warn("could not save remote_start_tokens.json");
+    }
+}
+
 void Client::poll_updates() {
     if (!updater_) return;
     // The host checking for updates asks about this device's own too.
@@ -1036,9 +1024,6 @@ void Client::begin_search(ScreenId wanted) {
     device_name_ = name.empty() ? std::string("Dualscreen companion") : name;
     awaited_launch_.reset();
     recent_games_.stop();
-    remembered_ = net::remembered_computers(tokens_path());
-    if (system_keyboard_available()) remote_start_.set_text_editor(&edit_with_system_keyboard);
-    if (!launch_finder_.running()) launch_finder_.start();
     std::string error;
     if (!session_.begin_search(name, wanted, &error)) {
         state_ = State::Failed;
@@ -1348,6 +1333,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers) {
 #if DS_LOCAL_PLAY
     poll_updates();
+    keep_remote_start_grant();
     // An update being offered, downloaded or reported takes every press.
     if (update_prompt_.open()) {
         update_prompt_.update(actions, pointers, static_cast<float>(output_width_),
@@ -1575,9 +1561,8 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 const net::RecentGamesFeed::Game picked = games[static_cast<std::size_t>(result.recent)];
                 begin_search(ScreenId::Bottom);
                 if (state_ != State::Browsing) break;
-                remote_start_.set_grid(net::remote_start_grid(tokens_path()));
                 remote_start_.open_and_start(picked.host, net::remote_start_token(tokens_path(), picked.host.id),
-                                             device_name_, picked.game);
+                                             picked.game);
                 state_ = State::RemoteStart;
                 break;
             }
@@ -1617,53 +1602,27 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     }
 
     if (state_ == State::RemoteStart) {
-        remote_start_.type(input_.typed_text(), input_.backspaces());
         const RemoteStartResult result = remote_start_.update(actions, pointers, static_cast<float>(output_width_),
                                                               static_cast<float>(output_height_));
-        input_.set_text_entry(remote_start_.is_open() && remote_start_.wants_text());
-        if (result.token_changed) {
-            // Kept by the computer's id, so it is not asked for a code again.
-            if (!net::keep_remote_start_token(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
-                                              remote_start_.host().id, result.token)) {
-                log_warn("could not save remote_start_tokens.json");
-            }
-        }
-        if (result.answered) {
-            net::remember_computer(tokens_path(), remote_start_.host());
-            remembered_ = net::remembered_computers(tokens_path());
-        }
-        if (result.view_changed) {
-            net::keep_remote_start_grid(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
-                                        remote_start_.grid());
-        }
+        if (result.token_refused) net::keep_remote_start_token(tokens_path(), remote_start_.host().id, "");
+        if (result.answered) net::remember_computer(tokens_path(), remote_start_.host());
         if (result.started) {
+            // Joined as the bottom screen as soon as it is up there.
             awaited_launch_ = AwaitedLaunch{remote_start_.host().address, result.started_title,
                                             remote_start_.host().name, net::monotonic_millis() + 120000};
             host_picker_.open(host_picker_.wanted_screen());
             state_ = State::Browsing;
         } else if (result.back) {
-            host_picker_.open(host_picker_.wanted_screen());
-            state_ = State::Browsing;
+            open_launcher();
         }
         return;
     }
 
     if (state_ == State::Browsing) {
         const HostPickerResult result =
-            host_picker_.update(session_.hosts(), idle_computers(), actions, pointers,
+            host_picker_.update(session_.hosts(), actions, pointers,
                                 static_cast<float>(output_width_),
                                 static_cast<float>(output_height_));
-        if (result.start_on) {
-            remote_start_.set_grid(
-                net::remote_start_grid(AppPaths::resolve().config_dir + "/remote_start_tokens.json"));
-            remote_start_.open(result.launch_host,
-                               net::remote_start_token(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
-                                                       result.launch_host.id),
-                               device_name_);
-            awaited_launch_.reset();
-            state_ = State::RemoteStart;
-            return;
-        }
         if (result.chosen) {
             join(result.host);
         } else if (result.cancelled) {
@@ -2396,7 +2355,7 @@ void Client::draw_scene() {
             return;
         }
         host_picker_.render(quads_, text_, button_glyphs_, width, height, session_.hosts(),
-                            idle_computers(), host_picker_status());
+                            host_picker_status());
         return;
     }
 

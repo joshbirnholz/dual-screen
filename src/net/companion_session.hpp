@@ -546,6 +546,8 @@ public:
     // The session as the host sees it. This device follows all of it rather
     // than deciding anything locally, which is what keeps the two in step.
     const std::string& host_layout_id() const { return host_layout_id_; }
+    // The address the host was joined at.
+    const std::string& host_address() const { return host_address_; }
     bool host_paused() const { return host_paused_; }
     bool host_filtering() const { return host_filtering_; }
     AudioTarget host_audio_target() const { return host_audio_target_; }
@@ -655,6 +657,9 @@ public:
     // what it found, oldest first -- see UpdateRequestMessage -- and what
     // it said back.
     bool take_update_request(UpdateRequest& out);
+    // What the host handed over to start games on its computer later --
+    // see RemoteStartGrantMessage -- once, as it was joined.
+    bool take_remote_start_grant(RemoteStartGrantMessage& out);
     void answer_update(const UpdateAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
@@ -1653,6 +1658,7 @@ private:
     RumbleCallback rumble_callback_;
     std::deque<MenuSound> menu_sounds_;
     std::deque<UpdateRequest> update_requests_;
+    std::optional<RemoteStartGrantMessage> remote_start_grant_;
     // Per AudioStreamId (3 entries -- Shared/TopDevice/BottomDevice), for
     // detecting a genuinely missing audio packet rather than the ordinary
     // jitter UDP never promised against -- see AudioMessage::sequence and

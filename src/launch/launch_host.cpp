@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -186,6 +187,49 @@ bool service_starts_at_login() {
                                    error);
 }
 
+namespace {
+
+// The unit as this build writes it: run from where this program is now, and
+// started again whenever it ends -- as it does, on purpose, once the program
+// is updated under it (see run_launch_service()).
+std::string unit_text() {
+    std::ostringstream unit;
+    unit << "[Unit]\n"
+         << "Description=Dualscreen: start games from other devices\n"
+         << "After=network-online.target\n\n"
+         << "[Service]\n"
+         << "ExecStart=\"" << this_program() << "\" --service\n"
+         << "Restart=always\n"
+         << "RestartSec=5\n\n"
+         << "[Install]\n"
+         << "WantedBy=default.target\n";
+    return unit.str();
+}
+
+std::string read_whole(const std::string& path) {
+    std::ifstream in(path);
+    std::ostringstream text;
+    text << in.rdbuf();
+    return text.str();
+}
+
+}  // namespace
+
+bool refresh_service() {
+    if (!service_starts_at_login()) return true;
+    if (read_whole(unit_path()) == unit_text()) return true;
+    // Written by an older build, or for this program somewhere else: put
+    // right, and the service started again from here.
+    {
+        std::ofstream unit(unit_path(), std::ios::trunc);
+        if (!unit) return false;
+        unit << unit_text();
+    }
+    run_and_wait("systemctl", {"--user", "daemon-reload"}, nullptr);
+    log_info("the Remote Start service was updated to this version");
+    return run_and_wait("systemctl", {"--user", "restart", kUnitName}, nullptr);
+}
+
 bool set_service_starts_at_login(bool on, std::string* error) {
     if (!on) {
         run_and_wait("systemctl", {"--user", "disable", "--now", kUnitName}, nullptr);
@@ -203,15 +247,7 @@ bool set_service_starts_at_login(bool on, std::string* error) {
             if (error != nullptr) *error = "could not write " + unit_path();
             return false;
         }
-        unit << "[Unit]\n"
-             << "Description=Dualscreen: start games from other devices\n"
-             << "After=network-online.target\n\n"
-             << "[Service]\n"
-             << "ExecStart=\"" << this_program() << "\" --service\n"
-             << "Restart=on-failure\n"
-             << "RestartSec=5\n\n"
-             << "[Install]\n"
-             << "WantedBy=default.target\n";
+        unit << unit_text();
     }
     run_and_wait("systemctl", {"--user", "daemon-reload"}, nullptr);
     if (!run_and_wait("systemctl", {"--user", "enable", "--now", kUnitName}, error)) return false;
@@ -249,7 +285,25 @@ int run_launch_service() {
         log_error("other devices cannot start games here: " + error);
         return 1;
     }
-    while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // Updated under it -- a new AppImage over the old one -- this copy
+    // leaves, and systemd starts the new one in its place: otherwise the
+    // old build would answer until the next login.
+    const std::string program = this_program();
+    std::error_code time_error;
+    const auto built = std::filesystem::last_write_time(program, time_error);
+    const bool watching = !time_error;
+    int waited = 0;
+    while (!g_stop) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (!watching || (waited += 200) < 5000) continue;
+        waited = 0;
+        std::error_code error;
+        const auto now = std::filesystem::last_write_time(program, error);
+        if (!error && now != built) {
+            log_info("Dualscreen was updated; the Remote Start service will restart");
+            break;
+        }
+    }
     service.stop();
     return 0;
 }

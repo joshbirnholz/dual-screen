@@ -2341,6 +2341,33 @@ void test_game_dialog_round_trip() {
     CHECK(back.final && back.button == 1);
 }
 
+// A host letting the companion start games on its computer later.
+void test_remote_start_grant_round_trip() {
+    std::vector<uint8_t> buffer;
+    MessageType type{};
+    std::vector<uint8_t> payload;
+    RemoteStartGrantMessage grant;
+    grant.host_id = "pc1";
+    grant.name = "Den PC";
+    grant.kind = "pc";
+    grant.port = 47826;
+    grant.token = "abc";
+    grant.macs = {"aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"};
+    encode_remote_start_grant(grant, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::RemoteStartGrant);
+    RemoteStartGrantMessage read;
+    CHECK(decode_remote_start_grant(payload.data(), payload.size(), read));
+    CHECK(read.host_id == "pc1" && read.name == "Den PC" && read.kind == "pc" && read.port == 47826);
+    CHECK(read.token == "abc" && read.macs == grant.macs);
+    // No token: nothing to keep.
+    grant.token.clear();
+    buffer.clear();
+    encode_remote_start_grant(grant, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(!decode_remote_start_grant(payload.data(), payload.size(), read));
+}
+
 // The host asking the companion's updater, and its answer.
 void test_update_request_and_answer_round_trip() {
     std::vector<uint8_t> buffer;
@@ -2483,6 +2510,7 @@ int main() {
     test_game_dialog_round_trip();
     test_menu_scroll_and_amiibo_browser_round_trip();
     test_stylus_cursor_round_trip();
+    test_remote_start_grant_round_trip();
     test_update_request_and_answer_round_trip();
     return test::finish("protocol");
 }

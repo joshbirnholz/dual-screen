@@ -760,40 +760,31 @@ dualscreen --connect bottom
 
 ### Starting a game from the other device
 
-A Linux PC or a Steam Deck can let a paired device start a game on it, with
-nobody sitting at it and Dualscreen not even open. Turn on **Settings > Remote
-Start**: that installs a small background service (`dualscreen --service`, a
-systemd user unit, so it runs in Game Mode too) that starts at every login.
-Then choose **Pair a Device**, which shows a six-number code.
+A Linux PC or a Steam Deck can let another device start a game on it, with
+nobody sitting at it and Dualscreen not even open. Choose **Settings > Enable
+Remote Start**: after an alert saying what it will do, that installs a small
+background service (`dualscreen --service`, a systemd user unit, so it runs in
+Game Mode too) that starts at every login. **Disable Remote Start** removes
+the service again, and forgets every device it let in. The service restarts
+itself on the new build whenever Dualscreen is updated.
 
-On the Switch, phone or other device, open Connect as Top/Bottom Screen. Under
-any games already running, each computer with Remote Start on is listed as
-**Start a Game**, with its name. Choose it, enter the code the first time,
-and pick a game: the computer starts it -- through its Steam shortcut, so its
-Steam Input layout applies, or from its ROM folders when Steam has none -- and
-this device joins it as soon as it is up. Pair a Device's alert can also
-forget every paired device, which then has to be paired again.
+There is no pairing step: a device that joins a game on that computer while
+Remote Start is on is let in from then on, and remembers how to reach and wake
+it. From then on its home screen -- the Switch, phone or other companion's,
+or the desktop app's on a Steam Deck -- shows the games last played on that
+computer, newest first, as one row of icons along the bottom. While the
+computer is on and found, the row has only the games it can start now; while
+it is off or asleep, the row keeps the ones last seen, icons and all.
 
-The games are shown as a grid of their icons, as a Wii U GamePad's Quick
-Start shows them, each icon read out of the game on the computer; the name
-of the one under the cursor sits under it. **Y** switches to a list of
-titles and back, and the choice is kept.
-
-Once a paired computer is found, the first screen also shows the games last
-played on it, newest first, as two rows of icons along its bottom: choosing
-one starts it there and joins it as the bottom screen, without going through
-the list. A game counts as played once Dualscreen has started it on that
-computer. The device keeps the last ones it saw, icons and all, so they are
-still there when that computer is off or asleep: choosing one then wakes it
-first (see below) and starts the game once it answers.
-
-A paired computer that is asleep stays listed, marked as asleep. Choosing it
-wakes it with Wake-on-LAN, as Moonlight does -- a packet for each of its
-network cards, sent to the whole network and to its last address, again
-every few seconds for up to a minute and a half -- and goes on once it
-answers. Wake-on-LAN has to be turned on in the computer's firmware settings
-and for its network card, and usually only works over a cable rather than
-Wi-Fi.
+Choosing one starts it there -- through its Steam shortcut, so its Steam Input
+layout applies, or from its ROM folders when Steam has none -- and the device
+joins it as the bottom screen as soon as it is up. A computer that is asleep
+is first woken with Wake-on-LAN, as Moonlight does: a packet for each of its
+network cards, sent to the whole network and to its last address, again every
+few seconds for up to a minute and a half. If it does not wake, an alert says
+so. Wake-on-LAN has to be turned on in the computer's firmware settings and
+for its network card, and usually only works over a cable rather than Wi-Fi.
+A game counts as played once Dualscreen has started it on that computer.
 
 ### A Switch or an Android handheld as the second screen
 

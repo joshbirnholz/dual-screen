@@ -2,10 +2,7 @@
 
 #include <atomic>
 #include <functional>
-#include <map>
-#include <mutex>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -14,37 +11,31 @@
 #include "net/launch_service.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
-#include "render/texture.hpp"
 #include "ui/control_guide.hpp"
-#include "ui/list_touch.hpp"
 #include "ui/menu_page.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
-#include "ui/text_entry.hpp"
 
 namespace ds {
 
 struct RemoteStartResult {
-    // B: back to the host picker.
+    // B, or OK on an alert: back to the first screen.
     bool back = false;
-    // A game was started over there: the picker joins it once it shows up.
+    // The game was started over there: the caller joins it once it shows up.
     bool started = false;
     std::string started_title;
-    // A token was given, by pairing, or the one held was refused: the caller
-    // keeps it (empty to forget it) under the computer's id.
-    bool token_changed = false;
-    std::string token;
+    // The computer no longer knows this device's token: the caller forgets it.
+    bool token_refused = false;
     // The computer answered, as host() now has it: the caller remembers it,
     // to wake it another time -- see net::remember_computer().
     bool answered = false;
-    // Y switched between the grid and the list: the caller keeps which.
-    bool view_changed = false;
 };
 
-// From the companion's host picker, a computer running Dualscreen's
-// background service (see net/launch_service.hpp): the games it has, one
-// chosen to start over there. A device not yet paired with it is asked for
-// the code its Settings show under Pair a Device first.
+// A game chosen from the first screen's recently played, being started on
+// the computer it was played on -- see net/launch_service.hpp: that computer
+// woken first when it is asleep, and an alert when it cannot be woken or
+// will not start it. Nothing else is asked here; a device is let start games
+// on a computer by having joined a game there -- see RemoteStartGrant.
 //
 // Everything asked over the network is asked on a thread of its own, so the
 // page never stops drawing while the computer answers.
@@ -52,82 +43,42 @@ class RemoteStartScreen : public MenuPage {
 public:
     ~RemoteStartScreen() override;
 
-    // `token` is what this device was given when it last paired there, or
-    // empty, in which case it asks for a code straight away. A computer
-    // remembered but not found -- `host.asleep` -- is woken first.
-    void open(const net::LaunchHost& host, std::string token, std::string device_name);
-    // Straight to starting `game` there -- one chosen from the first
-    // screen's recently played -- saying so while it is asked, and waking
-    // the computer first when it is asleep.
-    void open_and_start(const net::LaunchHost& host, std::string token, std::string device_name,
-                        const LaunchableGame& game);
+    // `host.asleep`: woken first, then asked to start `game`.
+    void open_and_start(const net::LaunchHost& host, std::string token, const LaunchableGame& game);
     void close();
     bool is_open() const { return open_; }
     const net::LaunchHost& host() const { return host_; }
-    // The games as a grid of their icons, as a Wii U GamePad's Quick Start
-    // shows them, or as a list of titles. Y switches. Set before open().
-    void set_grid(bool grid) { grid_ = grid; }
-    bool grid() const { return grid_; }
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
-
-    // The code being typed: the keyboard types into it -- see
-    // InputManager::set_text_entry() -- and what it typed comes in through
-    // type(), before update().
-    bool wants_text() const { return code_entry_.is_open() && !text_editor_; }
-    void type(const std::string& typed, int backspaces) {
-        typed_ = typed;
-        backspaces_ = backspaces;
-    }
-    // A platform's own keyboard -- a Switch's -- in place of the popup.
-    void set_text_editor(std::function<bool(const std::string& header, const std::string& initial,
-                                            std::size_t max, std::string& out)>
-                             editor) {
-        text_editor_ = std::move(editor);
-    }
 
     RemoteStartResult update(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
                              float output_width, float output_height);
 
-    bool scroll(const std::vector<PointerEvent>& pointers, float output_width, float output_height) override;
-    // A game by its index. A popup takes its own taps, and the prompts are
-    // pressed through take_guide_taps().
-    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
+    // The alert's taps are its own, and the prompts are pressed through
+    // take_guide_taps(): nothing else to land on.
+    int entry_at(float, float, float, float) const override { return -1; }
     bool off_popup(float, float, float, float) const override { return false; }
-    std::vector<float> scroll_state(float output_width, float output_height) const override;
-    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
+    // Nothing scrolls.
+    std::vector<float> scroll_state(float, float) const override { return {}; }
+    void set_scroll_state(const std::vector<float>&, float, float) override {}
 
     void render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs, float output_width,
                 float output_height);
 
-    int focus() const { return focus_; }
     const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
 
-    // What it says each game is, at the right of its row.
+    // What it says each game is.
     static std::string system_label(const std::string& system);
 
 private:
-    enum class Phase {
-        // Asking for the list, or for a game to start, or pairing.
-        Waiting,
-        List,
-        // The code popup is up.
-        Code,
-        // Something went wrong: an alert says what, and OK goes on to
-        // `after_alert_`.
-        Alert,
-    };
-
     // What a job on the network thread came back with.
     struct Outcome {
-        enum class Kind { Listed, Paired, Started, Woken } kind = Kind::Listed;
+        enum class Kind { Started, Woken } kind = Kind::Started;
         net::LaunchHost woken;
         bool ok = false;
         bool unpaired = false;
         std::string error;
-        std::vector<LaunchableGame> games;
-        std::string token;
-        std::string title;
     };
     // Shared with its thread, which is let go rather than waited for: a
     // page put away while a computer is slow to answer goes at once, and the
@@ -140,89 +91,23 @@ private:
         Outcome outcome;
     };
 
-    // The icons, fetched one after another on a thread of their own once
-    // the list is in, each drawn as soon as it lands.
-    struct Icons {
-        std::mutex mutex;
-        std::atomic<bool> cancelled{false};
-        struct Icon {
-            bool done = false;
-            int width = 0;
-            int height = 0;
-            std::vector<uint8_t> rgba;
-        };
-        std::vector<Icon> icons;
-    };
-    void fetch_icons();
-    const Texture* icon_texture(int index);
-
-    struct Geometry {
-        PixelRect list;
-        float row_height = 0.0f;
-        float scale = 1.0f;
-        // The grid: how many to a row, a tile's side, and where the first
-        // column starts so the grid sits in the middle.
-        int columns = 1;
-        float tile = 0.0f;
-        float gap = 0.0f;
-        float left = 0.0f;
-        PixelRect tile_at(int index, float scroll) const {
-            const int column = index % std::max(1, columns);
-            const int row = index / std::max(1, columns);
-            return PixelRect{left + column * (tile + gap), list.y + gap * 0.5f + row * row_height - scroll, tile, tile};
-        }
-    };
-    Geometry compute_geometry(float output_width, float output_height) const;
-    void render_grid(QuadRenderer& quads, TextRenderer& text, const Geometry& geometry, bool cursor);
-    float max_scroll(const Geometry& geometry) const;
-    void scroll_focus_into_view(const Geometry& geometry);
-
     void run(std::function<Outcome(const std::atomic<bool>& cancelled)> work, std::string waiting_for);
     void drop_job();
     void wake();
-    void finish_job();
-    void list_games();
-    void ask_for_code();
-    // `leaves`: OK goes back to the host picker rather than to `after`.
-    void alert(std::string message, Phase after, bool leaves = false);
+    void start();
+    void alert(std::string message);
     void handle_outcome(const Outcome& outcome, RemoteStartResult& result);
-    void start_game(int index);
 
     bool open_ = false;
-    bool grid_ = true;
-    std::shared_ptr<Icons> icons_;
-    std::map<int, Texture> textures_;
     net::LaunchHost host_;
     std::string token_;
-    std::string device_name_;
-    Phase phase_ = Phase::Waiting;
-    Phase after_alert_ = Phase::List;
-    bool alert_leaves_ = false;
+    LaunchableGame game_;
     std::string waiting_for_;
+    // Set when something went wrong: an alert says what, and OK leaves.
     std::string alert_;
     PopupCursor alert_cursor_;
     std::shared_ptr<Job> job_;
-    std::vector<LaunchableGame> games_;
-    bool listed_ = false;
-    // open_and_start() on a computer asleep: the one game in games_ is
-    // started as soon as it wakes, rather than its list asked for.
-    bool start_once_awake_ = false;
-    int focus_ = 0;
-    float scroll_ = 0.0f;
-    ListDrag drag_;
-    ScrollEase scroll_ease_;
     std::vector<GuideHit> guide_hits_;
-
-    TextEntryPopup code_entry_;
-    std::string typed_;
-    int backspaces_ = 0;
-    std::function<bool(const std::string& header, const std::string& initial, std::size_t max,
-                       std::string& out)>
-        text_editor_;
-    // Set when the platform's keyboard should come up on the next update:
-    // never from inside the pass that put the page up, which is still
-    // drawing the last screen.
-    bool editor_pending_ = false;
 };
 
 }  // namespace ds

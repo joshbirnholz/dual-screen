@@ -57,7 +57,7 @@ public:
     // actually running one. What is left is joining a game running somewhere
     // else, and leaving.
     void open(bool runs_games = true);
-    // The recently played games along the foot, two rows at most, in the
+    // The recently played games along the foot, one row of them, in the
     // order given -- newest first. Empty takes them away.
     void set_recent(std::vector<LauncherTile> tiles);
     std::size_t recent_count() const { return tiles_.size(); }
@@ -158,10 +158,6 @@ struct HostPickerResult {
     bool cancelled = false;
     bool chosen = false;
     ds::net::DiscoveredHost host;
-    // A computer with nothing running, chosen to start a game on -- see
-    // RemoteStartScreen.
-    bool start_on = false;
-    ds::net::LaunchHost launch_host;
 };
 
 // The line under a host's game title in the connection list. Its address is
@@ -178,11 +174,7 @@ public:
     void describe_for_sound(UiSoundView& view) const;
     ScreenId wanted_screen() const { return wanted_screen_; }
 
-    // `computers` are those that can start a game -- see
-    // net/launch_service.hpp -- listed under the games already running, less
-    // any already running one.
     HostPickerResult update(const std::vector<ds::net::DiscoveredHost>& hosts,
-                            const std::vector<ds::net::LaunchHost>& computers,
                             const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers,
                             float output_width,
@@ -203,7 +195,6 @@ public:
                 float output_width,
                 float output_height,
                 const std::vector<ds::net::DiscoveredHost>& hosts,
-                const std::vector<ds::net::LaunchHost>& computers,
                 const std::string& status);
 
 public:
@@ -219,7 +210,7 @@ private:
     bool open_ = false;
     int focus_ = 0;
     ScreenId wanted_screen_ = ScreenId::Bottom;
-    // How many hosts and computers update() was last given, which
+    // How many hosts update() was last given, which
     // entry_at() lays out.
     std::size_t host_count_ = 0;
     std::vector<GuideHit> guide_hits_;
