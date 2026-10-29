@@ -10,16 +10,12 @@ numbers can change freely.
 
 ### After remapping
 
-- **Starting a session from a connected device.** Half built on the branch
-  `claude/remote-start-wip`: the Steam `shortcuts.vdf` reader and game
-  list, the background service (`dualscreen --service`, a systemd user
-  unit) with pairing codes and tokens, the device-side calls, and
-  Wake-on-LAN packets, all tested. Still to do: the Settings page that
-  turns the service on and shows a pairing code, and the connected
-  device's screens to pick a PC and a game and join the session that
-  starts; Wake-on-LAN with the PC's MAC remembered from earlier
-  connections (needs WoL enabled on the PC; a Steam Deck cannot be woken
-  this way).
+- **Waking a computer to start a game on.** Remote Start (Settings) lets a
+  paired device start a game on a PC or Deck that is on; still to do is
+  Wake-on-LAN for one that is asleep, with the PC's MAC remembered from its
+  answer to an earlier search (the packet itself is built and tested in
+  `net/launch_service`; needs WoL enabled on the PC; a Steam Deck cannot be
+  woken this way).
 
 - The background service should also be able to make the device visible
   for save data syncing even when Dualscreen isn't open, making automatic

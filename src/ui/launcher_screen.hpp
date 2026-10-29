@@ -7,6 +7,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
 #include "net/discovery.hpp"
+#include "net/launch_service.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/texture.hpp"
 #include "render/text_renderer.hpp"
@@ -131,6 +132,10 @@ struct HostPickerResult {
     bool cancelled = false;
     bool chosen = false;
     ds::net::DiscoveredHost host;
+    // A computer with nothing running, chosen to start a game on -- see
+    // RemoteStartScreen.
+    bool start_on = false;
+    ds::net::LaunchHost launch_host;
 };
 
 // The line under a host's game title in the connection list. Its address is
@@ -147,7 +152,11 @@ public:
     void describe_for_sound(UiSoundView& view) const;
     ScreenId wanted_screen() const { return wanted_screen_; }
 
+    // `computers` are those that can start a game -- see
+    // net/launch_service.hpp -- listed under the games already running, less
+    // any already running one.
     HostPickerResult update(const std::vector<ds::net::DiscoveredHost>& hosts,
+                            const std::vector<ds::net::LaunchHost>& computers,
                             const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers,
                             float output_width,
@@ -168,6 +177,7 @@ public:
                 float output_width,
                 float output_height,
                 const std::vector<ds::net::DiscoveredHost>& hosts,
+                const std::vector<ds::net::LaunchHost>& computers,
                 const std::string& status);
 
 public:
@@ -183,7 +193,8 @@ private:
     bool open_ = false;
     int focus_ = 0;
     ScreenId wanted_screen_ = ScreenId::Bottom;
-    // How many hosts update() was last given, which entry_at() lays out.
+    // How many hosts and computers update() was last given, which
+    // entry_at() lays out.
     std::size_t host_count_ = 0;
     std::vector<GuideHit> guide_hits_;
     // Each host's game icon, by its address and port, loaded the first time

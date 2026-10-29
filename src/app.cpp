@@ -84,6 +84,7 @@
 #include "ui/forwarder_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
+#include "ui/remote_start_screen.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
@@ -400,6 +401,9 @@ struct App::Impl {
         Browser,
         Launcher,
         HostPicker,
+        // A computer's games, from the host picker, one to start there --
+        // see RemoteStartScreen.
+        RemoteStart,
         Companion,
         // The game has just been started from its resume point and is held
         // there, paused, under a popup saying so, until OK is pressed -- on
@@ -631,6 +635,23 @@ struct App::Impl {
     void open_forwarder(const std::string& rom_path);
     std::unique_ptr<LauncherScreen> launcher;
     std::unique_ptr<HostPickerScreen> host_picker;
+    // Computers that can start a game, looked for while the host picker is
+    // up -- see net::LaunchHostFinder -- and one's games.
+    net::LaunchHostFinder launch_finder;
+    RemoteStartScreen remote_start;
+    // A game just started on a computer from here: the host picker joins it
+    // as soon as its beacon comes in from that address.
+    struct AwaitedLaunch {
+        std::string address;
+        std::string title;
+        std::string computer;
+        std::chrono::steady_clock::time_point until{};
+    };
+    std::optional<AwaitedLaunch> awaited_launch;
+    // The computers to list: those not already running a game.
+    std::vector<net::LaunchHost> idle_computers() const;
+    std::string host_picker_status() const;
+    void leave_host_picker();
     MessageScreen message;
 
     // Two-device mode. Exactly one of these is live at a time: a device either
@@ -3625,6 +3646,7 @@ net::MirroredPage App::Impl::mirrored_page() const {
         case State::Browser:
         case State::Launcher:
         case State::HostPicker:
+        case State::RemoteStart:
         case State::Companion:
         case State::ResumeNotice:
         case State::Forwarder:
@@ -5801,6 +5823,34 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     host_picker->open(wanted_screen);
     state = State::HostPicker;
     input.set_game_input_enabled(false);
+    awaited_launch.reset();
+    if (!launch_finder.running()) launch_finder.start();
+}
+
+std::vector<net::LaunchHost> App::Impl::idle_computers() const {
+    std::vector<net::LaunchHost> computers = launch_finder.hosts();
+    if (!companion_session) return computers;
+    const std::vector<net::DiscoveredHost> running = companion_session->hosts();
+    computers.erase(std::remove_if(computers.begin(), computers.end(),
+                                   [&](const net::LaunchHost& computer) {
+                                       return std::any_of(running.begin(), running.end(),
+                                                          [&](const net::DiscoveredHost& host) {
+                                                              return host.address == computer.address;
+                                                          });
+                                   }),
+                    computers.end());
+    return computers;
+}
+
+std::string App::Impl::host_picker_status() const {
+    if (awaited_launch) return "Starting " + awaited_launch->title + " on " + awaited_launch->computer + "...";
+    return companion_session ? companion_session->status_detail() : std::string();
+}
+
+void App::Impl::leave_host_picker() {
+    launch_finder.stop();
+    remote_start.close();
+    awaited_launch.reset();
 }
 
 void App::Impl::enter_message(MessageKind kind,
@@ -6415,6 +6465,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::HostPicker:
             if (host_picker) host_picker->describe_for_sound(view);
             break;
+        case State::RemoteStart: remote_start.describe_for_sound(view); break;
         case State::DataManagement:
             if (data_screen) data_screen->describe_for_sound(view);
             break;
@@ -6551,17 +6602,66 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
 
         case State::HostPicker: {
-            const HostPickerResult result = host_picker->update(
-                companion_session->hosts(), actions, pointers, static_cast<float>(output_width),
+            HostPickerResult result = host_picker->update(
+                companion_session->hosts(), idle_computers(), actions, pointers, static_cast<float>(output_width),
                 static_cast<float>(output_height));
+            // A game started from here, joined the moment it shows up.
+            if (awaited_launch && !result.cancelled) {
+                if (std::chrono::steady_clock::now() > awaited_launch->until) {
+                    log_warn(awaited_launch->title + " did not show up from " + awaited_launch->computer);
+                    awaited_launch.reset();
+                } else {
+                    for (const net::DiscoveredHost& host : companion_session->hosts()) {
+                        if (host.address == awaited_launch->address && host.offers(host_picker->wanted_screen())) {
+                            result = HostPickerResult();
+                            result.chosen = true;
+                            result.host = host;
+                            host_picker->close();
+                            break;
+                        }
+                    }
+                }
+            }
             if (result.cancelled) {
+                leave_host_picker();
                 companion_session->disconnect();
                 open_launcher();
+            } else if (result.start_on) {
+                remote_start.open(result.launch_host,
+                                  net::remote_start_token(paths.config_dir + "/remote_start_tokens.json",
+                                                          result.launch_host.id),
+                                  settings.device_name);
+                awaited_launch.reset();
+                state = State::RemoteStart;
             } else if (result.chosen) {
+                leave_host_picker();
                 joining_host = result.host;
                 companion_session->connect_to(result.host);
                 menu_backdrop.forget();
                 state = State::Companion;
+            }
+            break;
+        }
+
+        case State::RemoteStart: {
+            remote_start.type(input.typed_text(), input.backspaces());
+            const RemoteStartResult result = remote_start.update(actions, pointers, static_cast<float>(output_width),
+                                                                 static_cast<float>(output_height));
+            if (result.token_changed &&
+                !net::keep_remote_start_token(paths.config_dir + "/remote_start_tokens.json", remote_start.host().id,
+                                              result.token)) {
+                log_warn("could not save remote_start_tokens.json");
+            }
+            if (result.started) {
+                // Back to the list, which joins the game once it is up there.
+                awaited_launch = AwaitedLaunch{remote_start.host().address, result.started_title,
+                                               remote_start.host().name,
+                                               std::chrono::steady_clock::now() + std::chrono::seconds(120)};
+                host_picker->open(host_picker->wanted_screen());
+                state = State::HostPicker;
+            } else if (result.back) {
+                host_picker->open(host_picker->wanted_screen());
+                state = State::HostPicker;
             }
             break;
         }
@@ -7073,7 +7173,13 @@ void App::Impl::render() {
     }
     if (state == State::HostPicker) {
         host_picker->render(quads, text, button_glyphs, width, height,
-                            companion_session->hosts(), companion_session->status_detail());
+                            companion_session->hosts(), idle_computers(), host_picker_status());
+        swap();
+        ++frames_rendered;
+        return;
+    }
+    if (state == State::RemoteStart) {
+        remote_start.render(quads, text, button_glyphs, width, height);
         swap();
         ++frames_rendered;
         return;
@@ -7609,6 +7715,7 @@ int App::run(const AppOptions& options) {
     if (system_keyboard_available()) {
         impl.settings_screen->set_text_editor(&edit_with_system_keyboard);
         impl.button_mapping_screen.set_text_editor(&edit_with_system_keyboard);
+        impl.remote_start.set_text_editor(&edit_with_system_keyboard);
     }
     impl.settings_screen->set_offers_data_management(impl.save_store != nullptr);
     // Settings > melonDS: how the Switch's melonDS runs, in its melonds.ini.
@@ -8811,7 +8918,8 @@ int App::run(const AppOptions& options) {
                                     (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing() &&
                                      !impl.companion_types_game_dialog()) ||
                                     (impl.state == Impl::State::Companion &&
-                                     impl.mirrored_game_dialog.typing_here());
+                                     impl.mirrored_game_dialog.typing_here()) ||
+                                    (impl.state == Impl::State::RemoteStart && impl.remote_start.wants_text());
                 if (typing != impl.input.text_entry()) impl.show_steam_keyboard(typing);
                 impl.input.set_text_entry(typing);
             }

@@ -17,6 +17,7 @@
 #include "render/text_renderer.hpp"
 #include "ui/choice_popup.hpp"
 #include "ui/menu_page.hpp"
+#include "ui/popup.hpp"
 #include "ui/text_entry.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
@@ -30,6 +31,15 @@
 #define DS_PLAYS_WII_U 1
 #else
 #define DS_PLAYS_WII_U 0
+#endif
+
+// Whether other devices can start games on this one through its background
+// service -- see launch/launch_host.hpp: a Linux PC or a Steam Deck, where it
+// runs as a systemd user unit.
+#if defined(__linux__) && !defined(__ANDROID__) && !defined(__SWITCH__)
+#define DS_REMOTE_START_HOST 1
+#else
+#define DS_REMOTE_START_HOST 0
 #endif
 
 namespace ds {
@@ -196,6 +206,12 @@ private:
         // Desktops only, where Discord runs: see util/discord_presence.hpp.
         DiscordStatus,
 #endif
+#if DS_REMOTE_START_HOST
+        // Whether paired devices can start games here, and pairing one --
+        // an alert showing the code to enter on it.
+        RemoteStart,
+        PairDevice,
+#endif
         UiSounds,
         Count
     };
@@ -310,6 +326,32 @@ private:
     // A button glyph's width for its height, from the sheet last drawn with,
     // so a popup of buttons can be sized before it is drawn.
     float glyph_aspect_ = 1.0f;
+    // Remote Start, as the system has it: whether its unit is installed.
+    bool remote_start_on_ = false;
+    // Pair a Device's alert, up while `pairing_`: the code it shows, until
+    // when, and the devices paired when it went up, so one pairing while it
+    // is showing is said. `notice_` is an alert with only OK -- Remote
+    // Start not turning on, say -- when it is not empty.
+    bool pairing_ = false;
+    std::string pair_code_;
+    int64_t pair_until_ = 0;
+    std::size_t paired_before_ = 0;
+    std::vector<std::string> paired_now_;
+    std::string paired_name_;
+    double pair_checked_ = 0.0;
+    std::string notice_;
+    PopupCursor alert_cursor_;
+    std::string remote_start_record() const { return paths_.config_dir + "/remote_start.json"; }
+    void open_pairing();
+    void close_pairing();
+    // Brings the alert up to date with what the service has done.
+    void refresh_pairing();
+    std::vector<PopupButton> pairing_buttons() const;
+    PopupText pairing_text() const;
+    float pairing_code_height(float output_height) const;
+    PopupGeometry pairing_geometry(float output_width, float output_height) const;
+    PopupGeometry notice_geometry(float output_width, float output_height) const;
+
     // The DS nickname being typed -- see type().
     TextEntryPopup text_entry_;
     std::string typed_;

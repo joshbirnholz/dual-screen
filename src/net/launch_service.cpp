@@ -426,6 +426,52 @@ std::vector<LaunchHost> search_launch_hosts(const LaunchSearch& search) {
     return found;
 }
 
+std::string remote_start_token(const std::string& path, const std::string& host_id) {
+    const json tokens = load_record(path);
+    return get_or<std::string>(tokens, host_id.c_str(), "");
+}
+
+bool keep_remote_start_token(const std::string& path, const std::string& host_id, const std::string& token) {
+    json tokens = load_record(path);
+    if (token.empty()) {
+        tokens.erase(host_id);
+    } else {
+        tokens[host_id] = token;
+    }
+    return store_record(path, tokens);
+}
+
+void LaunchHostFinder::start(LaunchSearch search, int every_ms) {
+    stop();
+    stopping_ = false;
+    thread_ = std::thread([this, search, every_ms] {
+        while (!stopping_) {
+            std::vector<LaunchHost> found = search_launch_hosts(search);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                hosts_ = std::move(found);
+            }
+            // In short steps, so stop() never waits long.
+            for (int waited = 0; waited < every_ms && !stopping_; waited += 50) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
+    });
+}
+
+void LaunchHostFinder::stop() {
+    if (!thread_.joinable()) return;
+    stopping_ = true;
+    thread_.join();
+    std::lock_guard<std::mutex> lock(mutex_);
+    hosts_.clear();
+}
+
+std::vector<LaunchHost> LaunchHostFinder::hosts() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return hosts_;
+}
+
 bool pair_with_host(const LaunchHost& host, const std::string& code, const std::string& device_name,
                     std::string& token, std::string* error) {
     json reply;

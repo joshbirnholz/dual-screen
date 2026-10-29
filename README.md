@@ -758,6 +758,22 @@ connect to anything.
 dualscreen --connect bottom
 ```
 
+### Starting a game from the other device
+
+A Linux PC or a Steam Deck can let a paired device start a game on it, with
+nobody sitting at it and Dualscreen not even open. Turn on **Settings > Remote
+Start**: that installs a small background service (`dualscreen --service`, a
+systemd user unit, so it runs in Game Mode too) that starts at every login.
+Then choose **Pair a Device**, which shows a six-number code.
+
+On the Switch, phone or other device, open Connect as Top/Bottom Screen. Under
+any games already running, each computer with Remote Start on is listed as
+**Start a Game**, with its name. Choose it, enter the code the first time,
+and pick a game: the computer starts it -- through its Steam shortcut, so its
+Steam Input layout applies, or from its ROM folders when Steam has none -- and
+this device joins it as soon as it is up. Pair a Device's alert can also
+forget every paired device, which then has to be paired again.
+
 ### A Switch or an Android handheld as the second screen
 
 The other device does not have to be running this app, or be a PC at all.

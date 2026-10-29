@@ -182,6 +182,7 @@ add_library(dualscreen_core STATIC
     src/ui/control_guide.cpp
     src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp
+    src/ui/remote_start_screen.cpp
     src/ui/layout_picker.cpp
     src/ui/menu_state.cpp
     src/ui/notice_popup.cpp

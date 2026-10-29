@@ -109,6 +109,7 @@ extern "C" {
 #include "render/text_renderer.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
+#include "ui/remote_start_screen.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/button_mapping_screen.hpp"
@@ -413,7 +414,9 @@ private:
     // DataManagement only where this device plays games itself.
     // Settings, and Data Management from there, only on a build that plays
     // games here -- see local_play.hpp.
-    enum class State { Launcher, Browsing, Connecting, Playing, Failed, DataManagement, Settings };
+    // RemoteStart: a computer's games, from the host picker, one to start
+    // there -- see RemoteStartScreen.
+    enum class State { Launcher, Browsing, RemoteStart, Connecting, Playing, Failed, DataManagement, Settings };
 
     void open_launcher();
 #if DS_LOCAL_PLAY
@@ -566,6 +569,25 @@ private:
     uint32_t save_slots_shown_ = 0;
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
+    // Computers that can start a game, looked for while the host picker is
+    // up -- see net::LaunchHostFinder -- and one's games.
+    net::LaunchHostFinder launch_finder_;
+    RemoteStartScreen remote_start_;
+    // What this device calls itself to a host, and to a computer it pairs
+    // with.
+    std::string device_name_;
+    // A game just started on a computer from here: the host picker joins it
+    // as soon as its beacon comes in from that address.
+    struct AwaitedLaunch {
+        std::string address;
+        std::string title;
+        std::string computer;
+        uint64_t until_ms = 0;
+    };
+    std::optional<AwaitedLaunch> awaited_launch_;
+    // The computers to list: those not already running a game.
+    std::vector<net::LaunchHost> idle_computers() const;
+    std::string host_picker_status() const;
     // Where the connecting screen's prompts ended up -- it is a free
     // function rather than an object, so it has nowhere of its own to keep
     // them.
@@ -811,8 +833,31 @@ void Client::stop() {
     SDL_Quit();
 }
 
+std::vector<net::LaunchHost> Client::idle_computers() const {
+    std::vector<net::LaunchHost> computers = launch_finder_.hosts();
+    const std::vector<net::DiscoveredHost> running = session_.hosts();
+    computers.erase(std::remove_if(computers.begin(), computers.end(),
+                                   [&](const net::LaunchHost& computer) {
+                                       return std::any_of(running.begin(), running.end(),
+                                                          [&](const net::DiscoveredHost& host) {
+                                                              return host.address == computer.address;
+                                                          });
+                                   }),
+                    computers.end());
+    return computers;
+}
+
+std::string Client::host_picker_status() const {
+    if (state_ == State::Failed) return failure_;
+    if (awaited_launch_) return "Starting " + awaited_launch_->title + " on " + awaited_launch_->computer + "...";
+    return session_.status_detail();
+}
+
 void Client::open_launcher() {
     state_ = State::Launcher;
+    launch_finder_.stop();
+    remote_start_.close();
+    awaited_launch_.reset();
     close_menu();
     session_.disconnect();
     // Nothing of the session that ended stays to be shown by the next one:
@@ -944,6 +989,11 @@ void Client::begin_search(ScreenId wanted) {
     // Which Android device, as Android names it -- see default_device_name().
     if (name.empty()) name = Settings::load(AppPaths::resolve()).device_name;
 #endif
+    // Shown in the computer's list of devices paired with it.
+    device_name_ = name.empty() ? std::string("Dualscreen companion") : name;
+    awaited_launch_.reset();
+    if (system_keyboard_available()) remote_start_.set_text_editor(&edit_with_system_keyboard);
+    if (!launch_finder_.running()) launch_finder_.start();
     std::string error;
     if (!session_.begin_search(name, wanted, &error)) {
         state_ = State::Failed;
@@ -955,6 +1005,9 @@ void Client::begin_search(ScreenId wanted) {
 void Client::join(const net::DiscoveredHost& host) {
     log_info("joining " + host.device_name + " (" + host.address + ") as the " +
              to_string(host_picker_.wanted_screen()) + " screen");
+    launch_finder_.stop();
+    remote_start_.close();
+    awaited_launch_.reset();
     session_.connect_to(host);
     video_layers_.forget();
     menu_backdrop_.forget();
@@ -1194,6 +1247,7 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
             }
             return none;
         // Its prompts are its own, and so are taps on them.
+        case State::RemoteStart:
         case State::DataManagement:
         case State::Settings: return none;
     }
@@ -1500,11 +1554,44 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         return;
     }
 
+    if (state_ == State::RemoteStart) {
+        remote_start_.type(input_.typed_text(), input_.backspaces());
+        const RemoteStartResult result = remote_start_.update(actions, pointers, static_cast<float>(output_width_),
+                                                              static_cast<float>(output_height_));
+        input_.set_text_entry(remote_start_.is_open() && remote_start_.wants_text());
+        if (result.token_changed) {
+            // Kept by the computer's id, so it is not asked for a code again.
+            if (!net::keep_remote_start_token(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
+                                              remote_start_.host().id, result.token)) {
+                log_warn("could not save remote_start_tokens.json");
+            }
+        }
+        if (result.started) {
+            awaited_launch_ = AwaitedLaunch{remote_start_.host().address, result.started_title,
+                                            remote_start_.host().name, net::monotonic_millis() + 120000};
+            host_picker_.open(host_picker_.wanted_screen());
+            state_ = State::Browsing;
+        } else if (result.back) {
+            host_picker_.open(host_picker_.wanted_screen());
+            state_ = State::Browsing;
+        }
+        return;
+    }
+
     if (state_ == State::Browsing) {
         const HostPickerResult result =
-            host_picker_.update(session_.hosts(), actions, pointers,
+            host_picker_.update(session_.hosts(), idle_computers(), actions, pointers,
                                 static_cast<float>(output_width_),
                                 static_cast<float>(output_height_));
+        if (result.start_on) {
+            remote_start_.open(result.launch_host,
+                               net::remote_start_token(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
+                                                       result.launch_host.id),
+                               device_name_);
+            awaited_launch_.reset();
+            state_ = State::RemoteStart;
+            return;
+        }
         if (result.chosen) {
             join(result.host);
         } else if (result.cancelled) {
@@ -1528,6 +1615,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 }
                 break;
             case State::Launcher:
+            case State::RemoteStart:
             case State::DataManagement:
             case State::Settings:
                 break;
@@ -1694,6 +1782,7 @@ UiSoundView Client::sound_view() const {
     switch (state_) {
         case State::Launcher: launcher_.describe_for_sound(view); break;
         case State::Browsing: host_picker_.describe_for_sound(view); break;
+        case State::RemoteStart: remote_start_.describe_for_sound(view); break;
         case State::Failed: view.error = true; break;
 #if DS_LOCAL_PLAY
         case State::DataManagement:
@@ -1841,6 +1930,7 @@ void Client::run() {
 
         switch (state_) {
             case State::Launcher:
+            case State::RemoteStart:
             case State::DataManagement:
             case State::Settings:
                 break;
@@ -1850,6 +1940,21 @@ void Client::run() {
                         if (host.offers(host_picker_.wanted_screen())) {
                             join(host);
                             break;
+                        }
+                    }
+                }
+                // A game started from here, joined the moment it shows up.
+                if (state_ == State::Browsing && awaited_launch_) {
+                    if (net::monotonic_millis() > awaited_launch_->until_ms) {
+                        log_warn(awaited_launch_->title + " did not show up from " + awaited_launch_->computer);
+                        awaited_launch_.reset();
+                    } else {
+                        for (const net::DiscoveredHost& host : session_.hosts()) {
+                            if (host.address == awaited_launch_->address &&
+                                host.offers(host_picker_.wanted_screen())) {
+                                join(host);
+                                break;
+                            }
                         }
                     }
                 }
@@ -2214,8 +2319,12 @@ void Client::draw_scene() {
     if (state_ != State::Playing) {
         // The app's own host picker, so finding a game looks the same here as
         // it does there. A failure is shown in the same place, as its status.
+        if (state_ == State::RemoteStart) {
+            remote_start_.render(quads_, text_, button_glyphs_, width, height);
+            return;
+        }
         host_picker_.render(quads_, text_, button_glyphs_, width, height, session_.hosts(),
-                            state_ == State::Failed ? failure_ : session_.status_detail());
+                            idle_computers(), host_picker_status());
         return;
     }
 

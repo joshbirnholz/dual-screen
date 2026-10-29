@@ -5,7 +5,9 @@
 
 #include "test_support.hpp"
 
+#include <chrono>
 #include <ctime>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -132,6 +134,49 @@ void test_a_code_runs_out() {
     CHECK(!record.paired(""));
 }
 
+// The device's end: a token kept by the computer's id, found again, and
+// forgotten with an empty one.
+void test_a_device_keeps_its_tokens() {
+    const std::string path = make_sandbox() + "/remote_start_tokens.json";
+    CHECK(remote_start_token(path, "pc1").empty());
+    CHECK(keep_remote_start_token(path, "pc1", "abc"));
+    CHECK(keep_remote_start_token(path, "pc2", "def"));
+    CHECK_STR_EQ(remote_start_token(path, "pc1"), "abc");
+    CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
+    CHECK(keep_remote_start_token(path, "pc1", ""));
+    CHECK(remote_start_token(path, "pc1").empty());
+    CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
+}
+
+// The finder searches on its own thread: what it has found is there to read
+// without waiting, and gone once it stops.
+void test_the_finder_finds_a_computer() {
+    LaunchService::Config config;
+    config.query_port = kQueryPort;
+    config.port = kPort;
+    config.name = "Den PC";
+    config.record_path = make_sandbox() + "/remote_start.json";
+    LaunchService service(config);
+    std::string error;
+    CHECK_MSG(service.start(&error), error);
+    LaunchSearch search;
+    search.query_port = kQueryPort;
+    search.addresses = {"127.0.0.1"};
+    search.timeout_ms = 300;
+    LaunchHostFinder finder;
+    finder.start(search, 100);
+    std::vector<LaunchHost> found;
+    for (int tries = 0; tries < 40 && found.empty(); ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        found = finder.hosts();
+    }
+    CHECK_EQ(found.size(), 1u);
+    CHECK(!found.empty() && found[0].name == "Den PC");
+    finder.stop();
+    CHECK(finder.hosts().empty());
+    service.stop();
+}
+
 void test_the_wake_packet() {
     const std::vector<uint8_t> packet = wake_on_lan_packet("01:23:45:67:89:AB");
     CHECK_EQ(packet.size(), 102u);
@@ -150,6 +195,8 @@ void test_the_wake_packet() {
 int main() {
     test_a_device_pairs_then_starts_a_game();
     test_a_code_runs_out();
+    test_a_device_keeps_its_tokens();
+    test_the_finder_finds_a_computer();
     test_the_wake_packet();
     return test::finish("launch-service");
 }

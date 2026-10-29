@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -115,6 +116,36 @@ struct LaunchSearch {
 
 // Every PC that answered within the time, by name. Blocks for all of it.
 std::vector<LaunchHost> search_launch_hosts(const LaunchSearch& search);
+
+// Searches again and again on a thread of its own while it runs, so a screen
+// listing the computers that can start a game never waits on the network --
+// the companion's host picker, which shows them under the games running.
+class LaunchHostFinder {
+public:
+    LaunchHostFinder() = default;
+    ~LaunchHostFinder() { stop(); }
+    LaunchHostFinder(const LaunchHostFinder&) = delete;
+    LaunchHostFinder& operator=(const LaunchHostFinder&) = delete;
+
+    void start(LaunchSearch search = {}, int every_ms = 3000);
+    void stop();
+    bool running() const { return thread_.joinable(); }
+    // What the last search found.
+    std::vector<LaunchHost> hosts() const;
+
+private:
+    std::thread thread_;
+    std::atomic<bool> stopping_{false};
+    mutable std::mutex mutex_;
+    std::vector<LaunchHost> hosts_;
+};
+
+// The tokens this device was given by the computers it paired with, by each
+// computer's id, kept in a file of their own at `path` -- the companion
+// keeps no settings.json of its own. Empty for a computer it has none from.
+std::string remote_start_token(const std::string& path, const std::string& host_id);
+// Kept, or with an empty `token` forgotten.
+bool keep_remote_start_token(const std::string& path, const std::string& host_id, const std::string& token);
 
 // The other end's errors are the player's to read; `unpaired` is set when the
 // token was not one the PC knows, so the device can ask for a code instead.
