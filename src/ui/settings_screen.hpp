@@ -66,18 +66,26 @@ struct SettingsScreenResult {
     // Its Updates row was chosen: the app checks for a newer build -- see
     // UpdatePrompt.
     bool open_updates = false;
-    // One of the Emulators page's download rows was chosen: the app
+    // One of the consoles' groups' download rows was chosen: the app
     // downloads or updates the emulator it keeps for that console -- Cemu, or
     // a core -- see UpdatePrompt.
     std::optional<SystemId> open_download;
 };
 
-// The settings that can be changed without a keyboard, changed with a pad, and
-// an Emulators page: one section for each console this device plays, saying
-// which emulator plays it and where it was found, with that emulator's own
-// settings under it -- melonDS's on a Switch, and on a PC or a Steam Deck the
-// Cemu that Dualscreen downloads and keeps up to date. Paths are edited in
-// settings.json.
+// The groups Settings files its rows in, listed down its left-hand side in
+// this order. A group is the same on every device -- a row a device has no
+// use for is left out of it, never moved to another -- and a group left with
+// nothing in it is not listed.
+enum class SettingsGroup { General, Consoles, WiiU, System, Count };
+const char* settings_group_name(SettingsGroup group);
+
+// The settings that can be changed without a keyboard, changed with a pad,
+// laid out as Graphics Packs and a Switch's System Settings are: the groups
+// listed on the left, and on the right the rows of the one highlighted there.
+// Each console's group also says which emulator plays it and where it was
+// found, with that emulator's own settings under it -- melonDS's on a Switch,
+// and on a PC or a Steam Deck the Cemu that Dualscreen downloads and keeps up
+// to date. Paths are edited in settings.json.
 class SettingsScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
@@ -102,31 +110,36 @@ public:
     // Where each emulator is, again: after Cemu has been downloaded, say.
     void set_cores(const std::vector<CoreStatus>& cores) { cores_ = cores; }
 
-    // melonDS's settings, in the Emulators page's DS section: how the
-    // Switch's melonDS runs, kept in the melonds.ini at `path` -- see
+    // melonDS's settings, in the DS & 3DS group: how the Switch's melonDS
+    // runs, kept in the melonds.ini at `path` -- see
     // config/melonds_tuning.hpp. `deko` is whether the core is RSDuck's, which
     // reads all of it; libretro's melonDS has only the CPU clock to set.
     void set_melonds_page(bool deko, std::string path);
-    // A row in a console's section for the emulator Dualscreen downloads and
+    // A row in a console's group for the emulator Dualscreen downloads and
     // keeps for it -- Cemu, or a libretro core: `label`, and what it says --
     // its build, Not installed, how far a download has got. Chosen, the app
     // downloads or updates it.
     void set_download_row(SystemId system, std::string label, std::string value) {
         download_rows_[system] = {std::move(label), std::move(value)};
     }
-    // A Data Management row, first, on a device that keeps saves of its own.
+    // A Data Management row, in System, on a device that keeps saves of its
+    // own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
-    // An Updates row, last, on a device that can update itself, saying what
-    // `value` does -- which build this is, or what the updater is doing. Over
-    // a game too, for a game started from a shortcut, whose Settings is the
-    // only one there is: the offer says what restarting does to the game.
+    // An Updates row, last in System, on a device that can update itself,
+    // saying what `value` does -- which build this is, or what the updater is
+    // doing. Over a game too, for a game started from a shortcut, whose
+    // Settings is the only one there is: the offer says what restarting does
+    // to the game.
     void set_offers_updates(bool offers) { offers_updates_ = offers; }
     void set_updates_value(std::string value) { updates_value_ = std::move(value); }
     // Back from Data Management: the cursor where it was, on its row.
     void return_from_data_management();
-    bool on_emulators_page() const { return page_ == Page::Emulators; }
-    // Straight to the Emulators page, as its row does.
-    void open_emulators_page();
+    // Straight into a group's rows, the cursor on the first.
+    void open_group(SettingsGroup group);
+    // The group highlighted on the left, and whether the cursor is over in
+    // its rows.
+    SettingsGroup group() const;
+    bool in_group() const { return in_group_; }
     bool is_open() const { return open_; }
     // A name being typed: the keyboard is to type into it -- see
     // InputManager::set_text_entry() -- and what it typed comes in through
@@ -155,13 +168,15 @@ public:
                                 float output_width,
                                 float output_height);
 
-    // MenuPage: the page scrolls under a finger, the mouse and the wheel, and
-    // an entry is a row, by its index. A row's popup takes its own taps.
+    // MenuPage: the group's side scrolls under a finger, the mouse and the
+    // wheel. Entries: a group in the list is its index times two, a row of
+    // the group shown is its index times two plus one. A row's popup takes
+    // its own taps.
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
-    // The page, in lines.
+    // The group's side, in lines.
     std::vector<float> scroll_state(float output_width, float output_height) const override;
     void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
 
@@ -172,21 +187,18 @@ public:
                 float output_height);
 
 public:
-    // Where the cursor is, so the shell can tell when it moved.
+    // Which of the group's rows the cursor is on, counting rows alone, so the
+    // shell can tell when it moved.
     int focus() const { return focus_; }
 
 private:
-    // The cores are not in here: they are read-only, one per console, and a
-    // focusable row that does nothing when pressed is worse than a plain list.
+    // The settings themselves. Which group each is in, and in what order, is
+    // group_items()'s.
     //
     // A Switch has no button settings: its prompts are always its own, and
     // its menus confirm on A like every other Switch menu -- see
     // App::Impl::apply_button_style().
     enum class Row {
-        // Every row is a value -- but the ways into Data Management and
-        // melonDS's page, which come before and after these -- and leaving
-        // is the cancel button's: a row that only did that would be a second
-        // way to do something already on the controller.
 #ifndef __SWITCH__
         PadGlyphs,
         ConfirmButtonRow,
@@ -215,26 +227,65 @@ private:
         UiSounds,
         Count
     };
-    static constexpr int kRowCount = static_cast<int>(Row::Count);
+    std::string row_label(Row row) const;
+    std::string row_value(Row row) const;
+
+    // melonDS's rows, in order.
+    enum class MelonRow {
+        CpuClock, Pipeline
+    };
+    std::vector<MelonRow> melon_rows() const;
+
+    // What a group's side holds, top to bottom. Only the rows take the
+    // cursor -- a console's heading and where its emulator is do not -- and
+    // focus_ counts those alone.
+    struct Item {
+        enum class Kind { Setting, Heading, Location, Melon, Download, DataManagement, Updates };
+        Kind kind = Kind::Setting;
+        Row row = Row::Count;
+        std::string text;
+        std::string value;
+        bool found = false;
+        MelonRow melon = MelonRow::CpuClock;
+        SystemId system = SystemId::Ds;
+        bool focusable() const { return kind != Kind::Heading && kind != Kind::Location; }
+    };
+    std::vector<Item> group_items(SettingsGroup group) const;
+    // The groups with anything in them, in order.
+    std::vector<SettingsGroup> groups() const;
+    // Built again whenever what they show may have changed: on moving to a
+    // group, and before each update and each draw.
+    void refresh_items() { items_ = group_items(group()); }
+    // The item the cursor is on, or null; and the setting it is, or Count.
+    const Item* focused_item() const;
+    Row focused_row() const;
+    // The group's rows.
+    int row_count() const;
 
     struct Geometry {
-        std::vector<PixelRect> rows;
         PixelRect panel;
-        // The Emulators page's headings and locations, where they go.
+        float scale = 1.0f;
+        float line = 0.0f;
+        // The window onto the page's content, under its heading.
+        float view_top = 0.0f;
+        float view_height = 0.0f;
+        // The left-hand list, one rect per group, and the line beside it.
+        std::vector<PixelRect> groups;
+        float divider_x = 0.0f;
+        // The right-hand side, and in it the group's rows, then its headings
+        // and locations, where they go.
+        PixelRect detail;
+        std::vector<PixelRect> rows;
         struct Text {
-            std::size_t entry;
+            std::size_t item;
             float y;
         };
         std::vector<Text> texts;
-        float scale = 1.0f;
-        // Everything the panel holds, laid out end to end, against the room
-        // there is to show it in. The difference is how far this can scroll.
-        float content_height = 0.0f;
-        // The window onto it: the page's content area.
-        float view_top = 0.0f;
-        float view_height = 0.0f;
-        // Where the footnote under the BIOS files starts.
+        // Where the footnote under melonDS's rows starts.
         float footnote_top = 0.0f;
+        // Everything the right-hand side holds, end to end, against the room
+        // there is to show it in. The difference is how far it can scroll.
+        float content_height = 0.0f;
         float max_scroll() const { return std::max(0.0f, content_height - view_height); }
     };
 
@@ -243,7 +294,9 @@ private:
     // Called after anything that moves the cursor, because a cursor you
     // cannot see is the same as no cursor.
     void scroll_focus_into_view(const Geometry& geometry);
-    void adjust(int direction, SettingsScreenResult& result);
+    // A switch flipped, a page opened, or an alert put up: what a press on a
+    // row without choices does.
+    void adjust(SettingsScreenResult& result);
     // The cursor's row's choices, in order, and which is in effect, where it
     // has more to choose between than on and off -- chosen in a popup. Empty
     // for a switch, a way into a page, or the button row.
@@ -252,50 +305,13 @@ private:
     // A press on the cursor's row: a popup of its choices, or what adjust()
     // does with it.
     void press_row(SettingsScreenResult& result, const Geometry& geometry);
-    // A line said under a row, or null. Only Vsync has one.
+    // Shows the `index`th group, the cursor still on the list.
+    void show_group(int index);
+    // A line said under the group's `index`th row, or null.
     const char* row_description(int index) const;
     float description_height(float scale) const;
 
-    // melonDS's rows, in order.
-    enum class MelonRow {
-        CpuClock, Pipeline
-    };
-    enum class Page { Main, Emulators };
-    std::vector<MelonRow> melon_rows() const;
-
-    // What the Emulators page holds, top to bottom: for each console a
-    // heading and where its emulator is, then that emulator's rows. Only the
-    // rows take the cursor; focus_ counts those alone.
-    struct Entry {
-        enum class Kind { Heading, Location, Melon, Download } kind = Kind::Heading;
-        std::string text;
-        std::string value;
-        bool found = false;
-        MelonRow melon = MelonRow::CpuClock;
-        SystemId system = SystemId::Ds;
-        bool focusable() const { return kind == Kind::Melon || kind == Kind::Download; }
-    };
-    std::vector<Entry> emulator_entries() const;
-    // Built again whenever what they show may have changed: on opening the
-    // page, and before each update and each draw.
-    void refresh_entries() { entries_ = emulator_entries(); }
-    // The entry the cursor is on, on the Emulators page, or null.
-    const Entry* focused_entry() const;
-
-    // Rows on the page showing: Data Management's first when there is one,
-    // then the main page's, then Emulators and Updates when there are those.
-    int row_count() const;
-    int data_management_row() const { return offers_data_management_ ? 0 : -1; }
-    // Where the rows of Row start: after Data Management's.
-    int first_setting_row() const { return offers_data_management_ ? 1 : 0; }
-    bool has_emulators_page() const { return !cores_.empty() || melonds_available_; }
-    int emulators_row() const { return has_emulators_page() ? first_setting_row() + kRowCount : -1; }
-    int updates_row() const {
-        return offers_updates_
-                   ? first_setting_row() + kRowCount + (has_emulators_page() ? 1 : 0)
-                   : -1;
-    }
-    void adjust_melonds(MelonRow row, int direction);
+    void adjust_melonds(MelonRow row);
     void save_melonds();
     static std::string melon_label(MelonRow row);
     std::string melon_value(MelonRow row) const;
@@ -304,6 +320,10 @@ private:
     AppPaths paths_;
     Settings settings_;
     std::vector<CoreStatus> cores_;
+    // The group highlighted, by its place among groups(); whether the cursor
+    // is over in its rows; and which of them.
+    int group_ = 0;
+    bool in_group_ = false;
     int focus_ = 0;
     bool open_ = false;
     bool over_game_ = false;
@@ -317,8 +337,7 @@ private:
     std::string melonds_path_;
     MelonDsTuning tuning_;
     std::string melonds_error_;
-    Page page_ = Page::Main;
-    std::vector<Entry> entries_;
+    std::vector<Item> items_;
     // A row's choices, up beside it -- see focused_choices().
     ChoicePopup choice_;
     // The row the popup was opened beside, for the day's to open beside too.
@@ -350,14 +369,12 @@ private:
                        std::string& out)>
         text_editor_;
 
-    // How far down the list has been pushed, in pixels. Pixels rather than
-    // rows, because what is below the rows -- the cores, then the BIOS files
-    // -- is not made of rows and would jump past in whole-row steps.
+    // How far down the group's side has been pushed, in pixels. Pixels rather
+    // than rows, because a console's headings and locations are not rows and
+    // would jump past in whole-row steps.
     float scroll_ = 0.0f;
     ListDrag drag_;
     ScrollEase scroll_ease_;
-    // Dragged by a finger on a device with a touch screen -- a Deck, a Switch
-    // -- the same as every list.
 
     // Where the prompts at the foot of the page were drawn -- see take_guide_taps().
     std::vector<GuideHit> guide_hits_;

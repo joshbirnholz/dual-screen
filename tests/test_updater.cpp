@@ -554,7 +554,7 @@ void test_cores_are_offered_by_version() {
     CHECK(worth_offering(core, release, true));
 }
 
-// Asked for by name on the Emulators page: downloaded from the buildbot,
+// Asked for by name in Settings: downloaded from the buildbot,
 // Citra standing in where it has no Azahar, and nothing else looked at.
 void test_a_core_is_downloaded_when_asked() {
     auto backend = std::make_unique<FakeBackend>();

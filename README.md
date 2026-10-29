@@ -761,7 +761,7 @@ dualscreen --connect bottom
 ### Starting a game from the other device
 
 A Linux PC or a Steam Deck can let another device start a game on it, with
-nobody sitting at it and Dualscreen not even open. Choose **Settings > Enable
+nobody sitting at it and Dualscreen not even open. Choose **Settings > System > Enable
 Remote Start**: after an alert saying what it will do, that installs a small
 background service (`dualscreen --service`, a systemd user unit, so it runs in
 Game Mode too) that starts at every login. **Disable Remote Start** removes
@@ -990,8 +990,8 @@ companion delays what arrives the way the simulated link above does.
 ### Run-ahead
 
 A game has input lag of its own: it reads the touch in one frame and draws the
-result a frame or two later, on a real DS as much as here. **Run Ahead to Hide
-a DS Game's Lag** in Settings (off, 1 frame or 2 frames) hides that, the way
+result a frame or two later, on a real DS as much as here. **Run Ahead** in
+Settings > DS & 3DS (off, 1 frame or 2 frames) hides that, the way
 RetroArch's run-ahead does. Each frame the game is run normally and its sound
 played. It is then saved, run on silently by the chosen number of frames, and
 the last of those is the picture shown. Then it is put back. What is on
@@ -1174,7 +1174,7 @@ A build from there knows its own number, and updates itself from the next ones
 (`src/update/`). At start it looks at the nightly's `version.json`; when there
 is a newer build, the main menu offers it -- **Update** downloads and installs
 it, **Not Now** leaves it, and that build is not offered at start again.
-**Settings > Updates** says which build this is and checks again whenever it is
+**Settings > System > Updates** says which build this is and checks again whenever it is
 chosen, including on a build made by hand, which never looks on its own.
 
 - **SteamOS**: the tarball is downloaded with the system's `curl`, unpacked
@@ -1189,11 +1189,27 @@ chosen, including on a build made by hand, which never looks on its own.
   all -- and then replaces it. It only installs over a build signed with the
   same key, so a locally built debug APK has to be uninstalled once first.
 
+### Settings
+
+Settings is laid out as Graphics Packs is: its groups down the left, and the
+rows of the one highlighted on the right. Right or A goes into a group, Left or
+B back to the list. A group is the same on every device; a row a device has no
+use for is left out rather than moved, and a group with nothing in it is not
+listed.
+
+| Group | Rows |
+| --- | --- |
+| General | Controller Icons, Confirm/Cancel, Streaming Quality, Vsync, Sound Effects |
+| DS & 3DS | Nickname, Favorite Color, Birth Month, Birth Day, Run Ahead; then each console's emulator |
+| Wii U | Default Wii U Screen, Pause Wii U Games in the Quick Menu, Wii U TV Audio, Wii Remote Rumble Strength; then Cemu |
+| System | Discord Rich Presence, Enable Remote Start, Data Management, Updates |
+
 ### Emulators
 
-**Settings > Emulators** has a section for each console the device plays:
-which emulator plays it, where it was found, and that emulator's own settings
-(melonDS's CPU clock and frame pipeline, on a Switch).
+Each console's group in Settings (**DS & 3DS**, **Wii U**) ends with a section
+for each console the device plays: which emulator plays it, where it was found,
+and that emulator's own settings (melonDS's CPU clock and frame pipeline, on a
+Switch).
 
 On a PC or a Steam Deck each section also has a row for Dualscreen's own copy
 of the emulator, which it downloads when chosen and keeps up to date from then
@@ -1610,7 +1626,7 @@ folder.
 
 ### Data Management
 
-**Data Management**, the first row of Settings,
+**Data Management**, in Settings > System,
 lists every DS, 3DS and Wii U save on this device with the game's own icon,
 title and publisher, newest first, each marked with its console. **X Sync All** brings every game up
 to date with every other device found: each game's newest save goes to the

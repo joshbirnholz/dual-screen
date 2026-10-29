@@ -65,18 +65,34 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir) {
     return statuses;
 }
 
+const char* settings_group_name(SettingsGroup group) {
+    switch (group) {
+        case SettingsGroup::General: return "General";
+        case SettingsGroup::Consoles: return "DS & 3DS";
+        case SettingsGroup::WiiU: return "Wii U";
+        case SettingsGroup::System: return "System";
+        case SettingsGroup::Count: break;
+    }
+    return "";
+}
+
 void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus>& cores) {
     open_ = true;
+    group_ = 0;
+    in_group_ = false;
     focus_ = 0;
     settings_ = settings;
     cores_ = cores;
     scroll_ = 0.0f;
-    page_ = Page::Main;
     asking_remote_start_ = false;
     notice_.clear();
+    // Read afresh each time, so a file edited by hand since is what shows.
+    if (melonds_available_) tuning_ = read_melonds_tuning(melonds_path_);
+    melonds_error_.clear();
 #if DS_REMOTE_START_HOST
     remote_start_on_ = service_starts_at_login();
 #endif
+    refresh_items();
 }
 
 void SettingsScreen::toggle_remote_start() {
@@ -136,61 +152,208 @@ void SettingsScreen::set_melonds_page(bool deko, std::string path) {
     melonds_path_ = std::move(path);
 }
 
-int SettingsScreen::row_count() const {
-    if (page_ == Page::Emulators) {
-        int count = 0;
-        for (const Entry& entry : entries_) count += entry.focusable() ? 1 : 0;
-        return count;
+std::string SettingsScreen::row_label(Row row) const {
+    switch (row) {
+#ifndef __SWITCH__
+        case Row::PadGlyphs: return "Controller Icons";
+        case Row::ConfirmButtonRow: return "Confirm/Cancel";
+#endif
+        case Row::VideoHold: return "Streaming Quality";
+        case Row::RunAheadDs: return "Run Ahead";
+        case Row::DsNickname: return "Nickname";
+        case Row::DsFavoriteColor: return "Favorite Color";
+        case Row::DsBirthMonth: return "Birth Month";
+        case Row::DsBirthDay: return "Birth Day";
+        case Row::Vsync: return "Vsync";
+#if DS_PLAYS_WII_U
+        case Row::WiiUScreenAlone: return "Default Wii U Screen";
+        case Row::PauseWiiUInMenu: return "Pause Wii U Games in the Quick Menu";
+        case Row::WiiUTvAudio: return "Wii U TV Audio";
+        case Row::WiiRemoteRumble: return "Wii Remote Rumble Strength";
+        case Row::DiscordStatus: return "Discord Rich Presence";
+#endif
+#if DS_REMOTE_START_HOST
+        case Row::RemoteStart: return remote_start_on_ ? "Disable Remote Start" : "Enable Remote Start";
+#endif
+        case Row::UiSounds: return "Sound Effects";
+        case Row::Count: break;
     }
-    return first_setting_row() + kRowCount + (has_emulators_page() ? 1 : 0) + (updates_row() >= 0 ? 1 : 0);
+    return std::string();
 }
 
-std::vector<SettingsScreen::Entry> SettingsScreen::emulator_entries() const {
-    std::vector<Entry> entries;
+std::string SettingsScreen::row_value(Row row) const {
+    switch (row) {
+#ifndef __SWITCH__
+        case Row::PadGlyphs: return to_string(settings_.pad_glyphs);
+        // Drawn as the two buttons themselves -- see render().
+        case Row::ConfirmButtonRow: return std::string();
+#endif
+        case Row::VideoHold: return video::to_string(settings_.video_hold);
+        case Row::RunAheadDs:
+            return settings_.run_ahead_ds == 0
+                       ? std::string("Off")
+                       : std::to_string(settings_.run_ahead_ds) + (settings_.run_ahead_ds == 1 ? " frame" : " frames");
+        case Row::DsNickname: return settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname;
+        case Row::DsFavoriteColor:
+            return kDsFavoriteColors[static_cast<std::size_t>(std::clamp(
+                                         settings_.ds_favorite_color, 0, static_cast<int>(kDsFavoriteColors.size()) - 1))]
+                .name;
+        case Row::DsBirthMonth:
+            return settings_.ds_birth_month >= 1 && settings_.ds_birth_month <= 12
+                       ? std::string(kDsMonths[static_cast<std::size_t>(settings_.ds_birth_month - 1)])
+                       : std::string("Not set");
+        case Row::DsBirthDay:
+            return settings_.ds_birth_day >= 1 ? std::to_string(settings_.ds_birth_day) : std::string("Not set");
+        case Row::Vsync: return settings_.vsync ? "On" : "Off";
+#if DS_PLAYS_WII_U
+        case Row::WiiUScreenAlone: return to_string(settings_.wii_u_screen_alone);
+        case Row::PauseWiiUInMenu: return settings_.pause_wii_u_in_menu ? "On" : "Off";
+        case Row::WiiUTvAudio: return kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)];
+        case Row::WiiRemoteRumble: return rumble_label(settings_.wii_remote_rumble);
+        case Row::DiscordStatus: return settings_.discord_status ? "On" : "Off";
+#endif
+#if DS_REMOTE_START_HOST
+        case Row::RemoteStart: return std::string();
+#endif
+        case Row::UiSounds: return settings_.ui_sounds ? "On" : "Off";
+        case Row::Count: break;
+    }
+    return std::string();
+}
+
+std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup group) const {
+    std::vector<Item> items;
+    const auto add = [&](Row row) {
+        Item item;
+        item.kind = Item::Kind::Setting;
+        item.row = row;
+        item.text = row_label(row);
+        item.value = row_value(row);
+        items.push_back(item);
+    };
     const auto add_melon_rows = [&] {
         for (const MelonRow row : melon_rows()) {
-            Entry entry;
-            entry.kind = Entry::Kind::Melon;
-            entry.text = melon_label(row);
-            entry.value = melon_value(row);
-            entry.melon = row;
-            entries.push_back(entry);
+            Item item;
+            item.kind = Item::Kind::Melon;
+            item.text = melon_label(row);
+            item.value = melon_value(row);
+            item.melon = row;
+            items.push_back(item);
         }
     };
-    const bool ds_listed = std::any_of(cores_.begin(), cores_.end(),
-                                       [](const CoreStatus& core) { return core.system == SystemId::Ds; });
-    if (melonds_available_ && !ds_listed) {
-        entries.push_back(Entry{Entry::Kind::Heading, "Nintendo DS", "melonDS"});
-        add_melon_rows();
-    }
-    for (const CoreStatus& core : cores_) {
-        entries.push_back(Entry{Entry::Kind::Heading, core.system_name, core.emulator});
+    // A console's emulator: its heading, where it was found, its own
+    // settings, and the row that downloads it.
+    const auto add_core = [&](const CoreStatus& core) {
+        items.push_back(Item{Item::Kind::Heading, Row::Count, core.system_name, core.emulator});
         const bool built_in = core.resolved_path == kBuiltInCorePath;
         const bool found = built_in || (!core.resolved_path.empty() && file_exists(core.resolved_path));
-        Entry where{Entry::Kind::Location, "", "", found};
-        where.text = built_in               ? std::string("Built into Dualscreen")
-                     : found                ? core.resolved_path
+        Item where{Item::Kind::Location};
+        where.found = found;
+        where.text = built_in                     ? std::string("Built into Dualscreen")
+                     : found                      ? core.resolved_path
                      : core.resolved_path.empty() ? std::string("Not found")
-                                            : "Not found at " + core.resolved_path;
-        entries.push_back(where);
+                                                  : "Not found at " + core.resolved_path;
+        items.push_back(where);
         if (core.system == SystemId::Ds && melonds_available_) add_melon_rows();
         const auto download = download_rows_.find(core.system);
         if (download != download_rows_.end()) {
-            Entry row{Entry::Kind::Download, download->second[0], download->second[1], true};
+            Item row{Item::Kind::Download, Row::Count, download->second[0], download->second[1], true};
             row.system = core.system;
-            entries.push_back(row);
+            items.push_back(row);
         }
+    };
+    switch (group) {
+        case SettingsGroup::General:
+#ifndef __SWITCH__
+            add(Row::PadGlyphs);
+            add(Row::ConfirmButtonRow);
+#endif
+            add(Row::VideoHold);
+            add(Row::Vsync);
+            add(Row::UiSounds);
+            break;
+        case SettingsGroup::Consoles: {
+            add(Row::DsNickname);
+            add(Row::DsFavoriteColor);
+            add(Row::DsBirthMonth);
+            add(Row::DsBirthDay);
+            add(Row::RunAheadDs);
+            const bool ds_listed = std::any_of(cores_.begin(), cores_.end(),
+                                               [](const CoreStatus& core) { return core.system == SystemId::Ds; });
+            if (melonds_available_ && !ds_listed) {
+                items.push_back(Item{Item::Kind::Heading, Row::Count, "Nintendo DS", "melonDS"});
+                add_melon_rows();
+            }
+            for (const CoreStatus& core : cores_) {
+                if (core.system != SystemId::WiiU) add_core(core);
+            }
+            break;
+        }
+        case SettingsGroup::WiiU:
+#if DS_PLAYS_WII_U
+            add(Row::WiiUScreenAlone);
+            add(Row::PauseWiiUInMenu);
+            add(Row::WiiUTvAudio);
+            add(Row::WiiRemoteRumble);
+#endif
+            for (const CoreStatus& core : cores_) {
+                if (core.system == SystemId::WiiU) add_core(core);
+            }
+            break;
+        case SettingsGroup::System:
+#if DS_PLAYS_WII_U
+            add(Row::DiscordStatus);
+#endif
+#if DS_REMOTE_START_HOST
+            add(Row::RemoteStart);
+#endif
+            if (offers_data_management_) items.push_back(Item{Item::Kind::DataManagement, Row::Count, "Data Management"});
+            if (offers_updates_) {
+                items.push_back(Item{Item::Kind::Updates, Row::Count, "Updates", updates_value_});
+            }
+            break;
+        case SettingsGroup::Count: break;
     }
-    return entries;
+    return items;
 }
 
-const SettingsScreen::Entry* SettingsScreen::focused_entry() const {
+std::vector<SettingsGroup> SettingsScreen::groups() const {
+    std::vector<SettingsGroup> shown;
+    for (int index = 0; index < static_cast<int>(SettingsGroup::Count); ++index) {
+        const SettingsGroup group = static_cast<SettingsGroup>(index);
+        const std::vector<Item> items = group_items(group);
+        if (std::any_of(items.begin(), items.end(), [](const Item& item) { return item.focusable(); })) {
+            shown.push_back(group);
+        }
+    }
+    return shown;
+}
+
+SettingsGroup SettingsScreen::group() const {
+    const std::vector<SettingsGroup> shown = groups();
+    if (shown.empty()) return SettingsGroup::General;
+    return shown[static_cast<std::size_t>(std::clamp(group_, 0, static_cast<int>(shown.size()) - 1))];
+}
+
+int SettingsScreen::row_count() const {
+    int count = 0;
+    for (const Item& item : items_) count += item.focusable() ? 1 : 0;
+    return count;
+}
+
+const SettingsScreen::Item* SettingsScreen::focused_item() const {
+    if (!in_group_) return nullptr;
     int index = 0;
-    for (const Entry& entry : entries_) {
-        if (!entry.focusable()) continue;
-        if (index++ == focus_) return &entry;
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        if (index++ == focus_) return &item;
     }
     return nullptr;
+}
+
+SettingsScreen::Row SettingsScreen::focused_row() const {
+    const Item* item = focused_item();
+    return item != nullptr && item->kind == Item::Kind::Setting ? item->row : Row::Count;
 }
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
@@ -199,14 +362,20 @@ std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
     return {MelonRow::CpuClock, MelonRow::Pipeline};
 }
 
-void SettingsScreen::open_emulators_page() {
-    // Read afresh each time, so a file edited by hand since is what shows.
-    if (melonds_available_) tuning_ = read_melonds_tuning(melonds_path_);
-    melonds_error_.clear();
-    page_ = Page::Emulators;
-    refresh_entries();
+void SettingsScreen::show_group(int index) {
+    if (index != group_) scroll_ = 0.0f;
+    group_ = index;
+    in_group_ = false;
     focus_ = 0;
-    scroll_ = 0.0f;
+    refresh_items();
+}
+
+void SettingsScreen::open_group(SettingsGroup group) {
+    const std::vector<SettingsGroup> shown = groups();
+    const auto found = std::find(shown.begin(), shown.end(), group);
+    if (found == shown.end()) return;
+    show_group(static_cast<int>(found - shown.begin()));
+    in_group_ = row_count() > 0;
 }
 
 std::string SettingsScreen::melon_label(MelonRow row) {
@@ -225,9 +394,9 @@ std::string SettingsScreen::melon_value(MelonRow row) const {
     return std::string();
 }
 
-void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
+void SettingsScreen::adjust_melonds(MelonRow row) {
     switch (row) {
-        case MelonRow::CpuClock: tuning_.cpu_mhz = next_melonds_cpu_mhz(tuning_.cpu_mhz, direction); break;
+        case MelonRow::CpuClock: tuning_.cpu_mhz = next_melonds_cpu_mhz(tuning_.cpu_mhz, 1); break;
         case MelonRow::Pipeline: tuning_.pipeline = !tuning_.pipeline; break;
     }
     save_melonds();
@@ -236,10 +405,10 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
 std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
     current = -1;
     std::vector<std::string> choices;
-    if (page_ == Page::Emulators) {
-        const Entry* entry = focused_entry();
-        if (entry == nullptr || entry->kind != Entry::Kind::Melon) return choices;
-        if (entry->melon == MelonRow::CpuClock) {
+    const Item* item = focused_item();
+    if (item == nullptr) return choices;
+    if (item->kind == Item::Kind::Melon) {
+        if (item->melon == MelonRow::CpuClock) {
             for (const int mhz : kMelonDsCpuMhz) {
                 if (mhz == tuning_.cpu_mhz) current = static_cast<int>(choices.size());
                 choices.push_back(std::to_string(mhz) + " MHz");
@@ -250,9 +419,8 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
         }
         return choices;
     }
-    const int index = focus_ - first_setting_row();
-    if (index < 0 || index >= kRowCount) return choices;
-    switch (static_cast<Row>(index)) {
+    if (item->kind != Item::Kind::Setting) return choices;
+    switch (item->row) {
 #ifndef __SWITCH__
         case Row::PadGlyphs:
             for (int style = 0; style < static_cast<int>(PadGlyphStyle::Count); ++style) {
@@ -338,20 +506,21 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
 }
 
 void SettingsScreen::choose(int index, SettingsScreenResult& result) {
-    if (page_ == Page::Emulators) {
-        const Entry* entry = focused_entry();
-        if (entry == nullptr || entry->kind != Entry::Kind::Melon) return;
-        if (entry->melon == MelonRow::CpuClock) {
+    const Item* item = focused_item();
+    if (item == nullptr) return;
+    if (item->kind == Item::Kind::Melon) {
+        if (item->melon == MelonRow::CpuClock) {
             if (index < 0 || index >= static_cast<int>(std::size(kMelonDsCpuMhz))) return;
             tuning_.cpu_mhz = kMelonDsCpuMhz[index];
         } else {
             tuning_.pipeline = index == 1;
         }
         save_melonds();
-        refresh_entries();
+        refresh_items();
         return;
     }
-    switch (static_cast<Row>(focus_ - first_setting_row())) {
+    if (item->kind != Item::Kind::Setting) return;
+    switch (item->row) {
 #ifndef __SWITCH__
         case Row::PadGlyphs:
             if (index < 0 || index >= static_cast<int>(PadGlyphStyle::Count)) return;
@@ -412,8 +581,10 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
     result.settings_changed = true;
 }
 
+
 void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geometry) {
-    if (page_ == Page::Main && focus_ == first_setting_row() + static_cast<int>(Row::DsNickname)) {
+    const Row row = focused_row();
+    if (row == Row::DsNickname) {
         const char* header = "Nickname";
         std::string typed;
         if (text_editor_) {
@@ -430,13 +601,12 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
     int current = -1;
     std::vector<std::string> choices = focused_choices(current);
     if (choices.empty()) {
-        adjust(1, result);
+        adjust(result);
         return;
     }
     if (focus_ < 0 || focus_ >= static_cast<int>(geometry.rows.size())) return;
     choice_row_ = geometry.rows[static_cast<std::size_t>(focus_)];
-    const int row = focus_ - first_setting_row();
-    if (page_ == Page::Main && row == static_cast<int>(Row::DsFavoriteColor)) {
+    if (row == Row::DsFavoriteColor) {
         // The DS's own sixteen, in its own order, four to a line as its
         // settings lay them out.
         std::vector<Color> colors;
@@ -446,7 +616,7 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
     }
     choice_.open(std::move(choices), current, choice_row_);
 #ifndef __SWITCH__
-    if (page_ == Page::Main && row == static_cast<int>(Row::ConfirmButtonRow)) {
+    if (row == Row::ConfirmButtonRow) {
         // The two buttons, as the row shows them: yes, then no.
         choice_.set_glyph_pairs(
             {{confirm_glyph_for(ConfirmButton::East), cancel_glyph_for(ConfirmButton::East)},
@@ -459,10 +629,7 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
 bool SettingsScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
                             float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
-    drag_.update(pointers,
-                 PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
-                           geometry.panel.y + geometry.panel.h - geometry.view_top},
-                 scroll_, geometry.max_scroll());
+    drag_.update(pointers, geometry.detail, scroll_, geometry.max_scroll());
     return drag_.release_was_drag();
 }
 
@@ -478,9 +645,16 @@ void SettingsScreen::set_scroll_state(const std::vector<float>& state, float out
 
 int SettingsScreen::entry_at(float x, float y, float output_width, float output_height) const {
     const Geometry geometry = compute_geometry(output_width, output_height);
-    if (y < geometry.view_top || y > geometry.panel.y + geometry.panel.h) return -1;
+    for (std::size_t index = 0; index < geometry.groups.size(); ++index) {
+        // The whole width up to the line, as the side tab is held.
+        const PixelRect& tab = geometry.groups[index];
+        if (PixelRect{tab.x, tab.y, geometry.divider_x - tab.x, tab.h}.contains(x, y)) {
+            return static_cast<int>(index) * 2;
+        }
+    }
+    if (!geometry.detail.contains(x, y)) return -1;
     for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
-        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
+        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index) * 2 + 1;
     }
     return -1;
 }
@@ -495,13 +669,17 @@ void SettingsScreen::save_melonds() {
 }
 
 void SettingsScreen::return_from_data_management() {
-    page_ = Page::Main;
-    focus_ = std::max(0, data_management_row());
-    scroll_ = 0.0f;
+    open_group(SettingsGroup::System);
+    int index = 0;
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        if (item.kind == Item::Kind::DataManagement) focus_ = index;
+        ++index;
+    }
 }
 
 std::string SettingsScreen::footnote() const {
-    if (page_ != Page::Emulators || !melonds_available_) return std::string();
+    if (group() != SettingsGroup::Consoles || !melonds_available_) return std::string();
     std::string note = "melonDS's settings take effect the next time a game starts. They are kept in " +
                        melonds_path_ + ", which can be edited by hand as well.";
     if (melonds_deko_) {
@@ -512,15 +690,20 @@ std::string SettingsScreen::footnote() const {
 }
 
 const char* SettingsScreen::row_description(int index) const {
-    if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::Vsync)) {
-        return kVsyncDescription;
-    }
+    int at = 0;
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        if (at++ != index) continue;
+        if (item.kind != Item::Kind::Setting) return nullptr;
+        if (item.row == Row::Vsync) return kVsyncDescription;
 #if DS_REMOTE_START_HOST
-    if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::RemoteStart)) {
-        return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
-                                : "Installs a background service so other devices can start games here.";
-    }
+        if (item.row == Row::RemoteStart) {
+            return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
+                                    : "Installs a background service so other devices can start games here.";
+        }
 #endif
+        return nullptr;
+    }
     return nullptr;
 }
 
@@ -533,158 +716,110 @@ float SettingsScreen::description_height(float scale) const {
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                                           float output_height) const {
     Geometry geometry;
-    // The same frame as every other page: see ui/page_frame.hpp. The panel
-    // runs from the top margin to the bottom of the content area.
+    // The same frame as every other page, split as Graphics Packs and the
+    // quick menu are: the groups, a line, and the rows of the one
+    // highlighted.
     const PageFrame frame = page_frame(output_width, output_height);
     geometry.scale = frame.scale;
     const float line = frame.line;
-    geometry.panel = PixelRect{frame.panel.x, frame.panel.y, frame.panel.w,
-                               frame.content_bottom - frame.panel.y};
+    geometry.line = line;
+    geometry.panel = frame.panel;
+    geometry.view_top = frame.content_top;
+    geometry.view_height = frame.content_bottom - frame.content_top;
 
-    // The heading stays put; everything under it moves with the scroll.
-    const float content_top = frame.content_top;
-    geometry.view_top = content_top;
-    geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
-    const float top = content_top - scroll_;
     const float row_height = menu_row_height(line);
     const float gap = menu_row_gap(line);
-    // Short of the panel's right edge by the scroll bar, which runs beside
-    // the rows rather than over them.
-    const float row_width = geometry.panel.w - scroll_bar_width(geometry.scale) - line * 0.6f;
-
-    if (page_ == Page::Emulators) {
-        // Each console's heading, where its emulator is, then its rows.
-        float y = top + line * 0.5f;
-        for (std::size_t index = 0; index < entries_.size(); ++index) {
-            switch (entries_[index].kind) {
-                case Entry::Kind::Heading:
-                    if (index > 0) y += line * 0.9f;
-                    geometry.texts.push_back(Geometry::Text{index, y});
-                    y += line * 1.45f;
-                    break;
-                case Entry::Kind::Location:
-                    geometry.texts.push_back(Geometry::Text{index, y});
-                    y += line * 1.35f;
-                    break;
-                case Entry::Kind::Melon:
-                case Entry::Kind::Download:
-                    geometry.rows.push_back(PixelRect{geometry.panel.x, y, row_width, row_height});
-                    y += row_height + gap;
-                    break;
-            }
-        }
-        const float footnote_scale = geometry.scale * 0.85f;
-        const std::string note = footnote();
-        const float footnote_height =
-            note.empty() ? 0.0f
-                         : TextRenderer::wrapped_line_step(footnote_scale) *
-                               static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, footnote_scale).size());
-        geometry.footnote_top = y + line * 0.4f;
-        const float error_height = melonds_error_.empty() ? 0.0f : line * 1.4f;
-        geometry.content_height = geometry.footnote_top + footnote_height + error_height + line * 0.4f - top;
-        return geometry;
+    // The list as wide as its longest group needs, with room for the bar
+    // that marks the one showing, and no wider, so the rows get the rest.
+    const float row_scale = geometry.scale * 1.1f;
+    float label_width = 0.0f;
+    const std::vector<SettingsGroup> shown = groups();
+    for (const SettingsGroup group : shown) {
+        label_width = std::max(label_width, TextRenderer::measure_width(settings_group_name(group), row_scale));
     }
+    const float list_width =
+        std::round(std::clamp(label_width + line * 3.0f, geometry.panel.w * 0.2f, geometry.panel.w * 0.34f));
+    float y = geometry.view_top;
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+        geometry.groups.push_back(PixelRect{geometry.panel.x, y, list_width, row_height});
+        y += row_height + gap;
+    }
+    geometry.divider_x = std::round(geometry.panel.x + list_width + line);
+    const float detail_x = geometry.divider_x + line;
+    geometry.detail = PixelRect{detail_x, geometry.view_top, geometry.panel.x + geometry.panel.w - detail_x,
+                                geometry.view_height};
 
+    // The group's rows, short of its right-hand edge by the scroll bar, which
+    // runs beside them rather than over them; a console's heading and where
+    // its emulator is between them.
+    const float top = geometry.view_top - scroll_;
+    const float row_width = geometry.detail.w - scroll_bar_width(geometry.scale) - line * 0.5f;
     float row_y = top;
-    const int rows = row_count();
-    for (int index = 0; index < rows; ++index) {
-        geometry.rows.push_back(PixelRect{geometry.panel.x, row_y, row_width, row_height});
-        row_y += row_height + gap;
-        // A line of explanation under the row, in the gap before the next.
-        if (row_description(index) != nullptr) row_y += description_height(geometry.scale);
+    int row = 0;
+    for (std::size_t index = 0; index < items_.size(); ++index) {
+        switch (items_[index].kind) {
+            case Item::Kind::Heading:
+                row_y += index > 0 ? line * 1.3f : line * 0.3f;
+                geometry.texts.push_back(Geometry::Text{index, row_y});
+                row_y += line * 1.45f;
+                break;
+            case Item::Kind::Location:
+                geometry.texts.push_back(Geometry::Text{index, row_y});
+                row_y += line * 1.8f;
+                break;
+            default:
+                geometry.rows.push_back(PixelRect{geometry.detail.x, row_y, row_width, row_height});
+                row_y += row_height + gap;
+                // A line of explanation under the row, in the gap before the next.
+                if (row_description(row) != nullptr) row_y += description_height(geometry.scale);
+                ++row;
+                break;
+        }
     }
-    // The page ends where the last row does, and the scroll bar with it.
+    float end = row_y;
+    const std::string note = footnote();
+    geometry.footnote_top = row_y + line * 0.4f;
+    if (!note.empty()) {
+        const float footnote_scale = geometry.scale * 0.85f;
+        const float note_width = row_width - menu_row_pad(line) * 2.0f;
+        end = geometry.footnote_top + TextRenderer::wrapped_line_step(footnote_scale) *
+                                          static_cast<float>(TextRenderer::wrap(note, note_width, footnote_scale).size());
+    }
+    if (!melonds_error_.empty() && group() == SettingsGroup::Consoles) end += line * 1.4f;
     // Measured from the top of the content rather than from the panel, so it
     // is the height of the thing being scrolled and not of the window onto it.
-    geometry.content_height = row_y + line * 0.4f - top;
+    geometry.content_height = end + line * 0.4f - top;
     return geometry;
 }
 
-void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
-    if (page_ == Page::Emulators) {
-        const Entry* entry = focused_entry();
-        if (entry == nullptr) return;
-        if (entry->kind == Entry::Kind::Melon) {
-            adjust_melonds(entry->melon, direction);
-            refresh_entries();
-        } else if (entry->kind == Entry::Kind::Download && direction > 0) {
-            // Downloading or updating is the app's -- and asked first.
-            result.open_download = entry->system;
-        }
-        return;
+void SettingsScreen::adjust(SettingsScreenResult& result) {
+    const Item* item = focused_item();
+    if (item == nullptr) return;
+    switch (item->kind) {
+        case Item::Kind::Melon:
+            adjust_melonds(item->melon);
+            refresh_items();
+            return;
+        // Downloading or updating is the app's -- and asked first.
+        case Item::Kind::Download: result.open_download = item->system; return;
+        case Item::Kind::DataManagement: result.open_data_management = true; return;
+        case Item::Kind::Updates: result.open_updates = true; return;
+        case Item::Kind::Heading:
+        case Item::Kind::Location: return;
+        case Item::Kind::Setting: break;
     }
-    if (focus_ == emulators_row()) {
-        // A way in, not a value: forwards opens it, back does nothing.
-        if (direction > 0) open_emulators_page();
-        return;
-    }
-    if (focus_ == data_management_row()) {
-        if (direction > 0) result.open_data_management = true;
-        return;
-    }
-    if (focus_ == updates_row()) {
-        if (direction > 0) result.open_updates = true;
-        return;
-    }
-    switch (static_cast<Row>(focus_ - first_setting_row())) {
-#ifndef __SWITCH__
-        case Row::PadGlyphs: {
-            // Three values, so this one steps rather than flips -- and it
-            // steps the way the cursor was pushed.
-            const int count = static_cast<int>(PadGlyphStyle::Count);
-            const int here = static_cast<int>(settings_.pad_glyphs);
-            settings_.pad_glyphs =
-                static_cast<PadGlyphStyle>(((here + direction) % count + count) % count);
-            result.settings_changed = true;
-            break;
-        }
-        case Row::ConfirmButtonRow:
-            // Two values, so either direction is the other one.
-            settings_.confirm_button = settings_.confirm_button == ConfirmButton::East
-                                           ? ConfirmButton::South
-                                           : ConfirmButton::East;
-            result.settings_changed = true;
-            break;
-#endif
-        case Row::VideoHold:
-            settings_.video_hold = video::next_video_hold(settings_.video_hold);
-            result.settings_changed = true;
-            break;
-        case Row::RunAheadDs:
-            // Three values, stepped the way the cursor was pushed.
-            settings_.run_ahead_ds = (settings_.run_ahead_ds + (direction < 0 ? 2 : 1)) % 3;
-            result.settings_changed = true;
-            break;
-        // A name is typed -- see press_row() -- and a color chosen.
-        case Row::DsNickname:
-        case Row::DsFavoriteColor:
-        case Row::DsBirthMonth:
-        case Row::DsBirthDay: break;
+    // Only the switches and Remote Start get here: every other row has its
+    // choices, which press_row() puts up.
+    switch (item->row) {
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
             break;
 #if DS_PLAYS_WII_U
-        case Row::WiiUScreenAlone:
-            settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
-            result.settings_changed = true;
-            break;
         case Row::PauseWiiUInMenu:
             settings_.pause_wii_u_in_menu = !settings_.pause_wii_u_in_menu;
             result.settings_changed = true;
             break;
-        case Row::WiiUTvAudio:
-            settings_.wii_u_tv_audio = ((settings_.wii_u_tv_audio + direction) % 3 + 3) % 3;
-            result.settings_changed = true;
-            break;
-        case Row::WiiRemoteRumble: {
-            const int count = static_cast<int>(std::size(kWiiRemoteRumbleChoices));
-            int at = 0;
-            while (at + 1 < count && kWiiRemoteRumbleChoices[at] < settings_.wii_remote_rumble) ++at;
-            settings_.wii_remote_rumble = kWiiRemoteRumbleChoices[((at + direction) % count + count) % count];
-            result.settings_changed = true;
-            break;
-        }
         case Row::DiscordStatus:
             settings_.discord_status = !settings_.discord_status;
             result.settings_changed = true;
@@ -701,20 +836,24 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.ui_sounds = !settings_.ui_sounds;
             result.settings_changed = true;
             break;
-        case Row::Count:
-            break;
+        default: break;
     }
+    refresh_items();
 }
 
 void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
+    if (!in_group_) {
+        scroll_ = std::min(scroll_, geometry.max_scroll());
+        return;
+    }
     const int rows = row_count();
     const std::size_t index = static_cast<std::size_t>(std::max(0, std::min(focus_, rows - 1)));
     if (index >= geometry.rows.size()) {
         return;
     }
-    // The first row shows the top of the page, and the last the bottom of it
-    // -- the emulators and BIOS files under the rows -- so the cursor alone
-    // reaches everything, and the scroll bar ends where the page does.
+    // The first row shows the top of the group, and the last the bottom of
+    // it -- melonDS's footnote under its rows -- so the cursor alone reaches
+    // everything, and the scroll bar ends where the group does.
     if (focus_ == 0) {
         scroll_ = 0.0f;
         return;
@@ -725,9 +864,16 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
     }
     const PixelRect& row = geometry.rows[index];
     const float top = geometry.view_top;
-    const float bottom = geometry.panel.y + geometry.panel.h;
-    if (row.y < top) {
-        scroll_ -= top - row.y;
+    const float bottom = geometry.view_top + geometry.view_height;
+    // A row's heading comes into view with it.
+    float row_top = row.y;
+    for (const Geometry::Text& placed : geometry.texts) {
+        if (placed.y < row.y && placed.y > row.y - row.h - TextRenderer::line_height(geometry.scale) * 3.0f) {
+            row_top = std::min(row_top, placed.y);
+        }
+    }
+    if (row_top < top) {
+        scroll_ -= top - row_top;
     } else {
         // With its line of explanation, which is the cursor's too.
         const float end = row.y + row.h +
@@ -745,9 +891,9 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     if (!open_) {
         return result;
     }
-    // What the Emulators page shows can change under it -- a download's
-    // progress, say -- so it is read again each time.
-    if (page_ == Page::Emulators) refresh_entries();
+    // What a group shows can change under it -- a download's progress, say
+    // -- so it is read again each time.
+    refresh_items();
     // A tap on Back at the foot of the page is Back pressed.
     std::vector<UiAction> actions = pressed;
     std::vector<PointerEvent> pointers = touched;
@@ -788,6 +934,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
         if (answer == PopupCursor::kNone) return result;
         asking_remote_start_ = false;
         if (answer == 1) toggle_remote_start();
+        refresh_items();
         return result;
     }
     // A row's choices, up beside it, take every press until put away.
@@ -801,29 +948,47 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
         return result;
     }
 
+    const int group_count = static_cast<int>(groups().size());
     for (const UiAction action : actions) {
         switch (action) {
-            case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
-            case UiAction::Down: focus_ = std::min(row_count() - 1, focus_ + 1); break;
-            // Values are not stepped from the side any more: A opens a row's
-            // choices, or flips its switch, or opens its page.
-            case UiAction::Left: break;
-            // A row that opens a page opens with A, never with a direction.
-            case UiAction::Right: break;
-            case UiAction::Confirm:
-                press_row(result, geometry);
+            case UiAction::Up:
+                if (in_group_) {
+                    focus_ = std::max(0, focus_ - 1);
+                } else if (group_ > 0) {
+                    show_group(group_ - 1);
+                }
                 break;
+            case UiAction::Down:
+                if (in_group_) {
+                    focus_ = std::max(0, std::min(row_count() - 1, focus_ + 1));
+                } else if (group_ + 1 < group_count) {
+                    show_group(group_ + 1);
+                }
+                break;
+            // Into the group from the list, on its first row. In it, A opens
+            // a row's choices, or flips its switch, or opens its page; Right
+            // does nothing there, values not being stepped from the side.
+            case UiAction::Right:
+            case UiAction::Confirm:
+                if (in_group_) {
+                    if (action == UiAction::Confirm) press_row(result, compute_geometry(output_width, output_height));
+                } else if (row_count() > 0) {
+                    in_group_ = true;
+                    focus_ = 0;
+                }
+                break;
+            // Back to the list from the group's left-hand edge, as in the
+            // quick menu.
+            case UiAction::Left: in_group_ = false; break;
+            // B a step at a time; the menu's own button out of everything.
             case UiAction::Cancel:
-            case UiAction::ToggleMenu:
-                if (page_ == Page::Emulators) {
-                    // Back to Settings, on the row it was opened from.
-                    page_ = Page::Main;
-                    focus_ = emulators_row();
-                    scroll_ = 0.0f;
+                if (in_group_) {
+                    in_group_ = false;
                 } else {
                     result.close_requested = true;
                 }
                 break;
+            case UiAction::ToggleMenu: result.close_requested = true; break;
             // A menu's face buttons. Nothing here answers them, and a bare
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
@@ -838,29 +1003,37 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
             case UiAction::NextLayout:
             case UiAction::SwapLayout:    // nothing here is a layout
-            // There is more here than fits, so these move the view rather
-            // than doing nothing.
             // L and R jump nowhere: a shoulder is not a way through a list.
             case UiAction::PageUp:
             case UiAction::PageDown: break;
         }
+        // A press that opened something takes the rest of this pass's.
+        if (choice_.is_open() || text_entry_.is_open() || asking_remote_start_) break;
     }
 
     // The cursor and the view are settled before anything is hit-tested: an
     // action may have moved either, and a row cannot be tapped where it was.
-    scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
+    const Geometry moved = compute_geometry(output_width, output_height);
+    scroll_ = std::max(0.0f, std::min(scroll_, moved.max_scroll()));
     // The cursor brings the view with it when it is moved -- and only then,
     // so a page dragged by a finger stays where the finger left it.
     if (!actions.empty()) {
         drag_.stop();
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }
-    // A tap on a row changes its value -- heard the one way every tap is.
-    for (const int index : take_taps(pointers, output_width, output_height)) {
-        const Geometry settled = compute_geometry(output_width, output_height);
-        if (index >= 0 && index < static_cast<int>(settled.rows.size()) && tap_chooses(focus_, index)) {
-            press_row(result, settled);
+    // A tap on a group shows it, the cursor staying on the list, as a tap on
+    // a Switch's settings' left-hand list does; one on a row presses it.
+    // Heard the one way every tap is.
+    for (const int entry : take_taps(pointers, output_width, output_height)) {
+        if (entry < 0) continue;
+        const int index = entry / 2;
+        if (entry % 2 == 0) {
+            if (index < group_count) show_group(index);
+            continue;
         }
+        if (index >= row_count()) continue;
+        in_group_ = true;
+        if (tap_chooses(focus_, index)) press_row(result, compute_geometry(output_width, output_height));
     }
     drag_.settle();
 
@@ -879,96 +1052,71 @@ void SettingsScreen::render(QuadRenderer& quads,
         return;
     }
 
-    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging(), static_cast<int>(page_));
+    refresh_items();
+    const ShownScroll shown(scroll_, scroll_ease_, drag_.dragging(), group_);
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
+    const float row_scale = scale * 1.1f;
 
     const PageFrame frame = page_frame(output_width, output_height);
     // Over the paused game, dimmed, when opened from its menu; on the app's
     // own background otherwise, since there is nothing behind it to dim.
     draw_page_background(quads, output_width, output_height, over_game_);
-    if (page_ == Page::Emulators) refresh_entries();
-    draw_page_header(quads, text, frame, page_ == Page::Emulators ? "Settings \xC2\xB7 Emulators" : "Settings");
+    draw_page_header(quads, text, frame, "Settings");
 
-    // Everything below the heading scrolls, so everything below the heading is
-    // clipped to the room there is for it. Without this a row pushed past the
-    // bottom carries on being drawn over whatever is under the panel.
-    const float view_top = geometry.view_top;
-    quads.set_clip(menu_list_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
-                                            geometry.panel.y + geometry.panel.h - view_top},
-                                  scale));
-
-    std::vector<std::array<std::string, 2>> rows;
-    if (page_ == Page::Emulators) {
-        for (const Entry& entry : entries_) {
-            if (entry.focusable()) rows.push_back({entry.text, entry.value});
-        }
+    // The groups, drawn as Graphics Packs draws its packs: the one whose rows
+    // are showing in the accent colour with a bar beside it, and ringed while
+    // the cursor is on it.
+    const std::vector<SettingsGroup> listed = groups();
+    for (std::size_t index = 0; index < listed.size() && index < geometry.groups.size(); ++index) {
+        const PixelRect& row = geometry.groups[index];
+        const bool current = static_cast<int>(index) == group_;
+        draw_side_tab(quads, row, current, current && !in_group_, scale);
+        text.draw(quads, settings_group_name(listed[index]), row.x + line * 0.8f,
+                  row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale,
+                  current ? theme.accent : theme.text);
     }
-    const std::string main_rows[kRowCount][2] = {
-#ifndef __SWITCH__
-        {"Controller Icons", to_string(settings_.pad_glyphs)},
-        // Drawn as the two buttons themselves, below.
-        {"Confirm/Cancel", ""},
-#endif
-        {"Streaming Quality", video::to_string(settings_.video_hold)},
-        {"Run Ahead to Hide a DS Game's Lag",
-         settings_.run_ahead_ds == 0
-             ? std::string("Off")
-             : std::to_string(settings_.run_ahead_ds) +
-                   (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
-        {"Nickname", settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname},
-        {"Favorite Color",
-         kDsFavoriteColors[static_cast<std::size_t>(
-                               std::clamp(settings_.ds_favorite_color, 0,
-                                          static_cast<int>(kDsFavoriteColors.size()) - 1))]
-             .name},
-        {"Birth Month", settings_.ds_birth_month >= 1 && settings_.ds_birth_month <= 12
-                            ? std::string(kDsMonths[static_cast<std::size_t>(settings_.ds_birth_month - 1)])
-                            : std::string("Not set")},
-        {"Birth Day", settings_.ds_birth_day >= 1 ? std::to_string(settings_.ds_birth_day) : std::string("Not set")},
-        {"Vsync", settings_.vsync ? "On" : "Off"},
-#if DS_PLAYS_WII_U
-        {"Default Wii U Screen", to_string(settings_.wii_u_screen_alone)},
-        {"Pause Wii U Games in the Quick Menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
-        {"Wii U TV Audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
-        {"Wii Remote Rumble Strength", rumble_label(settings_.wii_remote_rumble)},
-        {"Discord Rich Presence", settings_.discord_status ? "On" : "Off"},
-#endif
-#if DS_REMOTE_START_HOST
-        {remote_start_on_ ? "Disable Remote Start" : "Enable Remote Start", ""},
-#endif
-        {"Sound Effects", settings_.ui_sounds ? "On" : "Off"},
-    };
-    if (page_ == Page::Main) {
-        if (offers_data_management_) rows.push_back({"Data Management", ""});
-        for (const auto& row : main_rows) rows.push_back({row[0], row[1]});
-        if (has_emulators_page()) rows.push_back({"Emulators", ""});
-        if (updates_row() >= 0) rows.push_back({"Updates", updates_value_});
-    }
+    quads.draw_solid(PixelRect{geometry.divider_x, geometry.view_top, std::max(1.0f, std::round(scale * 0.5f)),
+                               geometry.view_height},
+                     theme.text_dim);
 
-    for (int index = 0; index < static_cast<int>(rows.size()); ++index) {
+    // Everything on the right scrolls, so it is clipped to the room there is
+    // for it. Without this a row pushed past the bottom carries on being
+    // drawn over whatever is under the panel.
+    quads.set_clip(menu_list_clip(geometry.detail, scale));
+
+    int index = -1;
+    const int rows = static_cast<int>(geometry.rows.size());
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        ++index;
+        if (index >= rows) break;
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
-        const bool focused = (index == focus_);
+        const bool focused = in_group_ && index == focus_;
         // A row with a line of explanation is ruled off above it, and the
-        // rule over the row after stays when the cursor is on this one.
+        // rule over the row after stays when the cursor is on this one. A
+        // row with a heading after it is the last of its run.
         const bool described = row_description(index) != nullptr;
-        draw_menu_row(quads, row, focused, scale, described || index == static_cast<int>(rows.size()) - 1,
-                      index == focus_ + 1 && row_description(focus_) == nullptr);
+        const std::size_t at = static_cast<std::size_t>(&item - items_.data());
+        const bool last = index == rows - 1 || (at + 1 < items_.size() && !items_[at + 1].focusable());
+        draw_menu_row(quads, row, focused, scale, described || last,
+                      in_group_ && index == focus_ + 1 && row_description(focus_) == nullptr);
 
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is
-        // what a long BIOS path would otherwise do.
+        // what a long path would otherwise do.
         const float pad = menu_row_pad(line);
         const float baseline = page_row_text_y(row, scale);
-        text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
+        text.draw(quads, item.text, row.x + pad, baseline, scale, menu_row_text(focused));
         if (const char* description = row_description(index)) {
             text.draw(quads, description, row.x + pad, row.y + row.h + menu_row_reach(scale) + line * 0.4f,
                       scale * 0.8f, theme.text_dim);
         }
+        const Row setting = item.kind == Item::Kind::Setting ? item.row : Row::Count;
 #ifndef __SWITCH__
-        if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::ConfirmButtonRow)) {
+        if (setting == Row::ConfirmButtonRow) {
             // The yes button, then the no one, as the prompts everywhere else
             // draw them -- so the row reads (A)/(B) or (B)/(A) in whichever
             // pad's symbols are chosen above, rather than a name for a
@@ -993,7 +1141,7 @@ void SettingsScreen::render(QuadRenderer& quads,
             continue;
         }
 #endif
-        if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
+        if (setting == Row::DsFavoriteColor) {
             // The color itself, unnamed, where a value goes.
             const DsFavoriteColor& color = kDsFavoriteColors[static_cast<std::size_t>(
                 std::clamp(settings_.ds_favorite_color, 0, static_cast<int>(kDsFavoriteColors.size()) - 1))];
@@ -1004,56 +1152,50 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
         // "Off" is also one of Run Ahead's three: a switch only where there
         // is nothing else to choose.
-        const bool has_choices = page_ == Page::Main &&
-                                 index == first_setting_row() + static_cast<int>(Row::RunAheadDs);
-        if (is_toggle_value(rows[index][1]) && !has_choices) {
-            draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, rows[index][1] == "On", line);
-        } else if (!rows[index][1].empty()) {
+        const bool has_choices = setting == Row::RunAheadDs;
+        if (is_toggle_value(item.value) && !has_choices) {
+            draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, item.value == "On", line);
+        } else if (!item.value.empty()) {
             const Color value_color = theme.text_dim;
-            const float label_width = TextRenderer::measure_width(rows[index][0], scale);
+            const float label_width = TextRenderer::measure_width(item.text, scale);
             const float available = row.w - label_width - pad * 4.0f;
-            const std::string value =
-                TextRenderer::elide_left(rows[index][1], available, scale * 0.9f);
+            const std::string value = TextRenderer::elide_left(item.value, available, scale * 0.9f);
             text.draw(quads, value, row.x + row.w - pad, page_row_text_y(row, scale * 0.9f),
                       scale * 0.9f, value_color, TextAlign::Right);
         }
     }
 
-    if (page_ == Page::Emulators) {
-        // Each console's heading -- its name, then its emulator's, dimmer --
-        // and on the line under it where that emulator was found.
-        for (const Geometry::Text& placed : geometry.texts) {
-            const Entry& entry = entries_[placed.entry];
-            if (entry.kind == Entry::Kind::Heading) {
-                text.draw(quads, entry.text, geometry.panel.x, placed.y, scale, theme.text);
-                if (!entry.value.empty()) {
-                    const float name_width = TextRenderer::measure_width(entry.text + "  ", scale);
-                    text.draw(quads, entry.value, geometry.panel.x + name_width, placed.y, scale,
-                              theme.text_dim);
-                }
-            } else {
-                text.draw(quads, TextRenderer::elide_left(entry.text, geometry.panel.w, scale * 0.85f),
-                          geometry.panel.x, placed.y, scale * 0.85f, theme.text_dim);
+    // Each console's heading -- its name, then its emulator's, dimmer -- and
+    // on the line under it where that emulator was found.
+    // In line with the rows' own words.
+    const float text_x = geometry.detail.x + menu_row_pad(line);
+    const float detail_width = geometry.detail.w - scroll_bar_width(scale) - line * 0.5f - menu_row_pad(line) * 2.0f;
+    for (const Geometry::Text& placed : geometry.texts) {
+        const Item& item = items_[placed.item];
+        if (item.kind == Item::Kind::Heading) {
+            text.draw(quads, item.text, text_x, placed.y, scale, theme.text);
+            if (!item.value.empty()) {
+                const float name_width = TextRenderer::measure_width(item.text + "  ", scale);
+                text.draw(quads, item.value, text_x + name_width, placed.y, scale, theme.text_dim);
             }
-        }
-        const std::string note = footnote();
-        if (!note.empty()) {
-            text.draw_wrapped(quads, note, geometry.panel.x, geometry.footnote_top, geometry.panel.w,
-                              scale * 0.85f, theme.text_dim);
-        }
-        if (!melonds_error_.empty()) {
-            const float note_height =
-                note.empty() ? 0.0f
-                             : TextRenderer::wrapped_line_step(scale * 0.85f) *
-                                   static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, scale * 0.85f).size());
-            text.draw(quads, TextRenderer::elide_right(melonds_error_, geometry.panel.w, scale * 0.85f),
-                      geometry.panel.x, geometry.footnote_top + note_height + line * 0.4f, scale * 0.85f,
-                      theme.danger);
+        } else {
+            text.draw(quads, TextRenderer::elide_left(item.text, detail_width, scale * 0.85f), text_x, placed.y,
+                      scale * 0.85f, theme.text_dim);
         }
     }
+    const std::string note = footnote();
+    float note_height = 0.0f;
+    if (!note.empty()) {
+        note_height = text.draw_wrapped(quads, note, text_x, geometry.footnote_top, detail_width, scale * 0.85f,
+                                        theme.text_dim);
+    }
+    if (!melonds_error_.empty() && group() == SettingsGroup::Consoles) {
+        text.draw(quads, TextRenderer::elide_right(melonds_error_, detail_width, scale * 0.85f), text_x,
+                  geometry.footnote_top + note_height + line * 0.4f, scale * 0.85f, theme.danger);
+    }
 
-    // Everything above scrolled and was clipped to the panel. The prompts
-    // below it are fixed to the window, so the clip comes off here.
+    // Everything above scrolled and was clipped. The prompts below it are
+    // fixed to the window, so the clip comes off here.
     quads.clear_clip();
 
     guide_hits_.clear();
@@ -1063,10 +1205,8 @@ void SettingsScreen::render(QuadRenderer& quads,
     // Something has to say there is more, or a list that stops at the bottom
     // edge looks like a list that ends there.
     if (geometry.max_scroll() > 0.5f) {
-        const float view = geometry.panel.y + geometry.panel.h - view_top;
-        const float span = std::max(view, geometry.content_height);
-        draw_scroll_bar(quads, PixelRect{geometry.panel.x, view_top, geometry.panel.w, view},
-                        scroll_ / span, view / span, line, scale);
+        const float span = std::max(geometry.view_height, geometry.content_height);
+        draw_scroll_bar(quads, geometry.detail, scroll_ / span, geometry.view_height / span, line, scale);
     }
     glyph_aspect_ = glyphs.width_for(1.0f);
     choice_.render(quads, text, output_width, output_height, &glyphs);
@@ -1087,8 +1227,8 @@ void SettingsScreen::render(QuadRenderer& quads,
 
 void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(group_ * 2 + (in_group_ ? 1 : 0) + 3000));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
-    mix_sound_state(view.rest, static_cast<uint64_t>(page_));
 #ifndef __SWITCH__
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.pad_glyphs));
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.confirm_button));
@@ -1114,18 +1254,15 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
     // The switches: the rows drawn as one -- see render().
-    if (page_ == Page::Main && !choice_.is_open() && !text_entry_.is_open() && !asking_remote_start_ && notice_.empty()) {
-        const int row = focus_ - first_setting_row();
-        if (row >= 0 && row < kRowCount) {
-            switch (static_cast<Row>(row)) {
-                case Row::Vsync: view.toggle = settings_.vsync ? 1 : 0; break;
+    if (!choice_.is_open() && !text_entry_.is_open() && !asking_remote_start_ && notice_.empty()) {
+        switch (focused_row()) {
+            case Row::Vsync: view.toggle = settings_.vsync ? 1 : 0; break;
 #if DS_PLAYS_WII_U
-                case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
-                case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
+            case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
+            case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
 #endif
-                case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
-                default: break;
-            }
+            case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
+            default: break;
         }
     }
 }

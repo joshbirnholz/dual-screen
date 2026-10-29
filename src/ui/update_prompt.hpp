@@ -78,7 +78,7 @@ public:
     void check_at_start();
     // Settings' Updates row was chosen: checks again, and says what it
     // finds -- or, while one is already found, offers it. With `only`, the
-    // Emulators page's row for that one component instead -- Cemu's.
+    // Settings row for that one component instead -- Cemu's.
     void choose(std::optional<update::Component> only = std::nullopt);
     // What a component's row says: its build, "Not installed", or what the
     // updater is doing with it.

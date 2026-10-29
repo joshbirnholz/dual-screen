@@ -5571,7 +5571,7 @@ std::string App::Impl::managed_core_path(SystemId system) const {
 
 void App::Impl::start_updater(const AppOptions& options) {
     if (!update::desktop_updates_supported() || options.leave_instead_of_launcher) return;
-    // Cemu, which Dualscreen downloads when asked on the Emulators page and
+    // Cemu, which Dualscreen downloads when asked in Settings and
     // keeps up to date while it is the one Wii U games are played with: when
     // no other Wii U program is named, one it downloaded is the one used.
     const std::string cemu = update::managed_cemu_path(paths.data_dir);
@@ -5629,7 +5629,7 @@ void App::Impl::poll_updates() {
     const std::string cemu = update::managed_cemu_path(paths.data_dir);
     bool changed = false;
     for (const update::Component installed : result.installed) {
-        // Asked for on the Emulators page, or updated because it was already
+        // Asked for in Settings, or updated because it was already
         // the one in use: either way it is the one its console is played
         // with now, and kept up to date from here on.
         if (installed == update::Component::Cemu) {
@@ -5657,7 +5657,7 @@ void App::Impl::poll_updates() {
         settings_screen->refresh_settings(settings);
         settings_screen->set_cores(resolve_core_statuses(options, settings));
     }
-    // The Emulators page's rows: Dualscreen's own copy of each emulator,
+    // The consoles' groups' rows in Settings: Dualscreen's own copy of each emulator,
     // named as what it would take over from when another is in use.
     if (device_plays(SystemId::WiiU)) {
         settings_screen->set_download_row(
@@ -7901,7 +7901,7 @@ int App::run(const AppOptions& options) {
     } else if (options.start_screen == "emulators") {
         impl.open_settings();
         impl.poll_updates();
-        impl.settings_screen->open_emulators_page();
+        impl.settings_screen->open_group(SettingsGroup::Consoles);
     } else if (options.start_screen == "updates") {
         // Settings, with its Updates row chosen: a real check, for seeing
         // what the popups that follow look like.

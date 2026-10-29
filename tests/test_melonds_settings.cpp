@@ -112,21 +112,23 @@ void test_page(const std::string& sandbox) {
     screen.set_melonds_page(true, path);
     screen.open(Settings(), {});
 
-    // The melonDS row is last; going down stops on it.
-    press(screen, UiAction::Down, 20);
-    const int melonds_row = screen.focus();
-    CHECK(melonds_row > 0);
-    // Back does nothing on a way in; forwards opens it.
-    press(screen, UiAction::Left);
-    CHECK(!screen.on_emulators_page());
-    press(screen, UiAction::Confirm);
-    CHECK(screen.on_emulators_page());
+    // The groups down the left, General first and highlighted; the cursor on
+    // the list.
+    CHECK(screen.group() == SettingsGroup::General);
+    CHECK(!screen.in_group());
+    // Down shows the next group, the cursor still on the list; Right goes
+    // into its rows, on the first.
+    press(screen, UiAction::Down);
+    CHECK(screen.group() == SettingsGroup::Consoles);
+    CHECK(!screen.in_group());
+    press(screen, UiAction::Right);
+    CHECK(screen.in_group());
     CHECK_EQ(screen.focus(), 0);
 
-    // The clock, one step slower, chosen from its popup -- fastest first,
-    // the one in effect under the cursor; then each frame shown as soon as
-    // drawn. Each is in the file at once.
-    press(screen, UiAction::Left);  // nothing: values are not stepped from the side
+    // The DS's own five, then melonDS's: the clock, one step slower, chosen
+    // from its popup -- fastest first, the one in effect under the cursor;
+    // then each frame shown as soon as drawn. Each is in the file at once.
+    press(screen, UiAction::Down, 5);
     CHECK_EQ(read_melonds_tuning(path).cpu_mhz, MelonDsTuning().cpu_mhz);
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Down);
@@ -141,22 +143,23 @@ void test_page(const std::string& sandbox) {
 
     // Only those two, and no further.
     press(screen, UiAction::Down, 20);
-    CHECK_EQ(screen.focus(), 1);
+    CHECK_EQ(screen.focus(), 6);
 
-    // Back leaves the page, not Settings, onto the row it was opened from.
+    // Back leaves the group for the list, not Settings; then Settings.
     SettingsScreenResult result = press(screen, UiAction::Cancel);
     CHECK(!result.close_requested);
-    CHECK(!screen.on_emulators_page());
+    CHECK(!screen.in_group());
     CHECK(screen.is_open());
-    CHECK_EQ(screen.focus(), melonds_row);
+    CHECK(screen.group() == SettingsGroup::Consoles);
     result = press(screen, UiAction::Cancel);
     CHECK(result.close_requested);
 
     // Edited by hand while closed: what shows is the file.
     write_text(path, "pipeline=1\ncpu_mhz=714\n");
     screen.open(Settings(), {});
-    press(screen, UiAction::Down, 20);
-    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Down, 5);
     press(screen, UiAction::Confirm);  // the popup, on 714
     press(screen, UiAction::Up);       // 816
     press(screen, UiAction::Confirm);
@@ -166,50 +169,50 @@ void test_page(const std::string& sandbox) {
     SettingsScreen plain(paths);
     plain.set_melonds_page(false, path);
     plain.open(Settings(), {});
+    plain.open_group(SettingsGroup::Consoles);
+    CHECK(plain.in_group());
     press(plain, UiAction::Down, 20);
-    press(plain, UiAction::Confirm);
-    CHECK(plain.on_emulators_page());
-    press(plain, UiAction::Down, 20);
-    CHECK_EQ(plain.focus(), 0);
+    CHECK_EQ(plain.focus(), 5);
 
-    // A switch on the Settings page flips with A, never sideways.
-    {
+    // A switch flips with A, never sideways: Right does nothing on a row,
+    // and Left only goes back to the list.
+    for (const SettingsGroup group :
+         {SettingsGroup::General, SettingsGroup::Consoles, SettingsGroup::WiiU, SettingsGroup::System}) {
         SettingsScreen switches(paths);
         switches.open(Settings(), {});
-        for (int row = 0; row < 12; ++row) {
-            const SettingsScreenResult sideways = press(switches, UiAction::Right);
-            const SettingsScreenResult back = press(switches, UiAction::Left);
-            CHECK_MSG(!sideways.settings_changed && !back.settings_changed,
-                      "a sideways press changed a setting");
+        switches.open_group(group);
+        for (int row = 0; row < 8; ++row) {
+            CHECK_MSG(!press(switches, UiAction::Right).settings_changed, "a sideways press changed a setting");
             press(switches, UiAction::Down);
         }
+        CHECK(!press(switches, UiAction::Left).settings_changed);
+        CHECK(!switches.in_group());
     }
 
-    // Data Management first, on a device with saves: chosen, it asks to be
-    // opened; come back from, the cursor is on it again. The melonDS row is
-    // still last.
+    // Data Management in System, on a device with saves: chosen, it asks to
+    // be opened; come back from, the cursor is on it again.
     SettingsScreen with_saves(paths);
     with_saves.set_offers_data_management(true);
     with_saves.set_melonds_page(true, path);
     with_saves.open(Settings(), {});
-    CHECK_EQ(with_saves.focus(), 0);
-    CHECK(press(with_saves, UiAction::Confirm).open_data_management);
-    CHECK(!press(with_saves, UiAction::Left).open_data_management);
     press(with_saves, UiAction::Down, 20);
-    CHECK_EQ(with_saves.focus(), melonds_row + 1);
-    press(with_saves, UiAction::Confirm);
-    CHECK(with_saves.on_emulators_page());
-    press(with_saves, UiAction::Cancel);
+    CHECK(with_saves.group() == SettingsGroup::System);
+    press(with_saves, UiAction::Right);
+    press(with_saves, UiAction::Down, 20);
+    const int data_management_row = with_saves.focus();
+    CHECK(press(with_saves, UiAction::Confirm).open_data_management);
+    with_saves.open(Settings(), {});
     with_saves.return_from_data_management();
-    CHECK_EQ(with_saves.focus(), 0);
+    CHECK(with_saves.group() == SettingsGroup::System);
+    CHECK(with_saves.in_group());
+    CHECK_EQ(with_saves.focus(), data_management_row);
 
     // Without it, no row at all.
     SettingsScreen none(paths);
     none.open(Settings(), {});
+    none.open_group(SettingsGroup::System);
     press(none, UiAction::Down, 20);
-    CHECK_EQ(none.focus(), melonds_row - 1);
-    press(none, UiAction::Confirm);
-    CHECK(!none.on_emulators_page());
+    CHECK_EQ(none.focus(), data_management_row - 1);
 }
 
 // The DS's owner: a name typed into a popup -- Backspace taking characters
@@ -220,7 +223,8 @@ void test_the_ds_owner(const std::string& sandbox) {
     AppPaths paths;
     SettingsScreen screen(paths);
     screen.open(Settings(), {});
-    // Down to the nickname row: it says it is not set.
+    // Into DS & 3DS, and down to the nickname row: it says it is not set.
+    screen.open_group(SettingsGroup::Consoles);
     int guard = 0;
     while (guard++ < 20) {
         press(screen, UiAction::Confirm);

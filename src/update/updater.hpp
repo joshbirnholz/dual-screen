@@ -83,7 +83,7 @@ struct ComponentSpec {
     int installed = kLocalBuild;
     // Whether a check made at start-up, or Settings' Updates row, looks at it
     // at all. Cemu and the cores only while they are the ones games are
-    // played with; otherwise only when the Emulators page asks by name.
+    // played with; otherwise only when Settings asks by name.
     bool automatic = true;
     Source source = Source::GitHubNightly;
     // A core's: the files it may be on the buildbot, the one wanted first
@@ -104,7 +104,7 @@ std::string describe_release(const ComponentSpec& component, const ReleaseInfo& 
 // is somebody working on this, and an app they did not ask for is not one to
 // put on their screen at every start.
 // `asked` is whether the player asked about this component: Settings'
-// Updates row, for one that is automatic, or the Emulators page, for Cemu.
+// Updates row, for one that is automatic, or the Wii U group in Settings, for Cemu.
 bool worth_offering(const ComponentSpec& component, const ReleaseInfo& release, bool asked);
 
 // Where the work of fetching and installing is done, which is all a platform's
