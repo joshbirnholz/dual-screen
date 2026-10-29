@@ -930,27 +930,52 @@ void test_smoothing_follows_the_texture_not_just_the_setting() {
     PlacedScreen placed;
     placed.screen = ScreenId::Top;
     placed.rect = PixelRect{0.0f, 0.0f, 400.0f, 240.0f};
+    // A size every picture below is a whole multiple of, so only the setting
+    // and the rect decide.
+    const ScreenSize kDs{200, 120};
 
     // One texel per pixel: never smoothed, whatever the setting says.
-    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, true), false);
-    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, false), false);
+    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, kDs, true), false);
+    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, kDs, false), false);
 
     // Magnified, which is the case the setting was added for.
-    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, true), true);
-    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, false), false);
+    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, kDs, true), true);
+    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, kDs, false), false);
 
     // Rendered at 2x and drawn at the console's own size: resampled either way,
     // because the alternative is dropping every other row.
-    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, false), true);
-    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, true), true);
+    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, kDs, false), true);
+    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, kDs, true), true);
 
     // A quarter turn swaps which way round the two meet, so a rotated screen
     // that lands one-to-one is still left alone.
     PlacedScreen turned = placed;
     turned.rotation = ScreenRotation::Clockwise;
     turned.rect = PixelRect{0.0f, 0.0f, 240.0f, 400.0f};
-    CHECK_EQ(screen_needs_smoothing(turned, 400, 240, true), false);
-    CHECK_EQ(screen_needs_smoothing(turned, 800, 480, false), true);
+    CHECK_EQ(screen_needs_smoothing(turned, 400, 240, kDs, true), false);
+    CHECK_EQ(screen_needs_smoothing(turned, 800, 480, kDs, false), true);
+
+    // Not whole console pixels: a companion's stream that was fitted to a
+    // smaller display or stepped down to keep up. Smoothed whatever the
+    // setting says, since there are no console pixels left to keep crisp.
+    const ScreenSize k3dsTop{400, 240};
+    PlacedScreen big = placed;
+    big.rect = PixelRect{0.0f, 0.0f, 1200.0f, 720.0f};
+    CHECK_EQ(screen_needs_smoothing(big, 320, 192, k3dsTop, false), true);
+    CHECK_EQ(screen_needs_smoothing(big, 400, 240, k3dsTop, false), false);
+    CHECK_EQ(screen_needs_smoothing(big, 400, 240, k3dsTop, true), true);
+    // A core's 2x is still whole console pixels, so it stays crisp if asked.
+    PlacedScreen bigger = placed;
+    bigger.rect = PixelRect{0.0f, 0.0f, 1600.0f, 960.0f};
+    CHECK_EQ(screen_needs_smoothing(bigger, 800, 480, k3dsTop, false), false);
+    CHECK_EQ(screen_needs_smoothing(bigger, 640, 384, k3dsTop, false), true);
+    // A Wii U GamePad stepped down to 0.8 on a phone.
+    const ScreenSize kGamePad{854, 480};
+    PlacedScreen pad = placed;
+    pad.rect = PixelRect{0.0f, 0.0f, 2400.0f, 1350.0f};
+    CHECK_EQ(screen_needs_smoothing(pad, 688, 384, kGamePad, false), true);
+    // Unknown console size: only the setting decides.
+    CHECK_EQ(screen_needs_smoothing(big, 320, 192, ScreenSize{}, false), false);
 }
 
 }  // namespace

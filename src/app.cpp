@@ -1749,6 +1749,8 @@ void App::Impl::apply_system() {
     if (!is_companion()) {
         input.set_motion_enabled(profile.uses_motion);
     }
+    // Whether smoothing is even the player's to choose depends on the console.
+    apply_filtering();
 }
 
 void App::Impl::refresh_output_size() {
@@ -5416,10 +5418,11 @@ void App::Impl::apply_filtering() {
     // Only ever a request. Whether a given screen is actually smoothed is
     // decided where it is drawn, since a screen that came out at its own size
     // has nothing to gain from it.
-    compositor.set_smoothing(bilinear_filtering);
+    const bool smooth = smooths_screens(system, bilinear_filtering);
+    compositor.set_smoothing(smooth);
     if (picker) {
         picker->set_filtering(bilinear_filtering);
-        picker->set_smoothing(bilinear_filtering);
+        picker->set_smoothing(smooth);
     }
 }
 

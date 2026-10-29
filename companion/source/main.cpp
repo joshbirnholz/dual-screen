@@ -383,6 +383,7 @@ public:
         const net::CompanionSession::NativePicture native = session_.native_picture(placed.screen);
         layers_.show(placed.screen, native.picture, native.serial, placed,
                      screen_needs_smoothing(placed, native.width, native.height,
+                                            session_.screens_geometry().size_of(placed.screen),
                                             smoothing_requested),
                      output_width, output_height);
     }
@@ -2086,7 +2087,7 @@ void Client::run() {
                     if (picker_.system() != session_.system()) {
                         picker_.set_screens(session_.screens_geometry(), session_.system());
                     }
-                    picker_.set_smoothing(session_.host_filtering());
+                    picker_.set_smoothing(smooths_screens(session_.system(), session_.host_filtering()));
                     picker_.show(menu_state_from_host(), session_.host_menu_focus(),
                                  static_cast<MenuConfirm>(session_.host_menu_confirm()),
                                  session_.host_menu_confirm_focus());
@@ -2472,7 +2473,7 @@ void Client::draw_scene() {
         return;
     }
 
-    compositor_.set_smoothing(session_.host_filtering());
+    compositor_.set_smoothing(smooths_screens(session_.system(), session_.host_filtering()));
     // A DS's own pixels, where the host says this game wants its LCD filter.
     if (session_.system() == SystemId::Ds && session_.host_lcd_filter()) {
         compositor_.set_lcd_grid(256, 192);

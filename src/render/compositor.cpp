@@ -56,6 +56,7 @@ std::size_t key_for_composition(const std::vector<PlacedScreen>& placed, bool dr
 bool screen_needs_smoothing(const PlacedScreen& placed,
                             int texture_width,
                             int texture_height,
+                            const ScreenSize& console_size,
                             bool requested) {
     if (placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
         return requested;
@@ -81,14 +82,30 @@ bool screen_needs_smoothing(const PlacedScreen& placed,
     if (source_width > placed.rect.w + 0.5f || source_height > placed.rect.h + 0.5f) {
         return true;
     }
+    // Magnified, which is what the setting is about -- but only for a picture
+    // made of whole console pixels: the console's own size, or a core's 2x or
+    // 3x of it. Anything else was resized on its way here, which is what a
+    // companion's stream is when it has been fitted to a smaller display or
+    // stepped down to keep up. Its pixels are nobody's, so there is no
+    // crispness to keep, and blowing them up whole only shows how few of them
+    // arrived.
+    if (console_size.valid() &&
+        (texture_width < console_size.width || texture_height < console_size.height ||
+         texture_width % console_size.width != 0 || texture_height % console_size.height != 0)) {
+        return true;
+    }
     return requested;
 }
 
-bool screen_needs_smoothing(const PlacedScreen& placed, const Texture& texture, bool requested) {
+bool screen_needs_smoothing(const PlacedScreen& placed,
+                            const Texture& texture,
+                            const ScreenSize& console_size,
+                            bool requested) {
     if (!texture.valid()) {
         return requested;
     }
-    return screen_needs_smoothing(placed, texture.width(), texture.height(), requested);
+    return screen_needs_smoothing(placed, texture.width(), texture.height(), console_size,
+                                  requested);
 }
 
 void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* art) {
@@ -167,7 +184,8 @@ void Compositor::render(QuadRenderer& quads,
                          std::to_string(style_.screen_tint.a) + ")");
             }
             quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation,
-                              screen_needs_smoothing(placed, *texture, smoothing_));
+                              screen_needs_smoothing(placed, *texture,
+                                                     screens.size_of(placed.screen), smoothing_));
             if (lcd_cells_across_ > 0 && lcd_cells_down_ > 0) {
                 const bool sideways = rotation_is_quarter_turn(placed.rotation);
                 quads.draw_lcd_grid(rect, sideways ? lcd_cells_down_ : lcd_cells_across_,

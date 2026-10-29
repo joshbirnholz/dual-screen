@@ -70,11 +70,17 @@ void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* a
 // is the one place that decides what to do with it -- the compositor and the
 // menu's previews both draw screens, and a rule that lived in only one of them
 // would be a rule the other quietly disagreed with.
+// `console_size` is the console's own size for that screen: a magnified picture
+// that is not a whole multiple of it is always smoothed, whatever was asked for.
 bool screen_needs_smoothing(const PlacedScreen& placed,
                             int texture_width,
                             int texture_height,
+                            const ScreenSize& console_size,
                             bool requested);
-bool screen_needs_smoothing(const PlacedScreen& placed, const Texture& texture, bool requested);
+bool screen_needs_smoothing(const PlacedScreen& placed,
+                            const Texture& texture,
+                            const ScreenSize& console_size,
+                            bool requested);
 
 // Draws a resolved layout's screens into the output window.
 class Compositor {

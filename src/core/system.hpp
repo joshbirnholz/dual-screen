@@ -142,6 +142,13 @@ struct SystemProfile {
 };
 
 const SystemProfile& system_profile(SystemId id);
+// Whether this console's screens are smoothed, given the player's setting. A
+// console that does not offer the choice always is: a Wii U's picture is
+// high-definition 3D, not pixel art, and reaches a companion as video at
+// whatever size the link allows -- point-sampled, that is only ever blocky.
+inline bool smooths_screens(SystemId id, bool requested) {
+    return requested || !system_profile(id).offers_smoothing;
+}
 // Every system, in a stable order.
 const std::vector<SystemProfile>& system_profiles();
 
