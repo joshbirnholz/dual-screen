@@ -59,6 +59,9 @@ void RemoteStartScreen::open(const net::LaunchHost& host, std::string token, std
     code_entry_.close();
     editor_pending_ = false;
     job_.reset();
+    if (icons_) icons_->cancelled = true;
+    icons_.reset();
+    textures_.clear();
     if (token_.empty()) {
         ask_for_code();
     } else {
@@ -72,6 +75,9 @@ void RemoteStartScreen::close() {
     editor_pending_ = false;
     // Its thread finishes on its own; what it brings back goes nowhere.
     job_.reset();
+    if (icons_) icons_->cancelled = true;
+    icons_.reset();
+    textures_.clear();
 }
 
 void RemoteStartScreen::run(std::function<Outcome()> work, std::string waiting_for) {
@@ -161,6 +167,7 @@ void RemoteStartScreen::handle_outcome(const Outcome& outcome, RemoteStartResult
             }
             games_ = outcome.games;
             listed_ = true;
+            fetch_icons();
             focus_ = std::clamp(focus_, 0, std::max(0, static_cast<int>(games_.size()) - 1));
             phase_ = Phase::List;
             return;
@@ -181,17 +188,33 @@ RemoteStartScreen::Geometry RemoteStartScreen::compute_geometry(float output_wid
     const PageFrame frame = page_frame(output_width, output_height);
     geometry.scale = frame.scale;
     geometry.list = frame.content();
-    geometry.row_height = menu_row_height(frame.line) + menu_row_gap(frame.line);
+    if (!grid_) {
+        geometry.row_height = menu_row_height(frame.line) + menu_row_gap(frame.line);
+        return geometry;
+    }
+    // Five to a row on a wide screen, as the GamePad's Quick Start has them,
+    // with room under each row for the name under the cursor.
+    geometry.gap = std::round(frame.line * 1.6f);
+    geometry.tile = std::round(std::min(frame.line * 8.0f, (geometry.list.w - geometry.gap * 4.0f) / 5.0f));
+    geometry.columns = std::clamp(
+        static_cast<int>((geometry.list.w + geometry.gap) / (geometry.tile + geometry.gap)), 1, 5);
+    const float width = geometry.columns * geometry.tile + (geometry.columns - 1) * geometry.gap;
+    geometry.left = std::round(geometry.list.x + (geometry.list.w - width) * 0.5f);
+    geometry.row_height = geometry.tile + geometry.gap * 1.6f;
     return geometry;
 }
 
 float RemoteStartScreen::max_scroll(const Geometry& geometry) const {
-    return std::max(0.0f, static_cast<float>(games_.size()) * geometry.row_height - geometry.list.h);
+    const int count = static_cast<int>(games_.size());
+    const int lines = grid_ ? (count + geometry.columns - 1) / geometry.columns : count;
+    return std::max(0.0f, static_cast<float>(lines) * geometry.row_height + (grid_ ? geometry.gap : 0.0f) -
+                              geometry.list.h);
 }
 
 void RemoteStartScreen::scroll_focus_into_view(const Geometry& geometry) {
-    const float top = static_cast<float>(focus_) * geometry.row_height;
-    const float bottom = top + geometry.row_height;
+    const int line = grid_ ? focus_ / geometry.columns : focus_;
+    const float top = static_cast<float>(line) * geometry.row_height;
+    const float bottom = top + geometry.row_height + (grid_ ? geometry.gap : 0.0f);
     if (top < scroll_) {
         scroll_ = top;
     } else if (bottom > scroll_ + geometry.list.h) {
@@ -211,6 +234,12 @@ int RemoteStartScreen::entry_at(float x, float y, float output_width, float outp
     if (!open_ || phase_ != Phase::List) return -1;
     const Geometry geometry = compute_geometry(output_width, output_height);
     if (!geometry.list.contains(x, y)) return -1;
+    if (grid_) {
+        for (int index = 0; index < static_cast<int>(games_.size()); ++index) {
+            if (geometry.tile_at(index, scroll_).contains(x, y)) return index;
+        }
+        return -1;
+    }
     const int row = static_cast<int>(std::floor((y - geometry.list.y + scroll_) / geometry.row_height));
     return row >= 0 && row < static_cast<int>(games_.size()) ? row : -1;
 }
@@ -336,22 +365,42 @@ RemoteStartResult RemoteStartScreen::update(const std::vector<UiAction>& pressed
     const Geometry geometry = compute_geometry(output_width, output_height);
     const int count = static_cast<int>(games_.size());
     const int visible = std::max(1, static_cast<int>(geometry.list.h / geometry.row_height));
+    // A grid's rows are `columns` apart; Left and Right step along one,
+    // stopping at its ends, as the GamePad's do.
+    const int step = grid_ ? geometry.columns : 1;
     bool acted = false;
     for (const UiAction action : actions) {
         if (acted) break;
         switch (action) {
             case UiAction::Up:
-                if (count > 0) focus_ = std::max(0, focus_ - 1);
+                if (count > 0 && focus_ - step >= 0) focus_ -= step;
                 break;
             case UiAction::Down:
-                if (count > 0) focus_ = std::min(count - 1, focus_ + 1);
+                // Down from a row onto a shorter last one lands on its end.
+                if (count > 0 && (focus_ / step + 1) * step < count) focus_ = std::min(count - 1, focus_ + step);
                 break;
             case UiAction::Left:
-                focus_ = std::max(0, focus_ - visible);
+                if (grid_) {
+                    if (focus_ % step > 0) --focus_;
+                } else {
+                    focus_ = std::max(0, focus_ - visible);
+                }
                 break;
             case UiAction::Right:
-                focus_ = std::max(0, std::min(count - 1, focus_ + visible));
+                if (grid_) {
+                    if (focus_ % step < step - 1 && focus_ + 1 < count) ++focus_;
+                } else {
+                    focus_ = std::max(0, std::min(count - 1, focus_ + visible));
+                }
                 break;
+            case UiAction::MenuReset:
+                // Y: the other view, the cursor on the same game.
+                grid_ = !grid_;
+                result.view_changed = true;
+                scroll_ = 0.0f;
+                drag_.stop();
+                scroll_focus_into_view(compute_geometry(output_width, output_height));
+                return result;
             case UiAction::Confirm:
                 if (count > 0) {
                     start_game(focus_);
@@ -409,11 +458,14 @@ void RemoteStartScreen::render(QuadRenderer& quads, TextRenderer& text, const Bu
     }
 
     const int count = static_cast<int>(games_.size());
+    const bool cursor = phase_ == Phase::List;
+    if (grid_) {
+        render_grid(quads, text, geometry, cursor);
+    }
     quads.set_clip(menu_list_clip(geometry.list, scale));
-    const int first = std::max(0, static_cast<int>(std::floor(scroll_ / geometry.row_height)));
+    const int first = grid_ ? count : std::max(0, static_cast<int>(std::floor(scroll_ / geometry.row_height)));
     const int last =
         std::min(count, static_cast<int>(std::ceil((scroll_ + geometry.list.h) / geometry.row_height)));
-    const bool cursor = phase_ == Phase::List;
     for (int index = first; index < last; ++index) {
         const LaunchableGame& game = games_[static_cast<std::size_t>(index)];
         const PixelRect rect{geometry.list.x, geometry.list.y + index * geometry.row_height - scroll_,
@@ -430,13 +482,18 @@ void RemoteStartScreen::render(QuadRenderer& quads, TextRenderer& text, const Bu
         text.draw(quads, system, rect.x + rect.w - pad, baseline, scale, theme.text_dim, TextAlign::Right);
     }
     quads.clear_clip();
-    const float content = static_cast<float>(count) * geometry.row_height;
+    const float content =
+        grid_ ? static_cast<float>((count + geometry.columns - 1) / geometry.columns) * geometry.row_height + geometry.gap
+              : static_cast<float>(count) * geometry.row_height;
     if (content > geometry.list.h + 0.5f) {
         draw_scroll_bar(quads, geometry.list, scroll_ / content, geometry.list.h / content, line, scale);
     }
 
     std::vector<GuidePrompt> prompts;
-    if (phase_ == Phase::List && count > 0) prompts.push_back({ButtonGlyph::A, "Start", PromptRole::ActsOnSelection});
+    if (phase_ == Phase::List && count > 0) {
+        prompts.push_back({ButtonGlyph::Y, grid_ ? "List View" : "Grid View"});
+        prompts.push_back({ButtonGlyph::A, "Start", PromptRole::ActsOnSelection});
+    }
     prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 
@@ -451,11 +508,119 @@ void RemoteStartScreen::render(QuadRenderer& quads, TextRenderer& text, const Bu
     }
 }
 
+void RemoteStartScreen::render_grid(QuadRenderer& quads, TextRenderer& text, const Geometry& geometry, bool cursor) {
+    const UiTheme& theme = ui_theme();
+    const float scale = geometry.scale;
+    const float line = TextRenderer::line_height(scale);
+    const int count = static_cast<int>(games_.size());
+    const float radius = std::round(geometry.tile * 0.1f);
+    // Clipped to the content area, but for a ring standing proud of a tile
+    // in the top or bottom row.
+    const float proud = std::round(geometry.gap * 0.5f);
+    quads.set_clip(PixelRect{geometry.list.x - proud, geometry.list.y, geometry.list.w + proud * 2.0f, geometry.list.h});
+    int named = -1;
+    for (int index = 0; index < count; ++index) {
+        const PixelRect tile = geometry.tile_at(index, scroll_);
+        if (tile.y + tile.h + geometry.gap < geometry.list.y || tile.y - geometry.gap > geometry.list.y + geometry.list.h) {
+            continue;
+        }
+        const bool held = pointer_holding(tile);
+        const bool focused = cursor && !held && cursor_drawn(index == focus_);
+        if (focused || held) named = index;
+        // A raised tile, as the GamePad's are, the icon inset in it.
+        quads.draw_rounded_rect(tile, radius, Color{0.17f, 0.19f, 0.24f, 1.0f});
+        const float inset = std::round(geometry.tile * 0.09f);
+        const PixelRect picture{tile.x + inset, tile.y + inset, tile.w - inset * 2.0f, tile.h - inset * 2.0f};
+        if (const Texture* icon = icon_texture(index)) {
+            quads.draw_image(picture, *icon, Color{1.0f, 1.0f, 1.0f, 1.0f});
+        } else {
+            // Until its icon comes -- or for a game with none -- the console
+            // it is for.
+            const LaunchableGame& game = games_[static_cast<std::size_t>(index)];
+            text.draw(quads, system_label(game.system), tile.x + tile.w * 0.5f,
+                      std::round(tile.y + (tile.h - line) * 0.5f), scale, theme.text_dim, TextAlign::Center);
+        }
+        if (held) {
+            quads.draw_rounded_rect(tile, radius, menu_highlight_fill());
+        } else if (focused) {
+            const float ring = std::max(3.0f, std::round(scale * 1.6f));
+            const float out = std::round(ring * 1.2f);
+            const PixelRect outer{tile.x - out, tile.y - out, tile.w + out * 2.0f, tile.h + out * 2.0f};
+            quads.draw_rounded_ring(outer, radius + out, ring, menu_ring_left(), menu_ring_right());
+        }
+    }
+    // The name of the one under the cursor, on a tab across the foot of its
+    // tile, as the GamePad says Start there.
+    if (named >= 0) {
+        const PixelRect tile = geometry.tile_at(named, scroll_);
+        const std::string& title = games_[static_cast<std::size_t>(named)].title;
+        const float text_scale = scale * 0.9f;
+        const float pad = std::round(line * 0.8f);
+        const float most = std::min(geometry.list.w, geometry.tile * 3.0f);
+        const std::string shown = TextRenderer::elide_right(title, most - pad * 2.0f, text_scale);
+        const float width = std::max(geometry.tile * 0.8f, TextRenderer::measure_width(shown, text_scale) + pad * 2.0f);
+        const float height = std::round(TextRenderer::line_height(text_scale) * 1.6f);
+        float x = tile.x + (tile.w - width) * 0.5f;
+        x = std::clamp(x, geometry.list.x, geometry.list.x + geometry.list.w - width);
+        const PixelRect tab{std::round(x), std::round(tile.y + tile.h - height * 0.35f), std::round(width), height};
+        quads.draw_rounded_rect(tab, std::round(height * 0.3f), Color{0.08f, 0.09f, 0.11f, 0.96f});
+        text.draw(quads, shown, tab.x + tab.w * 0.5f,
+                  std::round(tab.y + (tab.h - TextRenderer::line_height(text_scale)) * 0.5f), text_scale, theme.text,
+                  TextAlign::Center);
+    }
+    quads.clear_clip();
+}
+
+void RemoteStartScreen::fetch_icons() {
+    if (icons_) icons_->cancelled = true;
+    textures_.clear();
+    auto icons = std::make_shared<Icons>();
+    icons->icons.resize(games_.size());
+    icons_ = icons;
+    const net::LaunchHost host = host_;
+    const std::string token = token_;
+    std::vector<std::string> ids;
+    for (const LaunchableGame& game : games_) ids.push_back(game.id);
+    std::thread([icons, host, token, ids] {
+        for (std::size_t index = 0; index < ids.size() && !icons->cancelled; ++index) {
+            Icons::Icon icon;
+            if (!net::host_game_icon(host, token, ids[index], icon.width, icon.height, icon.rgba, nullptr)) {
+                icon.rgba.clear();
+            }
+            icon.done = true;
+            std::lock_guard<std::mutex> lock(icons->mutex);
+            icons->icons[index] = std::move(icon);
+        }
+    }).detach();
+}
+
+const Texture* RemoteStartScreen::icon_texture(int index) {
+    const auto made = textures_.find(index);
+    if (made != textures_.end()) return made->second.valid() ? &made->second : nullptr;
+    if (!icons_) return nullptr;
+    Icons::Icon icon;
+    {
+        std::lock_guard<std::mutex> lock(icons_->mutex);
+        if (index < 0 || index >= static_cast<int>(icons_->icons.size())) return nullptr;
+        if (!icons_->icons[static_cast<std::size_t>(index)].done) return nullptr;
+        icon = std::move(icons_->icons[static_cast<std::size_t>(index)]);
+    }
+    Texture& texture = textures_[index];
+    if (icon.width > 0 && icon.height > 0 &&
+        icon.rgba.size() == static_cast<std::size_t>(icon.width) * static_cast<std::size_t>(icon.height) * 4u) {
+        texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(icon.rgba.data()), icon.width, icon.height,
+                                icon.width);
+        texture.set_linear_filtering(true);
+    }
+    return texture.valid() ? &texture : nullptr;
+}
+
 void RemoteStartScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(phase_));
     mix_sound_state(view.rest, games_.size());
+    mix_sound_state(view.rest, grid_ ? 1u : 0u);
 }
 
 }  // namespace ds

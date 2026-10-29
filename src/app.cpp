@@ -6627,6 +6627,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 companion_session->disconnect();
                 open_launcher();
             } else if (result.start_on) {
+                remote_start.set_grid(net::remote_start_grid(paths.config_dir + "/remote_start_tokens.json"));
                 remote_start.open(result.launch_host,
                                   net::remote_start_token(paths.config_dir + "/remote_start_tokens.json",
                                                           result.launch_host.id),
@@ -6651,6 +6652,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 !net::keep_remote_start_token(paths.config_dir + "/remote_start_tokens.json", remote_start.host().id,
                                               result.token)) {
                 log_warn("could not save remote_start_tokens.json");
+            }
+            if (result.view_changed) {
+                net::keep_remote_start_grid(paths.config_dir + "/remote_start_tokens.json", remote_start.grid());
             }
             if (result.started) {
                 // Back to the list, which joins the game once it is up there.

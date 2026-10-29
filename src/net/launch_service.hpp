@@ -87,6 +87,8 @@ public:
         std::function<std::vector<LaunchableGame>()> games;
         // Starts one. False with why, when it could not.
         std::function<bool(const LaunchableGame&, std::string*)> launch;
+        // One's icon, RGBA: false when it has none to give.
+        std::function<bool(const LaunchableGame&, int&, int&, std::vector<uint8_t>&)> icon;
         // The hardware addresses to give out; empty means this machine's.
         std::vector<std::string> macs;
     };
@@ -146,6 +148,10 @@ private:
 std::string remote_start_token(const std::string& path, const std::string& host_id);
 // Kept, or with an empty `token` forgotten.
 bool keep_remote_start_token(const std::string& path, const std::string& host_id, const std::string& token);
+// Whether the games are shown as a grid of icons rather than a list, kept
+// in the same file -- a grid unless the list was chosen.
+bool remote_start_grid(const std::string& path);
+bool keep_remote_start_grid(const std::string& path, bool grid);
 
 // The other end's errors are the player's to read; `unpaired` is set when the
 // token was not one the PC knows, so the device can ask for a code instead.
@@ -155,6 +161,15 @@ bool list_host_games(const LaunchHost& host, const std::string& token, std::vect
                      bool& unpaired, std::string* error);
 bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id,
                      bool& unpaired, std::string* error);
+// A listed game's icon, RGBA. False when it has none -- or the computer is
+// one from before icons were asked for, which says it does not know the
+// question.
+bool host_game_icon(const LaunchHost& host, const std::string& token, const std::string& game_id, int& width,
+                    int& height, std::vector<uint8_t>& rgba, std::string* error);
+
+// Base64, for an icon's bytes inside the JSON. Empty out on bad input.
+std::string base64_encode(const std::vector<uint8_t>& bytes);
+std::vector<uint8_t> base64_decode(const std::string& text);
 
 // The hardware addresses of this machine's network cards, "aa:bb:cc:dd:ee:ff".
 std::vector<std::string> this_machine_macs();

@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
+#include <mutex>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -12,6 +14,7 @@
 #include "net/launch_service.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/menu_page.hpp"
@@ -31,6 +34,8 @@ struct RemoteStartResult {
     // keeps it (empty to forget it) under the computer's id.
     bool token_changed = false;
     std::string token;
+    // Y switched between the grid and the list: the caller keeps which.
+    bool view_changed = false;
 };
 
 // From the companion's host picker, a computer running Dualscreen's
@@ -50,6 +55,10 @@ public:
     void close();
     bool is_open() const { return open_; }
     const net::LaunchHost& host() const { return host_; }
+    // The games as a grid of their icons, as a Wii U GamePad's Quick Start
+    // shows them, or as a list of titles. Y switches. Set before open().
+    void set_grid(bool grid) { grid_ = grid; }
+    bool grid() const { return grid_; }
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
 
@@ -118,12 +127,40 @@ private:
         Outcome outcome;
     };
 
+    // The icons, fetched one after another on a thread of their own once
+    // the list is in, each drawn as soon as it lands.
+    struct Icons {
+        std::mutex mutex;
+        std::atomic<bool> cancelled{false};
+        struct Icon {
+            bool done = false;
+            int width = 0;
+            int height = 0;
+            std::vector<uint8_t> rgba;
+        };
+        std::vector<Icon> icons;
+    };
+    void fetch_icons();
+    const Texture* icon_texture(int index);
+
     struct Geometry {
         PixelRect list;
         float row_height = 0.0f;
         float scale = 1.0f;
+        // The grid: how many to a row, a tile's side, and where the first
+        // column starts so the grid sits in the middle.
+        int columns = 1;
+        float tile = 0.0f;
+        float gap = 0.0f;
+        float left = 0.0f;
+        PixelRect tile_at(int index, float scroll) const {
+            const int column = index % std::max(1, columns);
+            const int row = index / std::max(1, columns);
+            return PixelRect{left + column * (tile + gap), list.y + gap * 0.5f + row * row_height - scroll, tile, tile};
+        }
     };
     Geometry compute_geometry(float output_width, float output_height) const;
+    void render_grid(QuadRenderer& quads, TextRenderer& text, const Geometry& geometry, bool cursor);
     float max_scroll(const Geometry& geometry) const;
     void scroll_focus_into_view(const Geometry& geometry);
 
@@ -137,6 +174,9 @@ private:
     void start_game(int index);
 
     bool open_ = false;
+    bool grid_ = true;
+    std::shared_ptr<Icons> icons_;
+    std::map<int, Texture> textures_;
     net::LaunchHost host_;
     std::string token_;
     std::string device_name_;

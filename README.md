@@ -774,6 +774,11 @@ Steam Input layout applies, or from its ROM folders when Steam has none -- and
 this device joins it as soon as it is up. Pair a Device's alert can also
 forget every paired device, which then has to be paired again.
 
+The games are shown as a grid of their icons, as a Wii U GamePad's Quick
+Start shows them, each icon read out of the game on the computer; the name
+of the one under the cursor sits under it. **Y** switches to a list of
+titles and back, and the choice is kept.
+
 ### A Switch or an Android handheld as the second screen
 
 The other device does not have to be running this app, or be a PC at all.

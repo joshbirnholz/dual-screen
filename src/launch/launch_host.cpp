@@ -11,6 +11,10 @@
 
 #include "config/paths.hpp"
 #include "config/settings.hpp"
+#include "core/console_title_info.hpp"
+#include "core/ds_rom_info.hpp"
+#include "core/save_store.hpp"
+#include "core/system.hpp"
 #include "net/launch_service.hpp"
 #include "net/save_exchange.hpp"
 #include "util/child_process.hpp"
@@ -135,6 +139,22 @@ bool on_path(const std::string& program) {
 
 }  // namespace
 
+bool launchable_game_icon(const LaunchableGame& game, int& width, int& height, std::vector<uint8_t>& rgba) {
+    SystemId system = SystemId::Ds;
+    if (game.path.empty() || !system_for_rom(game.path, system)) return false;
+    if (system == SystemId::Ds) {
+        DsRomInfo info;
+        return read_ds_rom_info(game.path, info, nullptr) && !info.icon.empty() &&
+               save_icon_rgba(kSaveSystemDs, info.icon, width, height, rgba);
+    }
+    ConsoleTitleInfo info;
+    const bool read = system == SystemId::ThreeDs ? read_3ds_title_info(game.path, info, nullptr)
+                      : path_extension_lower(game.path) == "wua"
+                          ? read_wii_u_archive_title_info(game.path, "", 0, info, nullptr)
+                          : read_wii_u_title_info(game.path, info, nullptr);
+    return read && !info.icon.empty() && decode_rgba_icon(info.icon, width, height, rgba);
+}
+
 std::string this_program() {
     // An AppImage runs from a mount that is gone once it stops; it says where
     // it really is.
@@ -218,6 +238,9 @@ int run_launch_service() {
         return launchable_games(home_dir(), rom_folders(settings));
     };
     config.launch = [](const LaunchableGame& game, std::string* error) { return launch_game_here(game, error); };
+    config.icon = [](const LaunchableGame& game, int& width, int& height, std::vector<uint8_t>& rgba) {
+        return launchable_game_icon(game, width, height, rgba);
+    };
     net::LaunchService service(config);
     std::string error;
     if (!service.start(&error)) {

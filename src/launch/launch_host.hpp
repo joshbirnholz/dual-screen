@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "launch/game_catalog.hpp"
 
@@ -15,6 +17,10 @@ int run_launch_service();
 // outlives it: a Steam shortcut through Steam, so its Steam Input layout
 // applies, and a file by running this app on it.
 bool launch_game_here(const LaunchableGame& game, std::string* error);
+
+// A game's icon, read out of the game itself -- a DS banner, a 3DS SMDH, a
+// Wii U meta folder -- for a device's grid of games.
+bool launchable_game_icon(const LaunchableGame& game, int& width, int& height, std::vector<uint8_t>& rgba);
 
 // This program's own path, as a player would start it again: the AppImage
 // rather than where it is mounted, when it is one.

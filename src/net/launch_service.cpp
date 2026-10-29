@@ -13,6 +13,7 @@
 #include <set>
 
 #include <nlohmann/json.hpp>
+#include <zlib.h>
 
 #include "net/transport.hpp"
 #include "util/log.hpp"
@@ -116,6 +117,11 @@ bool store_record(const std::string& path, const json& record) {
                                  std::filesystem::perm_options::replace, error);
     return true;
 }
+
+constexpr int kMaxIconSide = 256;
+// The key the grid's choice is kept under, among the tokens: no computer's
+// id is ever this.
+constexpr const char* kViewKey = "view";
 
 json describe_game(const LaunchableGame& game) {
     return {{"id", game.id}, {"title", game.title}, {"system", game.system}};
@@ -341,6 +347,29 @@ bool LaunchService::start(std::string* error) {
                     } else {
                         reply["error"] = error.empty() ? found->title + " could not be started." : error;
                     }
+                } else if (op == "icon") {
+                    const std::string id = get_or<std::string>(request, "game", "");
+                    std::vector<LaunchableGame> games;
+                    if (config_.games) games = config_.games();
+                    const auto found = std::find_if(games.begin(), games.end(),
+                                                    [&](const LaunchableGame& game) { return game.id == id; });
+                    int width = 0;
+                    int height = 0;
+                    std::vector<uint8_t> rgba;
+                    if (found != games.end() && config_.icon && config_.icon(*found, width, height, rgba) &&
+                        width > 0 && height > 0 && width <= kMaxIconSide && height <= kMaxIconSide &&
+                        rgba.size() == static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u) {
+                        // Deflated: an icon is mostly flat colour and
+                        // transparency.
+                        uLongf bound = compressBound(static_cast<uLong>(rgba.size()));
+                        std::vector<uint8_t> deflated(bound);
+                        if (compress2(deflated.data(), &bound, rgba.data(), static_cast<uLong>(rgba.size()), 6) == Z_OK) {
+                            deflated.resize(bound);
+                            reply = {{"ok", true}, {"w", width}, {"h", height}, {"rgba", base64_encode(deflated)}};
+                        }
+                    } else {
+                        reply["error"] = "no icon";
+                    }
                 } else {
                     reply["error"] = "unknown request \"" + op + "\"";
                 }
@@ -441,6 +470,51 @@ bool keep_remote_start_token(const std::string& path, const std::string& host_id
     return store_record(path, tokens);
 }
 
+bool remote_start_grid(const std::string& path) { return remote_start_token(path, kViewKey) != "list"; }
+
+bool keep_remote_start_grid(const std::string& path, bool grid) {
+    return keep_remote_start_token(path, kViewKey, grid ? "grid" : "list");
+}
+
+std::string base64_encode(const std::vector<uint8_t>& bytes) {
+    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((bytes.size() + 2) / 3 * 4);
+    for (std::size_t at = 0; at < bytes.size(); at += 3) {
+        const uint32_t chunk = (static_cast<uint32_t>(bytes[at]) << 16) |
+                               (at + 1 < bytes.size() ? static_cast<uint32_t>(bytes[at + 1]) << 8 : 0u) |
+                               (at + 2 < bytes.size() ? static_cast<uint32_t>(bytes[at + 2]) : 0u);
+        out.push_back(table[(chunk >> 18) & 63u]);
+        out.push_back(table[(chunk >> 12) & 63u]);
+        out.push_back(at + 1 < bytes.size() ? table[(chunk >> 6) & 63u] : '=');
+        out.push_back(at + 2 < bytes.size() ? table[chunk & 63u] : '=');
+    }
+    return out;
+}
+
+std::vector<uint8_t> base64_decode(const std::string& text) {
+    std::vector<uint8_t> out;
+    uint32_t chunk = 0;
+    int bits = 0;
+    for (const char c : text) {
+        int value = -1;
+        if (c >= 'A' && c <= 'Z') value = c - 'A';
+        else if (c >= 'a' && c <= 'z') value = c - 'a' + 26;
+        else if (c >= '0' && c <= '9') value = c - '0' + 52;
+        else if (c == '+') value = 62;
+        else if (c == '/') value = 63;
+        else if (c == '=') break;
+        else return {};
+        chunk = (chunk << 6) | static_cast<uint32_t>(value);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out.push_back(static_cast<uint8_t>((chunk >> bits) & 0xFFu));
+        }
+    }
+    return out;
+}
+
 void LaunchHostFinder::start(LaunchSearch search, int every_ms) {
     stop();
     stopping_ = false;
@@ -512,6 +586,27 @@ bool start_host_game(const LaunchHost& host, const std::string& token, const std
     json reply;
     if (!exchange(host, {{"op", "launch"}, {"token", token}, {"game", game_id}}, reply, error)) return false;
     return answered_yes(host, reply, unpaired, error);
+}
+
+bool host_game_icon(const LaunchHost& host, const std::string& token, const std::string& game_id, int& width,
+                    int& height, std::vector<uint8_t>& rgba, std::string* error) {
+    json reply;
+    if (!exchange(host, {{"op", "icon"}, {"token", token}, {"game", game_id}}, reply, error)) return false;
+    bool unpaired = false;
+    if (!answered_yes(host, reply, unpaired, error)) return false;
+    width = get_or<int>(reply, "w", 0);
+    height = get_or<int>(reply, "h", 0);
+    if (width <= 0 || height <= 0 || width > kMaxIconSide || height > kMaxIconSide) return false;
+    const std::vector<uint8_t> deflated = base64_decode(get_or<std::string>(reply, "rgba", ""));
+    uLongf size = static_cast<uLongf>(width) * static_cast<uLongf>(height) * 4u;
+    rgba.assign(size, 0);
+    if (deflated.empty() ||
+        uncompress(rgba.data(), &size, deflated.data(), static_cast<uLong>(deflated.size())) != Z_OK ||
+        size != rgba.size()) {
+        if (error != nullptr) *error = "an unreadable icon";
+        return false;
+    }
+    return true;
 }
 
 // --- waking -------------------------------------------------------------------

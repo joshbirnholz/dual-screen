@@ -1566,6 +1566,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 log_warn("could not save remote_start_tokens.json");
             }
         }
+        if (result.view_changed) {
+            net::keep_remote_start_grid(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
+                                        remote_start_.grid());
+        }
         if (result.started) {
             awaited_launch_ = AwaitedLaunch{remote_start_.host().address, result.started_title,
                                             remote_start_.host().name, net::monotonic_millis() + 120000};
@@ -1584,6 +1588,8 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                 static_cast<float>(output_width_),
                                 static_cast<float>(output_height_));
         if (result.start_on) {
+            remote_start_.set_grid(
+                net::remote_start_grid(AppPaths::resolve().config_dir + "/remote_start_tokens.json"));
             remote_start_.open(result.launch_host,
                                net::remote_start_token(AppPaths::resolve().config_dir + "/remote_start_tokens.json",
                                                        result.launch_host.id),

@@ -57,6 +57,13 @@ void test_a_device_pairs_then_starts_a_game() {
         started.push_back(game.title);
         return true;
     };
+    config.icon = [](const LaunchableGame&, int& width, int& height, std::vector<uint8_t>& rgba) {
+        width = 2;
+        height = 3;
+        rgba.assign(2 * 3 * 4, 0);
+        for (std::size_t at = 0; at < rgba.size(); ++at) rgba[at] = static_cast<uint8_t>(at * 7);
+        return true;
+    };
     LaunchService service(config);
     std::string error;
     CHECK_MSG(service.start(&error), error);
@@ -104,6 +111,14 @@ void test_a_device_pairs_then_starts_a_game() {
     CHECK_EQ(games.size(), 1u);
     CHECK(!games.empty() && games[0].title == "Kirby Mass Attack" && games[0].system == "ds");
 
+    // Its icon, as the grid draws it.
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+    CHECK_MSG(host_game_icon(host, token, "steam:123", width, height, rgba, &error), error);
+    CHECK(width == 2 && height == 3 && rgba.size() == 24u && rgba[23] == static_cast<uint8_t>(23 * 7));
+    CHECK(!host_game_icon(host, token, "steam:999", width, height, rgba, &error));
+
     CHECK_MSG(start_host_game(host, token, "steam:123", unpaired, &error), error);
     CHECK(started == std::vector<std::string>{"Kirby Mass Attack"});
     // Nothing it did not list.
@@ -146,6 +161,11 @@ void test_a_device_keeps_its_tokens() {
     CHECK(keep_remote_start_token(path, "pc1", ""));
     CHECK(remote_start_token(path, "pc1").empty());
     CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
+    // A grid unless the list was chosen.
+    CHECK(remote_start_grid(path));
+    CHECK(keep_remote_start_grid(path, false));
+    CHECK(!remote_start_grid(path));
+    CHECK_STR_EQ(remote_start_token(path, "pc2"), "def");
 }
 
 // The finder searches on its own thread: what it has found is there to read
@@ -177,6 +197,15 @@ void test_the_finder_finds_a_computer() {
     service.stop();
 }
 
+void test_base64() {
+    for (std::size_t size = 0; size < 7; ++size) {
+        std::vector<uint8_t> bytes;
+        for (std::size_t at = 0; at < size; ++at) bytes.push_back(static_cast<uint8_t>(250 - at * 31));
+        CHECK(base64_decode(base64_encode(bytes)) == bytes);
+    }
+    CHECK_STR_EQ(base64_encode({'M', 'a'}), "TWE=");
+}
+
 void test_the_wake_packet() {
     const std::vector<uint8_t> packet = wake_on_lan_packet("01:23:45:67:89:AB");
     CHECK_EQ(packet.size(), 102u);
@@ -197,6 +226,7 @@ int main() {
     test_a_code_runs_out();
     test_a_device_keeps_its_tokens();
     test_the_finder_finds_a_computer();
+    test_base64();
     test_the_wake_packet();
     return test::finish("launch-service");
 }
