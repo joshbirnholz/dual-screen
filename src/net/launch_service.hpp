@@ -193,7 +193,10 @@ public:
     RecentGamesFeed(const RecentGamesFeed&) = delete;
     RecentGamesFeed& operator=(const RecentGamesFeed&) = delete;
 
-    // At most `most` games, only ones played at all.
+    // At most `most` games, only ones played at all. Until a computer
+    // paired with answers, the ones last seen -- see kept_recent_games() --
+    // with their computer taken to be asleep, to be woken when one is
+    // chosen.
     void start(std::string tokens_path, std::size_t most);
     void stop();
     bool running() const { return shared_ != nullptr; }
@@ -212,6 +215,13 @@ private:
     };
     std::shared_ptr<Shared> shared_;
 };
+
+// The recent games last seen, icons and all, kept beside the tokens -- in
+// remote_start_recent.json -- so the first screen still has them while the
+// computer they are on is asleep. RecentGamesFeed keeps and reads them.
+std::string recent_games_path(const std::string& tokens_path);
+bool keep_recent_games(const std::string& path, const std::vector<RecentGamesFeed::Game>& games);
+std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path);
 
 // The other end's errors are the player's to read; `unpaired` is set when the
 // token was not one the PC knows, so the device can ask for a code instead.

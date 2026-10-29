@@ -372,6 +372,55 @@ void test_the_recent_games_feed() {
     feed.stop();
     CHECK(!feed.running());
     service.stop();
+
+    // Kept, so they are still there with the computer asleep.
+    const std::vector<RecentGamesFeed::Game> kept = kept_recent_games(recent_games_path(tokens));
+    CHECK_EQ(kept.size(), 2u);
+    if (kept.size() == 2u) {
+        CHECK_STR_EQ(kept[0].game.title, "Newest");
+        CHECK_STR_EQ(kept[0].host.id, hosts[0].id);
+    }
+    RecentGamesFeed asleep;
+    asleep.start(tokens, 16);
+    asleep.set_hosts({});
+    games.clear();
+    for (int tries = 0; tries < 50 && games.empty(); ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        games = asleep.games();
+    }
+    CHECK_EQ(games.size(), 2u);
+    if (!games.empty()) CHECK_STR_EQ(games[0].game.title, "Newest");
+    asleep.stop();
+}
+
+// What the first screen keeps of its recent games comes back as it went,
+// icons and all.
+void test_recent_games_are_kept() {
+    const std::string path = make_sandbox() + "/remote_start_recent.json";
+    CHECK(kept_recent_games(path).empty());
+    RecentGamesFeed::Game game;
+    game.host.id = "pc1";
+    game.host.name = "Den PC";
+    game.host.address = "192.168.1.20";
+    game.host.macs = {"aa:bb:cc:dd:ee:ff"};
+    game.game.id = "steam:7";
+    game.game.title = "Kirby";
+    game.game.system = "ds";
+    game.game.last_played = 1234;
+    game.icon_width = 2;
+    game.icon_height = 2;
+    game.icon_rgba = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    CHECK(keep_recent_games(path, {game}));
+    const std::vector<RecentGamesFeed::Game> kept = kept_recent_games(path);
+    CHECK_EQ(kept.size(), 1u);
+    if (!kept.empty()) {
+        CHECK_STR_EQ(kept[0].host.address, "192.168.1.20");
+        CHECK(kept[0].host.macs == game.host.macs);
+        CHECK_STR_EQ(kept[0].game.title, "Kirby");
+        CHECK_EQ(kept[0].game.last_played, 1234);
+        CHECK(kept[0].icon_rgba == game.icon_rgba);
+    }
+    CHECK_STR_EQ(recent_games_path("/a/b/remote_start_tokens.json"), "/a/b/remote_start_recent.json");
 }
 
 }  // namespace
@@ -386,5 +435,6 @@ int main() {
     test_games_played_are_remembered();
     test_a_computer_is_remembered_and_woken();
     test_the_recent_games_feed();
+    test_recent_games_are_kept();
     return test::finish("launch-service");
 }

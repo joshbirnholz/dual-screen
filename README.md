@@ -783,7 +783,9 @@ Once a paired computer is found, the first screen also shows the games last
 played on it, newest first, as two rows of icons along its bottom: choosing
 one starts it there and joins it as the bottom screen, without going through
 the list. A game counts as played once Dualscreen has started it on that
-computer.
+computer. The device keeps the last ones it saw, icons and all, so they are
+still there when that computer is off or asleep: choosing one then wakes it
+first (see below) and starts the game once it answers.
 
 A paired computer that is asleep stays listed, marked as asleep. Choosing it
 wakes it with Wake-on-LAN, as Moonlight does -- a packet for each of its

@@ -587,6 +587,78 @@ std::vector<LaunchHost> LaunchHostFinder::hosts() const {
     return shared_->hosts;
 }
 
+std::string recent_games_path(const std::string& tokens_path) {
+    return (std::filesystem::path(tokens_path).parent_path() / "remote_start_recent.json").string();
+}
+
+bool keep_recent_games(const std::string& path, const std::vector<RecentGamesFeed::Game>& games) {
+    json list = json::array();
+    for (const RecentGamesFeed::Game& entry : games) {
+        json game = {{"host", {{"id", entry.host.id},
+                               {"name", entry.host.name},
+                               {"kind", entry.host.kind},
+                               {"address", entry.host.address},
+                               {"port", entry.host.port},
+                               {"macs", entry.host.macs}}},
+                     {"id", entry.game.id},
+                     {"title", entry.game.title},
+                     {"system", entry.game.system},
+                     {"played", entry.game.last_played}};
+        if (entry.icon_width > 0 && entry.icon_height > 0 && !entry.icon_rgba.empty()) {
+            uLongf bound = compressBound(static_cast<uLong>(entry.icon_rgba.size()));
+            std::vector<uint8_t> deflated(bound);
+            if (compress2(deflated.data(), &bound, entry.icon_rgba.data(), static_cast<uLong>(entry.icon_rgba.size()),
+                          6) == Z_OK) {
+                deflated.resize(bound);
+                game["icon"] = {{"w", entry.icon_width}, {"h", entry.icon_height}, {"rgba", base64_encode(deflated)}};
+            }
+        }
+        list.push_back(game);
+    }
+    return store_record(path, json{{"games", list}});
+}
+
+std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path) {
+    std::vector<RecentGamesFeed::Game> games;
+    const json record = load_record(path);
+    const auto list = record.find("games");
+    if (list == record.end() || !list->is_array()) return games;
+    for (const json& game : *list) {
+        if (!game.is_object() || !game.contains("host") || !game["host"].is_object()) continue;
+        const json& host = game["host"];
+        RecentGamesFeed::Game entry;
+        entry.host.id = get_or<std::string>(host, "id", "");
+        entry.host.name = get_or<std::string>(host, "name", entry.host.id);
+        entry.host.kind = get_or<std::string>(host, "kind", "pc");
+        entry.host.address = get_or<std::string>(host, "address", "");
+        entry.host.port = get_or<uint16_t>(host, "port", kLaunchPort);
+        entry.host.macs = get_or<std::vector<std::string>>(host, "macs", {});
+        entry.game.id = get_or<std::string>(game, "id", "");
+        entry.game.title = get_or<std::string>(game, "title", "");
+        entry.game.system = get_or<std::string>(game, "system", "");
+        entry.game.last_played = get_or<int64_t>(game, "played", 0);
+        if (entry.host.id.empty() || entry.game.id.empty()) continue;
+        if (game.contains("icon") && game["icon"].is_object()) {
+            const json& icon = game["icon"];
+            const int width = get_or<int>(icon, "w", 0);
+            const int height = get_or<int>(icon, "h", 0);
+            const std::vector<uint8_t> deflated = base64_decode(get_or<std::string>(icon, "rgba", ""));
+            if (width > 0 && height > 0 && width <= kMaxIconSide && height <= kMaxIconSide && !deflated.empty()) {
+                uLongf size = static_cast<uLongf>(width) * static_cast<uLongf>(height) * 4u;
+                std::vector<uint8_t> rgba(size, 0);
+                if (uncompress(rgba.data(), &size, deflated.data(), static_cast<uLong>(deflated.size())) == Z_OK &&
+                    size == rgba.size()) {
+                    entry.icon_width = width;
+                    entry.icon_height = height;
+                    entry.icon_rgba = std::move(rgba);
+                }
+            }
+        }
+        games.push_back(std::move(entry));
+    }
+    return games;
+}
+
 void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
     stop();
     auto shared = std::make_shared<Shared>();
@@ -595,6 +667,18 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
         // Icons already fetched, by computer and game, so each is asked for
         // once.
         std::map<std::string, Game> icons;
+        const std::string kept_path = recent_games_path(tokens_path);
+        std::vector<Game> kept = kept_recent_games(kept_path);
+        for (Game& entry : kept) {
+            entry.host.asleep = !entry.host.macs.empty();
+            icons[entry.host.id + "/" + entry.game.id] = entry;
+        }
+        if (kept.size() > most) kept.resize(most);
+        if (!kept.empty()) {
+            std::lock_guard<std::mutex> lock(shared->mutex);
+            shared->games = kept;
+            ++shared->version;
+        }
         while (!shared->stopping) {
             std::vector<LaunchHost> hosts;
             {
@@ -602,6 +686,7 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 hosts = shared->hosts;
             }
             std::vector<Game> gathered;
+            bool answered = false;
             for (const LaunchHost& host : hosts) {
                 if (shared->stopping) break;
                 const std::string token = remote_start_token(tokens_path, host.id);
@@ -609,6 +694,7 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 std::vector<LaunchableGame> listed;
                 bool unpaired = false;
                 if (!list_host_games(host, token, listed, unpaired, nullptr)) continue;
+                answered = true;
                 for (const LaunchableGame& game : listed) {
                     if (game.last_played <= 0) continue;
                     Game entry;
@@ -625,6 +711,11 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 if (shared->stopping) break;
                 const std::string key = entry.host.id + "/" + entry.game.id;
                 auto known = icons.find(key);
+                // One kept from before but drawn without: asked again.
+                if (known != icons.end() && known->second.icon_rgba.empty() && !known->second.host.id.empty()) {
+                    icons.erase(known);
+                    known = icons.end();
+                }
                 if (known == icons.end()) {
                     Game fetched;
                     if (!host_game_icon(entry.host, remote_start_token(tokens_path, entry.host.id), entry.game.id,
@@ -637,12 +728,32 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 entry.icon_height = known->second.icon_height;
                 entry.icon_rgba = known->second.icon_rgba;
             }
+            if (shared->stopping) break;
+            if (answered) {
+                // Kept for when that computer is asleep, as it is now.
+                bool same = gathered.size() == kept.size();
+                for (std::size_t at = 0; same && at < kept.size(); ++at) {
+                    same = kept[at].host.id == gathered[at].host.id && kept[at].game.id == gathered[at].game.id &&
+                           kept[at].host.address == gathered[at].host.address &&
+                           kept[at].icon_rgba.size() == gathered[at].icon_rgba.size();
+                }
+                if (!same) {
+                    kept = gathered;
+                    if (!keep_recent_games(kept_path, kept)) log_warn("could not save remote_start_recent.json");
+                }
+            } else {
+                // Nobody paired with answering: the ones last seen, their
+                // computer asleep as far as this can tell.
+                gathered = kept;
+                for (Game& entry : gathered) entry.host.asleep = !entry.host.macs.empty();
+            }
             {
                 std::lock_guard<std::mutex> lock(shared->mutex);
                 const std::vector<Game>& had = shared->games;
                 bool same = had.size() == gathered.size();
                 for (std::size_t at = 0; same && at < had.size(); ++at) {
                     same = had[at].host.id == gathered[at].host.id && had[at].game.id == gathered[at].game.id &&
+                           had[at].host.asleep == gathered[at].host.asleep &&
                            had[at].icon_rgba.size() == gathered[at].icon_rgba.size();
                 }
                 if (!same) {

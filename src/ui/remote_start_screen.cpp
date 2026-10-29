@@ -52,6 +52,7 @@ void RemoteStartScreen::open(const net::LaunchHost& host, std::string token, std
     device_name_ = std::move(device_name);
     games_.clear();
     listed_ = false;
+    start_once_awake_ = false;
     focus_ = 0;
     scroll_ = 0.0f;
     drag_.stop();
@@ -74,9 +75,14 @@ void RemoteStartScreen::open(const net::LaunchHost& host, std::string token, std
 void RemoteStartScreen::open_and_start(const net::LaunchHost& host, std::string token, std::string device_name,
                                        const LaunchableGame& game) {
     open(host, std::move(token), std::move(device_name));
-    // Not paired after all, a code first; asleep, woken first, then its list.
-    if (phase_ == Phase::Code || host.asleep) return;
+    // Not paired after all, a code first, then its list; asleep, woken
+    // first, then started.
+    if (phase_ == Phase::Code) return;
     games_ = {game};
+    if (host.asleep) {
+        start_once_awake_ = true;
+        return;
+    }
     start_game(0);
 }
 
@@ -187,7 +193,12 @@ void RemoteStartScreen::handle_outcome(const Outcome& outcome, RemoteStartResult
             result.answered = true;
             log_info(host_.name + " is awake");
             if (token_.empty()) {
+                start_once_awake_ = false;
+                games_.clear();
                 ask_for_code();
+            } else if (start_once_awake_) {
+                start_once_awake_ = false;
+                start_game(0);
             } else {
                 list_games();
             }

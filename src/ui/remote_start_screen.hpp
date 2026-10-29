@@ -57,7 +57,8 @@ public:
     // remembered but not found -- `host.asleep` -- is woken first.
     void open(const net::LaunchHost& host, std::string token, std::string device_name);
     // Straight to starting `game` there -- one chosen from the first
-    // screen's recently played -- saying so while it is asked.
+    // screen's recently played -- saying so while it is asked, and waking
+    // the computer first when it is asleep.
     void open_and_start(const net::LaunchHost& host, std::string token, std::string device_name,
                         const LaunchableGame& game);
     void close();
@@ -203,6 +204,9 @@ private:
     std::shared_ptr<Job> job_;
     std::vector<LaunchableGame> games_;
     bool listed_ = false;
+    // open_and_start() on a computer asleep: the one game in games_ is
+    // started as soon as it wakes, rather than its list asked for.
+    bool start_once_awake_ = false;
     int focus_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
