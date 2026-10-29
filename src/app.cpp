@@ -638,6 +638,9 @@ struct App::Impl {
     // Computers that can start a game, looked for while the host picker is
     // up -- see net::LaunchHostFinder -- and one's games.
     net::LaunchHostFinder launch_finder;
+    // Computers paired before, to wake when they are not found -- see
+    // net::remember_computer().
+    std::vector<net::LaunchHost> remembered_computers;
     RemoteStartScreen remote_start;
     // A game just started on a computer from here: the host picker joins it
     // as soon as its beacon comes in from that address.
@@ -5825,6 +5828,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     input.set_game_input_enabled(false);
     awaited_launch.reset();
     if (!launch_finder.running()) launch_finder.start();
+    remembered_computers = net::remembered_computers(paths.config_dir + "/remote_start_tokens.json");
 }
 
 std::vector<net::LaunchHost> App::Impl::idle_computers() const {
@@ -5839,6 +5843,18 @@ std::vector<net::LaunchHost> App::Impl::idle_computers() const {
                                                           });
                                    }),
                     computers.end());
+    // Paired before and not answering now: asleep, as far as this can tell.
+    // Only once a search has had its chance, so one about to answer is not
+    // shown asleep for a moment first.
+    if (launch_finder.searched()) {
+        for (net::LaunchHost remembered : remembered_computers) {
+            const bool found = std::any_of(computers.begin(), computers.end(),
+                                           [&](const net::LaunchHost& host) { return host.id == remembered.id; });
+            if (found || remembered.macs.empty()) continue;
+            remembered.asleep = true;
+            computers.push_back(remembered);
+        }
+    }
     return computers;
 }
 
@@ -6125,6 +6141,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // it from the first time it opens, saved or not.
     game_icon_rom = rom_path;
     game_icon_tried_us = 0;
+    // For a connected device's row of recently played games -- see
+    // net/launch_service.hpp.
+    remember_played(paths.data_dir + "/played_games.json", rom_path, static_cast<int64_t>(std::time(nullptr)));
     refresh_game_icon();
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
@@ -6595,6 +6614,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 case LauncherChoice::Quit:
                     running = false;
                     break;
+                // Only a companion's launcher offers those.
+                case LauncherChoice::StartRecent:
                 case LauncherChoice::None:
                     break;
             }
@@ -6652,6 +6673,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 !net::keep_remote_start_token(paths.config_dir + "/remote_start_tokens.json", remote_start.host().id,
                                               result.token)) {
                 log_warn("could not save remote_start_tokens.json");
+            }
+            if (result.answered) {
+                net::remember_computer(paths.config_dir + "/remote_start_tokens.json", remote_start.host());
+                remembered_computers = net::remembered_computers(paths.config_dir + "/remote_start_tokens.json");
             }
             if (result.view_changed) {
                 net::keep_remote_start_grid(paths.config_dir + "/remote_start_tokens.json", remote_start.grid());

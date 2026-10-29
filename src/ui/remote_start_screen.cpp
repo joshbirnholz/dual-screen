@@ -58,15 +58,26 @@ void RemoteStartScreen::open(const net::LaunchHost& host, std::string token, std
     alert_.clear();
     code_entry_.close();
     editor_pending_ = false;
-    job_.reset();
+    drop_job();
     if (icons_) icons_->cancelled = true;
     icons_.reset();
     textures_.clear();
-    if (token_.empty()) {
+    if (host_.asleep) {
+        wake();
+    } else if (token_.empty()) {
         ask_for_code();
     } else {
         list_games();
     }
+}
+
+void RemoteStartScreen::open_and_start(const net::LaunchHost& host, std::string token, std::string device_name,
+                                       const LaunchableGame& game) {
+    open(host, std::move(token), std::move(device_name));
+    // Not paired after all, a code first; asleep, woken first, then its list.
+    if (phase_ == Phase::Code || host.asleep) return;
+    games_ = {game};
+    start_game(0);
 }
 
 void RemoteStartScreen::close() {
@@ -74,28 +85,46 @@ void RemoteStartScreen::close() {
     code_entry_.close();
     editor_pending_ = false;
     // Its thread finishes on its own; what it brings back goes nowhere.
-    job_.reset();
+    drop_job();
     if (icons_) icons_->cancelled = true;
     icons_.reset();
     textures_.clear();
 }
 
-void RemoteStartScreen::run(std::function<Outcome()> work, std::string waiting_for) {
+void RemoteStartScreen::run(std::function<Outcome(const std::atomic<bool>& cancelled)> work, std::string waiting_for) {
+    drop_job();
     phase_ = Phase::Waiting;
     waiting_for_ = std::move(waiting_for);
     auto job = std::make_shared<Job>();
     job_ = job;
     std::thread([job, work = std::move(work)] {
-        job->outcome = work();
+        job->outcome = work(job->cancelled);
         job->done = true;
     }).detach();
+}
+
+void RemoteStartScreen::drop_job() {
+    if (job_) job_->cancelled = true;
+    job_.reset();
+}
+
+void RemoteStartScreen::wake() {
+    const net::LaunchHost host = host_;
+    run(
+        [host](const std::atomic<bool>& cancelled) {
+            Outcome outcome;
+            outcome.kind = Outcome::Kind::Woken;
+            outcome.ok = net::wake_and_wait(host, 90000, cancelled, outcome.woken, &outcome.error);
+            return outcome;
+        },
+        "Waking " + host_.name + "...");
 }
 
 void RemoteStartScreen::list_games() {
     const net::LaunchHost host = host_;
     const std::string token = token_;
     run(
-        [host, token] {
+        [host, token](const std::atomic<bool>&) {
             Outcome outcome;
             outcome.kind = Outcome::Kind::Listed;
             outcome.ok = net::list_host_games(host, token, outcome.games, outcome.unpaired, &outcome.error);
@@ -128,7 +157,7 @@ void RemoteStartScreen::start_game(int index) {
     const net::LaunchHost host = host_;
     const std::string token = token_;
     run(
-        [host, token, game] {
+        [host, token, game](const std::atomic<bool>&) {
             Outcome outcome;
             outcome.kind = Outcome::Kind::Started;
             outcome.title = game.title;
@@ -149,6 +178,20 @@ void RemoteStartScreen::handle_outcome(const Outcome& outcome, RemoteStartResult
         return;
     }
     switch (outcome.kind) {
+        case Outcome::Kind::Woken:
+            if (!outcome.ok) {
+                alert(outcome.error, Phase::List, true);
+                return;
+            }
+            host_ = outcome.woken;
+            result.answered = true;
+            log_info(host_.name + " is awake");
+            if (token_.empty()) {
+                ask_for_code();
+            } else {
+                list_games();
+            }
+            return;
         case Outcome::Kind::Paired:
             if (!outcome.ok) {
                 alert(outcome.error, Phase::Code);
@@ -167,6 +210,7 @@ void RemoteStartScreen::handle_outcome(const Outcome& outcome, RemoteStartResult
             }
             games_ = outcome.games;
             listed_ = true;
+            result.answered = true;
             fetch_icons();
             focus_ = std::clamp(focus_, 0, std::max(0, static_cast<int>(games_.size()) - 1));
             phase_ = Phase::List;
@@ -348,7 +392,7 @@ RemoteStartResult RemoteStartScreen::update(const std::vector<UiAction>& pressed
             const net::LaunchHost host = host_;
             const std::string device = device_name_;
             run(
-                [host, code, device] {
+                [host, code, device](const std::atomic<bool>&) {
                     Outcome outcome;
                     outcome.kind = Outcome::Kind::Paired;
                     outcome.ok = net::pair_with_host(host, code, device, outcome.token, &outcome.error);

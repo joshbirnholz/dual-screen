@@ -779,6 +779,20 @@ Start shows them, each icon read out of the game on the computer; the name
 of the one under the cursor sits under it. **Y** switches to a list of
 titles and back, and the choice is kept.
 
+Once a paired computer is found, the first screen also shows the games last
+played on it, newest first, as two rows of icons along its bottom: choosing
+one starts it there and joins it as the bottom screen, without going through
+the list. A game counts as played once Dualscreen has started it on that
+computer.
+
+A paired computer that is asleep stays listed, marked as asleep. Choosing it
+wakes it with Wake-on-LAN, as Moonlight does -- a packet for each of its
+network cards, sent to the whole network and to its last address, again
+every few seconds for up to a minute and a half -- and goes on once it
+answers. Wake-on-LAN has to be turned on in the computer's firmware settings
+and for its network card, and usually only works over a cable rather than
+Wi-Fi.
+
 ### A Switch or an Android handheld as the second screen
 
 The other device does not have to be running this app, or be a PC at all.

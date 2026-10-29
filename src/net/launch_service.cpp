@@ -8,6 +8,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <random>
 #include <set>
@@ -124,7 +125,7 @@ constexpr int kMaxIconSide = 256;
 constexpr const char* kViewKey = "view";
 
 json describe_game(const LaunchableGame& game) {
-    return {{"id", game.id}, {"title", game.title}, {"system", game.system}};
+    return {{"id", game.id}, {"title", game.title}, {"system", game.system}, {"played", game.last_played}};
 }
 
 // One request, one answer.
@@ -470,6 +471,44 @@ bool keep_remote_start_token(const std::string& path, const std::string& host_id
     return store_record(path, tokens);
 }
 
+namespace {
+constexpr const char* kComputersKey = "computers";
+}  // namespace
+
+void remember_computer(const std::string& path, const LaunchHost& host) {
+    if (host.id.empty()) return;
+    json record = load_record(path);
+    if (!record.contains(kComputersKey) || !record[kComputersKey].is_object()) record[kComputersKey] = json::object();
+    json entry = {{"name", host.name}, {"kind", host.kind}, {"address", host.address}, {"port", host.port},
+                  {"macs", host.macs}};
+    // Hardware addresses from before stay when this answer had none.
+    if (host.macs.empty() && record[kComputersKey].contains(host.id)) {
+        entry["macs"] = get_or<std::vector<std::string>>(record[kComputersKey][host.id], "macs", {});
+    }
+    if (record[kComputersKey].contains(host.id) && record[kComputersKey][host.id] == entry) return;
+    record[kComputersKey][host.id] = entry;
+    store_record(path, record);
+}
+
+std::vector<LaunchHost> remembered_computers(const std::string& path) {
+    std::vector<LaunchHost> computers;
+    const json record = load_record(path);
+    const auto found = record.find(kComputersKey);
+    if (found == record.end() || !found->is_object()) return computers;
+    for (auto entry = found->begin(); entry != found->end(); ++entry) {
+        if (!entry->is_object()) continue;
+        LaunchHost host;
+        host.id = entry.key();
+        host.name = get_or<std::string>(*entry, "name", host.id);
+        host.kind = get_or<std::string>(*entry, "kind", "pc");
+        host.address = get_or<std::string>(*entry, "address", "");
+        host.port = get_or<uint16_t>(*entry, "port", kLaunchPort);
+        host.macs = get_or<std::vector<std::string>>(*entry, "macs", {});
+        computers.push_back(host);
+    }
+    return computers;
+}
+
 bool remote_start_grid(const std::string& path) { return remote_start_token(path, kViewKey) != "list"; }
 
 bool keep_remote_start_grid(const std::string& path, bool grid) {
@@ -517,34 +556,126 @@ std::vector<uint8_t> base64_decode(const std::string& text) {
 
 void LaunchHostFinder::start(LaunchSearch search, int every_ms) {
     stop();
-    stopping_ = false;
-    thread_ = std::thread([this, search, every_ms] {
-        while (!stopping_) {
+    auto shared = std::make_shared<Shared>();
+    shared_ = shared;
+    std::thread([shared, search, every_ms] {
+        while (!shared->stopping) {
             std::vector<LaunchHost> found = search_launch_hosts(search);
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                hosts_ = std::move(found);
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                if (!shared->stopping) shared->hosts = std::move(found);
             }
-            // In short steps, so stop() never waits long.
-            for (int waited = 0; waited < every_ms && !stopping_; waited += 50) {
+            shared->searched = true;
+            for (int waited = 0; waited < every_ms && !shared->stopping; waited += 50) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
         }
-    });
+    }).detach();
 }
 
 void LaunchHostFinder::stop() {
-    if (!thread_.joinable()) return;
-    stopping_ = true;
-    thread_.join();
-    std::lock_guard<std::mutex> lock(mutex_);
-    hosts_.clear();
+    if (!shared_) return;
+    shared_->stopping = true;
+    shared_.reset();
 }
 
+bool LaunchHostFinder::searched() const { return shared_ && shared_->searched.load(); }
+
 std::vector<LaunchHost> LaunchHostFinder::hosts() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return hosts_;
+    if (!shared_) return {};
+    std::lock_guard<std::mutex> lock(shared_->mutex);
+    return shared_->hosts;
 }
+
+void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
+    stop();
+    auto shared = std::make_shared<Shared>();
+    shared_ = shared;
+    std::thread([shared, tokens_path, most] {
+        // Icons already fetched, by computer and game, so each is asked for
+        // once.
+        std::map<std::string, Game> icons;
+        while (!shared->stopping) {
+            std::vector<LaunchHost> hosts;
+            {
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                hosts = shared->hosts;
+            }
+            std::vector<Game> gathered;
+            for (const LaunchHost& host : hosts) {
+                if (shared->stopping) break;
+                const std::string token = remote_start_token(tokens_path, host.id);
+                if (token.empty()) continue;
+                std::vector<LaunchableGame> listed;
+                bool unpaired = false;
+                if (!list_host_games(host, token, listed, unpaired, nullptr)) continue;
+                for (const LaunchableGame& game : listed) {
+                    if (game.last_played <= 0) continue;
+                    Game entry;
+                    entry.host = host;
+                    entry.game = game;
+                    gathered.push_back(entry);
+                }
+            }
+            std::stable_sort(gathered.begin(), gathered.end(), [](const Game& a, const Game& b) {
+                return a.game.last_played > b.game.last_played;
+            });
+            if (gathered.size() > most) gathered.resize(most);
+            for (Game& entry : gathered) {
+                if (shared->stopping) break;
+                const std::string key = entry.host.id + "/" + entry.game.id;
+                auto known = icons.find(key);
+                if (known == icons.end()) {
+                    Game fetched;
+                    if (!host_game_icon(entry.host, remote_start_token(tokens_path, entry.host.id), entry.game.id,
+                                        fetched.icon_width, fetched.icon_height, fetched.icon_rgba, nullptr)) {
+                        fetched.icon_rgba.clear();
+                    }
+                    known = icons.emplace(key, std::move(fetched)).first;
+                }
+                entry.icon_width = known->second.icon_width;
+                entry.icon_height = known->second.icon_height;
+                entry.icon_rgba = known->second.icon_rgba;
+            }
+            {
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                const std::vector<Game>& had = shared->games;
+                bool same = had.size() == gathered.size();
+                for (std::size_t at = 0; same && at < had.size(); ++at) {
+                    same = had[at].host.id == gathered[at].host.id && had[at].game.id == gathered[at].game.id &&
+                           had[at].icon_rgba.size() == gathered[at].icon_rgba.size();
+                }
+                if (!same) {
+                    shared->games = std::move(gathered);
+                    ++shared->version;
+                }
+            }
+            for (int waited = 0; waited < 4000 && !shared->stopping; waited += 50) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
+    }).detach();
+}
+
+void RecentGamesFeed::stop() {
+    if (!shared_) return;
+    shared_->stopping = true;
+    shared_.reset();
+}
+
+void RecentGamesFeed::set_hosts(const std::vector<LaunchHost>& hosts) {
+    if (!shared_) return;
+    std::lock_guard<std::mutex> lock(shared_->mutex);
+    shared_->hosts = hosts;
+}
+
+std::vector<RecentGamesFeed::Game> RecentGamesFeed::games() const {
+    if (!shared_) return {};
+    std::lock_guard<std::mutex> lock(shared_->mutex);
+    return shared_->games;
+}
+
+uint64_t RecentGamesFeed::version() const { return shared_ ? shared_->version.load() : 0; }
 
 bool pair_with_host(const LaunchHost& host, const std::string& code, const std::string& device_name,
                     std::string& token, std::string* error) {
@@ -575,6 +706,7 @@ bool list_host_games(const LaunchHost& host, const std::string& token, std::vect
         game.id = get_or<std::string>(entry, "id", "");
         game.title = get_or<std::string>(entry, "title", "");
         game.system = get_or<std::string>(entry, "system", "");
+        game.last_played = get_or<int64_t>(entry, "played", 0);
         if (!game.id.empty()) out.push_back(game);
     }
     return true;
@@ -640,6 +772,62 @@ std::vector<uint8_t> wake_on_lan_packet(const std::string& mac) {
     std::vector<uint8_t> packet(6, 0xFF);
     for (int copy = 0; copy < 16; ++copy) packet.insert(packet.end(), address.begin(), address.end());
     return packet;
+}
+
+bool wake_computer(const LaunchHost& host, std::string* error) {
+    if (host.macs.empty()) {
+        if (error != nullptr) *error = host.name + " never said how to wake it";
+        return false;
+    }
+    UdpSocket socket;
+    if (!socket.start(0, true, error)) return false;
+    bool sent = false;
+    for (const std::string& mac : host.macs) {
+        const std::vector<uint8_t> packet = wake_on_lan_packet(mac);
+        if (packet.empty()) continue;
+        for (const uint16_t port : {uint16_t{9}, uint16_t{7}}) {
+            for (int round = 0; round < 2; ++round) {
+                sent = socket.broadcast(port, packet.data(), packet.size()) || sent;
+                sent = socket.send_to("255.255.255.255", port, packet.data(), packet.size()) || sent;
+                if (!host.address.empty()) {
+                    sent = socket.send_to(host.address, port, packet.data(), packet.size()) || sent;
+                }
+            }
+        }
+    }
+    if (!sent && error != nullptr) *error = "nothing could be sent on this network";
+    return sent;
+}
+
+bool wake_and_wait(const LaunchHost& host, int timeout_ms, const std::atomic<bool>& cancelled, LaunchHost& awake,
+                   std::string* error, uint16_t query_port) {
+    if (!wake_computer(host, error)) return false;
+    log_info("waking " + host.name);
+    const uint64_t started = monotonic_millis();
+    uint64_t woken_at = started;
+    LaunchSearch search;
+    search.query_port = query_port;
+    search.timeout_ms = 1000;
+    if (!host.address.empty()) search.addresses = {host.address};
+    while (!cancelled && monotonic_millis() - started < static_cast<uint64_t>(timeout_ms)) {
+        for (const LaunchHost& found : search_launch_hosts(search)) {
+            if (found.id == host.id) {
+                awake = found;
+                return true;
+            }
+        }
+        // Again every five seconds, as a packet sent while the network was
+        // still coming up -- a router asleep too -- is simply lost.
+        if (monotonic_millis() - woken_at >= 5000) {
+            wake_computer(host, nullptr);
+            woken_at = monotonic_millis();
+        }
+    }
+    if (error != nullptr && !cancelled) {
+        *error = host.name + " did not wake up. Wake-on-LAN has to be turned on in its firmware settings and for "
+                             "its network card, and it usually has to be connected by cable rather than Wi-Fi.";
+    }
+    return false;
 }
 
 bool wake_on_lan(const std::string& mac, std::string* error) {

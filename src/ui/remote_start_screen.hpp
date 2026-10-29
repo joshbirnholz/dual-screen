@@ -34,6 +34,9 @@ struct RemoteStartResult {
     // keeps it (empty to forget it) under the computer's id.
     bool token_changed = false;
     std::string token;
+    // The computer answered, as host() now has it: the caller remembers it,
+    // to wake it another time -- see net::remember_computer().
+    bool answered = false;
     // Y switched between the grid and the list: the caller keeps which.
     bool view_changed = false;
 };
@@ -50,8 +53,13 @@ public:
     ~RemoteStartScreen() override;
 
     // `token` is what this device was given when it last paired there, or
-    // empty, in which case it asks for a code straight away.
+    // empty, in which case it asks for a code straight away. A computer
+    // remembered but not found -- `host.asleep` -- is woken first.
     void open(const net::LaunchHost& host, std::string token, std::string device_name);
+    // Straight to starting `game` there -- one chosen from the first
+    // screen's recently played -- saying so while it is asked.
+    void open_and_start(const net::LaunchHost& host, std::string token, std::string device_name,
+                        const LaunchableGame& game);
     void close();
     bool is_open() const { return open_; }
     const net::LaunchHost& host() const { return host_; }
@@ -111,7 +119,8 @@ private:
 
     // What a job on the network thread came back with.
     struct Outcome {
-        enum class Kind { Listed, Paired, Started } kind = Kind::Listed;
+        enum class Kind { Listed, Paired, Started, Woken } kind = Kind::Listed;
+        net::LaunchHost woken;
         bool ok = false;
         bool unpaired = false;
         std::string error;
@@ -124,6 +133,9 @@ private:
     // answer, when it comes, is dropped.
     struct Job {
         std::atomic<bool> done{false};
+        // Set when the page is put away, for a job that goes on a while --
+        // waking a computer -- to stop.
+        std::atomic<bool> cancelled{false};
         Outcome outcome;
     };
 
@@ -164,7 +176,9 @@ private:
     float max_scroll(const Geometry& geometry) const;
     void scroll_focus_into_view(const Geometry& geometry);
 
-    void run(std::function<Outcome()> work, std::string waiting_for);
+    void run(std::function<Outcome(const std::atomic<bool>& cancelled)> work, std::string waiting_for);
+    void drop_job();
+    void wake();
     void finish_job();
     void list_games();
     void ask_for_code();

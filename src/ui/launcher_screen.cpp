@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
@@ -63,12 +64,57 @@ void LauncherScreen::open(bool runs_games) {
     }
 }
 
+void LauncherScreen::set_recent(std::vector<LauncherTile> tiles) {
+    tiles_ = std::move(tiles);
+    // Textures for games no longer shown go.
+    for (auto texture = tile_textures_.begin(); texture != tile_textures_.end();) {
+        const bool kept = std::any_of(tiles_.begin(), tiles_.end(),
+                                      [&](const LauncherTile& tile) { return tile.key == texture->first; });
+        texture = kept ? std::next(texture) : tile_textures_.erase(texture);
+    }
+    const int rows = static_cast<int>(rows_.size());
+    if (focus_ >= rows && focus_ - rows >= static_cast<int>(tiles_.size())) {
+        focus_ = tiles_.empty() ? rows - 1 : rows + static_cast<int>(tiles_.size()) - 1;
+    }
+}
+
+std::vector<PixelRect> LauncherScreen::compute_tiles(float output_width, float output_height, int& columns) const {
+    std::vector<PixelRect> tiles;
+    columns = 1;
+    if (tiles_.empty()) return tiles;
+    const PageFrame frame = page_frame(output_width, output_height);
+    float scale = 1.0f;
+    const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
+    const float below = rows.empty() ? frame.content_top : rows.back().y + rows.back().h;
+    // Two rows in what is left under the menu, along the foot of the page,
+    // as a Wii U GamePad's Quick Start lays its icons out.
+    const float gap = std::round(frame.line * 1.2f);
+    const float room = frame.content_bottom - below - gap;
+    const float tile = std::round(std::min(frame.line * 6.0f, (room - gap) / 2.0f));
+    if (tile < frame.line * 2.5f) return tiles;
+    columns = std::max(1, static_cast<int>((frame.panel.w + gap) / (tile + gap)));
+    const int shown = std::min(static_cast<int>(tiles_.size()), columns * 2);
+    const int lines = (shown + columns - 1) / columns;
+    const float top = frame.content_bottom - lines * tile - (lines - 1) * gap;
+    for (int index = 0; index < shown; ++index) {
+        const int column = index % columns;
+        const int line = index / columns;
+        tiles.push_back(PixelRect{frame.panel.x + column * (tile + gap), top + line * (tile + gap), tile, tile});
+    }
+    return tiles;
+}
+
 int LauncherScreen::entry_at(float x, float y, float output_width, float output_height) const {
     if (!open_) return -1;
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     for (std::size_t index = 0; index < rows.size() && index < rows_.size(); ++index) {
         if (rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    int columns = 1;
+    const std::vector<PixelRect> tiles = compute_tiles(output_width, output_height, columns);
+    for (std::size_t index = 0; index < tiles.size(); ++index) {
+        if (tiles[index].contains(x, y)) return static_cast<int>(rows_.size() + index);
     }
     return -1;
 }
@@ -86,17 +132,50 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     if (count == 0) {
         return result;
     }
+    int columns = 1;
+    tiles_shown_ = static_cast<int>(compute_tiles(output_width, output_height, columns).size());
+    tile_columns_ = columns;
+    if (focus_ >= count + tiles_shown_) focus_ = count + tiles_shown_ - 1;
+    // Which of the whole, rows then tiles, a choice is.
+    const auto choose = [&](int index) {
+        if (index < count) {
+            result.choice = rows_[static_cast<std::size_t>(index)];
+        } else if (index - count < tiles_shown_) {
+            result.choice = LauncherChoice::StartRecent;
+            result.recent = index - count;
+        }
+    };
 
     for (const UiAction action : actions) {
+        const int tile = focus_ - count;
         switch (action) {
             case UiAction::Up:
-                focus_ = std::max(0, focus_ - 1);
+                if (tile >= columns) {
+                    focus_ -= columns;
+                } else if (tile >= 0) {
+                    focus_ = count - 1;  // off the top row of games, onto the menu
+                } else {
+                    focus_ = std::max(0, focus_ - 1);
+                }
                 break;
             case UiAction::Down:
-                focus_ = std::min(count - 1, focus_ + 1);
+                if (tile < 0) {
+                    // Off the end of the menu onto the first game.
+                    if (focus_ + 1 < count || tiles_shown_ > 0) focus_ = std::min(count - 1 + tiles_shown_, focus_ + 1);
+                } else if (tile + columns < tiles_shown_) {
+                    focus_ += columns;
+                } else if (tile / columns + 1 < (tiles_shown_ + columns - 1) / columns) {
+                    focus_ = count + tiles_shown_ - 1;  // onto the end of a shorter last row
+                }
+                break;
+            case UiAction::Left:
+                if (tile > 0 && tile % columns > 0) --focus_;
+                break;
+            case UiAction::Right:
+                if (tile >= 0 && tile % columns < columns - 1 && tile + 1 < tiles_shown_) ++focus_;
                 break;
             case UiAction::Confirm:
-                result.choice = rows_[static_cast<std::size_t>(focus_)];
+                choose(focus_);
                 break;
             // A menu's face buttons. Nothing here answers them, and a bare
             // fallthrough into Quit would make pressing X leave the screen.
@@ -126,7 +205,7 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     for (const int index : take_taps(pointers, output_width, output_height)) {
         // A tap on a row chooses it: the finger held on it showed which it
         // was, and one that slid off took it back.
-        if (index < count && tap_chooses(focus_, index)) result.choice = rows_[static_cast<std::size_t>(index)];
+        if (index < count + tiles_shown_ && tap_chooses(focus_, index)) choose(index);
     }
 
     if (result.choice != LauncherChoice::None) {
@@ -183,6 +262,42 @@ void LauncherScreen::render(QuadRenderer& quads,
         // names say what they do without a sentence explaining them.
         text.draw(quads, title_for(rows_[index]), row.x + pad, page_row_text_y(row, scale), scale,
                   menu_row_text(focused));
+    }
+
+    // The games recently played on a computer this device can start them
+    // on, along the foot: icons alone, as on a GamePad's Quick Start.
+    int columns = 1;
+    const std::vector<PixelRect> tiles = compute_tiles(output_width, output_height, columns);
+    for (std::size_t index = 0; index < tiles.size(); ++index) {
+        const PixelRect& tile = tiles[index];
+        const LauncherTile& game = tiles_[index];
+        const float radius = std::round(tile.w * 0.1f);
+        quads.draw_rounded_rect(tile, radius, Color{0.17f, 0.19f, 0.24f, 1.0f});
+        Texture& texture = tile_textures_[game.key];
+        if (!texture.valid() && game.icon_width > 0 && game.icon_height > 0 &&
+            game.icon_rgba.size() ==
+                static_cast<std::size_t>(game.icon_width) * static_cast<std::size_t>(game.icon_height) * 4u) {
+            texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(game.icon_rgba.data()), game.icon_width,
+                                    game.icon_height, game.icon_width);
+            texture.set_linear_filtering(true);
+        }
+        const float inset = std::round(tile.w * 0.09f);
+        if (texture.valid()) {
+            quads.draw_image(PixelRect{tile.x + inset, tile.y + inset, tile.w - inset * 2.0f, tile.h - inset * 2.0f},
+                             texture, Color{1.0f, 1.0f, 1.0f, 1.0f});
+        } else {
+            text.draw(quads, game.system, tile.x + tile.w * 0.5f, std::round(tile.y + (tile.h - line) * 0.5f), scale,
+                      theme.text_dim, TextAlign::Center);
+        }
+        const bool held = pointer_holding(tile);
+        if (held) {
+            quads.draw_rounded_rect(tile, radius, menu_highlight_fill());
+        } else if (cursor_drawn(focus_ == static_cast<int>(rows_.size() + index))) {
+            const float ring = std::max(3.0f, std::round(scale * 1.6f));
+            const float out = std::round(ring * 1.2f);
+            quads.draw_rounded_ring(PixelRect{tile.x - out, tile.y - out, tile.w + out * 2.0f, tile.h + out * 2.0f},
+                                    radius + out, ring, menu_ring_left(), menu_ring_right());
+        }
     }
 
     // Live feedback that the search is working, so "connect" is not a leap of
@@ -360,7 +475,9 @@ void HostPickerScreen::render(QuadRenderer& quads,
             const float step = line * 1.3f;
             const float top = row.y + (row.h - step - TextRenderer::line_height(sub_scale)) * 0.5f;
             text.draw(quads, "Start a Game", text_x, top, scale, menu_row_text(focused));
-            text.draw(quads, computer.name, text_x, top + step, sub_scale, theme.text_dim);
+            // One not answering, remembered from before, will be woken first.
+            text.draw(quads, computer.asleep ? computer.name + "   asleep, will be woken" : computer.name, text_x,
+                      top + step, sub_scale, theme.text_dim);
             continue;
         }
         const ds::net::DiscoveredHost& host = hosts[index];

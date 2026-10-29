@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ds {
@@ -18,7 +19,22 @@ struct LaunchableGame {
     std::string path;
     // Steam's run id for its shortcut, or 0 for a file started directly.
     uint64_t steam_run_id = 0;
+    // When it was last played on that machine, in seconds since 1970, or 0
+    // for never -- see remember_played().
+    int64_t last_played = 0;
 };
+
+// Every game played on this machine, kept in the file at `record_path` by
+// the game's path -- the app notes each one as it starts it -- for a
+// connected device's row of recently played games.
+void remember_played(const std::string& record_path, const std::string& rom_path, int64_t when);
+// When each was last played, by its path.
+std::vector<std::pair<std::string, int64_t>> played_games(const std::string& record_path);
+// `games` with each one's last_played filled in from the record, and every
+// game played that is not among them yet still there to start added, as a
+// file: one opened from the file picker while Steam has shortcuts for
+// others.
+void add_played(std::vector<LaunchableGame>& games, const std::string& record_path);
 
 // Every game of this app's among Steam's shortcuts under `home`, by title.
 std::vector<LaunchableGame> games_from_steam_shortcuts(const std::string& home);

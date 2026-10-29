@@ -573,6 +573,14 @@ private:
     // up -- see net::LaunchHostFinder -- and one's games.
     net::LaunchHostFinder launch_finder_;
     RemoteStartScreen remote_start_;
+    // The games recently played on those computers, for the launcher's foot.
+    net::RecentGamesFeed recent_games_;
+    uint64_t recent_shown_ = ~uint64_t{0};
+    // Computers paired with before, read when the picker opens: one not
+    // answering is listed anyway, to be woken.
+    std::vector<net::LaunchHost> remembered_;
+    static std::string tokens_path() { return AppPaths::resolve().config_dir + "/remote_start_tokens.json"; }
+    void follow_recent_games();
     // What this device calls itself to a host, and to a computer it pairs
     // with.
     std::string device_name_;
@@ -835,6 +843,18 @@ void Client::stop() {
 
 std::vector<net::LaunchHost> Client::idle_computers() const {
     std::vector<net::LaunchHost> computers = launch_finder_.hosts();
+    // Paired before and not answering now: asleep, as far as this can tell.
+    // Only once the first search has had its time, so a computer that is
+    // awake is not shown asleep for a moment first.
+    if (launch_finder_.searched()) {
+        for (net::LaunchHost remembered : remembered_) {
+            const bool found = std::any_of(computers.begin(), computers.end(),
+                                           [&](const net::LaunchHost& host) { return host.id == remembered.id; });
+            if (found || remembered.macs.empty()) continue;
+            remembered.asleep = true;
+            computers.push_back(remembered);
+        }
+    }
     const std::vector<net::DiscoveredHost> running = session_.hosts();
     computers.erase(std::remove_if(computers.begin(), computers.end(),
                                    [&](const net::LaunchHost& computer) {
@@ -853,11 +873,33 @@ std::string Client::host_picker_status() const {
     return session_.status_detail();
 }
 
+void Client::follow_recent_games() {
+    if (!recent_games_.running()) return;
+    recent_games_.set_hosts(launch_finder_.hosts());
+    if (recent_games_.version() == recent_shown_) return;
+    recent_shown_ = recent_games_.version();
+    std::vector<LauncherTile> tiles;
+    for (const net::RecentGamesFeed::Game& game : recent_games_.games()) {
+        LauncherTile tile;
+        tile.key = game.host.id + "/" + game.game.id;
+        tile.system = RemoteStartScreen::system_label(game.game.system);
+        tile.icon_width = game.icon_width;
+        tile.icon_height = game.icon_height;
+        tile.icon_rgba = game.icon_rgba;
+        tiles.push_back(std::move(tile));
+    }
+    launcher_.set_recent(std::move(tiles));
+}
+
 void Client::open_launcher() {
     state_ = State::Launcher;
-    launch_finder_.stop();
     remote_start_.close();
     awaited_launch_.reset();
+    // Looking for computers to start a game on from here too, for the
+    // recently played games along the foot.
+    if (!launch_finder_.running()) launch_finder_.start();
+    if (!recent_games_.running()) recent_games_.start(tokens_path(), 16);
+    recent_shown_ = ~uint64_t{0};
     close_menu();
     session_.disconnect();
     // Nothing of the session that ended stays to be shown by the next one:
@@ -992,6 +1034,8 @@ void Client::begin_search(ScreenId wanted) {
     // Shown in the computer's list of devices paired with it.
     device_name_ = name.empty() ? std::string("Dualscreen companion") : name;
     awaited_launch_.reset();
+    recent_games_.stop();
+    remembered_ = net::remembered_computers(tokens_path());
     if (system_keyboard_available()) remote_start_.set_text_editor(&edit_with_system_keyboard);
     if (!launch_finder_.running()) launch_finder_.start();
     std::string error;
@@ -1006,6 +1050,8 @@ void Client::join(const net::DiscoveredHost& host) {
     log_info("joining " + host.device_name + " (" + host.address + ") as the " +
              to_string(host_picker_.wanted_screen()) + " screen");
     launch_finder_.stop();
+    recent_games_.stop();
+    launcher_.set_recent({});
     remote_start_.close();
     awaited_launch_.reset();
     session_.connect_to(host);
@@ -1509,6 +1555,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     }
 
     if (state_ == State::Launcher) {
+        follow_recent_games();
         const LauncherResult result =
             launcher_.update(actions, pointers, static_cast<float>(output_width_),
                              static_cast<float>(output_height_));
@@ -1519,6 +1566,20 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             case LauncherChoice::ConnectAsBottomScreen:
                 begin_search(ScreenId::Bottom);
                 break;
+            case LauncherChoice::StartRecent: {
+                // Started on that computer, and joined as the bottom screen
+                // -- the one held -- once it is up there.
+                const std::vector<net::RecentGamesFeed::Game> games = recent_games_.games();
+                if (result.recent < 0 || result.recent >= static_cast<int>(games.size())) break;
+                const net::RecentGamesFeed::Game picked = games[static_cast<std::size_t>(result.recent)];
+                begin_search(ScreenId::Bottom);
+                if (state_ != State::Browsing) break;
+                remote_start_.set_grid(net::remote_start_grid(tokens_path()));
+                remote_start_.open_and_start(picked.host, net::remote_start_token(tokens_path(), picked.host.id),
+                                             device_name_, picked.game);
+                state_ = State::RemoteStart;
+                break;
+            }
             case LauncherChoice::Settings:
 #if DS_LOCAL_PLAY
                 open_settings();
@@ -1565,6 +1626,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                               remote_start_.host().id, result.token)) {
                 log_warn("could not save remote_start_tokens.json");
             }
+        }
+        if (result.answered) {
+            net::remember_computer(tokens_path(), remote_start_.host());
+            remembered_ = net::remembered_computers(tokens_path());
         }
         if (result.view_changed) {
             net::keep_remote_start_grid(AppPaths::resolve().config_dir + "/remote_start_tokens.json",

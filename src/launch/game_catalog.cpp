@@ -4,7 +4,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
+
+#include <nlohmann/json.hpp>
 
 #include "core/system.hpp"
 #include "launch/steam_shortcuts.hpp"
@@ -82,6 +85,99 @@ std::vector<LaunchableGame> games_from_folders(const std::vector<std::string>& f
     }
     by_title(games);
     return games;
+}
+
+namespace {
+
+// The same file however it was named: a shortcut's quoted path, or one
+// through a symlink, against the path the game was opened from.
+std::string same_file_key(const std::string& path) {
+    std::error_code error;
+    const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, error);
+    return error ? path : canonical.string();
+}
+
+// At most this many kept: more than any row shows.
+constexpr std::size_t kPlayedKept = 200;
+
+}  // namespace
+
+void remember_played(const std::string& record_path, const std::string& rom_path, int64_t when) {
+    using json = nlohmann::json;
+    json record = json::object();
+    {
+        std::ifstream in(record_path);
+        if (in) {
+            try {
+                record = json::parse(in);
+            } catch (const json::exception&) {
+                record = json::object();
+            }
+        }
+    }
+    if (!record.is_object()) record = json::object();
+    record[same_file_key(rom_path)] = when;
+    // The oldest go once there are too many.
+    while (record.size() > kPlayedKept) {
+        auto oldest = record.begin();
+        for (auto entry = record.begin(); entry != record.end(); ++entry) {
+            if (entry->is_number() && (!oldest->is_number() || entry->get<int64_t>() < oldest->get<int64_t>())) {
+                oldest = entry;
+            }
+        }
+        record.erase(oldest);
+    }
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(record_path).parent_path(), error);
+    const std::string temporary = record_path + ".tmp";
+    {
+        std::ofstream out(temporary, std::ios::trunc);
+        if (!out) return;
+        out << record.dump(2);
+    }
+    std::filesystem::rename(temporary, record_path, error);
+}
+
+std::vector<std::pair<std::string, int64_t>> played_games(const std::string& record_path) {
+    using json = nlohmann::json;
+    std::vector<std::pair<std::string, int64_t>> played;
+    std::ifstream in(record_path);
+    if (!in) return played;
+    try {
+        const json record = json::parse(in);
+        if (!record.is_object()) return played;
+        for (auto entry = record.begin(); entry != record.end(); ++entry) {
+            if (entry->is_number()) played.emplace_back(entry.key(), entry->get<int64_t>());
+        }
+    } catch (const json::exception&) {
+    }
+    return played;
+}
+
+void add_played(std::vector<LaunchableGame>& games, const std::string& record_path) {
+    std::map<std::string, int64_t> when;
+    for (const auto& [path, at] : played_games(record_path)) when[path] = at;
+    std::set<std::string> listed;
+    for (LaunchableGame& game : games) {
+        const std::string key = same_file_key(game.path);
+        listed.insert(key);
+        const auto found = when.find(key);
+        if (found != when.end()) game.last_played = found->second;
+    }
+    for (const auto& [path, at] : when) {
+        std::error_code error;
+        SystemId system = SystemId::Ds;
+        if (listed.count(path) != 0 || !system_for_rom(path, system) || !std::filesystem::exists(path, error)) {
+            continue;
+        }
+        LaunchableGame game;
+        game.id = "file:" + path;
+        game.title = std::filesystem::path(path).stem().string();
+        game.system = system_key(system);
+        game.path = path;
+        game.last_played = at;
+        games.push_back(game);
+    }
 }
 
 std::vector<LaunchableGame> launchable_games(const std::string& home, const std::vector<std::string>& folders) {

@@ -5,7 +5,9 @@
 
 #include "test_support.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <thread>
 #include <string>
@@ -13,6 +15,7 @@
 
 #include <stdlib.h>
 
+#include "launch/game_catalog.hpp"
 #include "net/launch_service.hpp"
 
 using namespace ds;
@@ -23,6 +26,8 @@ namespace {
 // Below 32768, as the save exchange test's are, and apart from them.
 constexpr uint16_t kQueryPort = 29943;
 constexpr uint16_t kPort = 29944;
+constexpr uint16_t kWakeQueryPort = 29947;
+constexpr uint16_t kWakePort = 29948;
 
 std::string make_sandbox() {
     char pattern[] = "/tmp/dualscreen-launch-XXXXXX";
@@ -219,6 +224,156 @@ void test_the_wake_packet() {
     CHECK(wake_on_lan_packet("not a mac").empty());
 }
 
+// When each game was last played is kept by its path, newest kept; a game
+// played that the list does not have is added to it, while it is still there.
+void test_games_played_are_remembered() {
+    const std::string sandbox = make_sandbox();
+    const std::string record = sandbox + "/played_games.json";
+    const std::string kirby = sandbox + "/kirby.nds";
+    const std::string mario = sandbox + "/mario.nds";
+    for (const std::string& path : {kirby, mario}) {
+        FILE* file = fopen(path.c_str(), "wb");
+        CHECK(file != nullptr);
+        if (file != nullptr) fclose(file);
+    }
+    CHECK(played_games(record).empty());
+    remember_played(record, kirby, 100);
+    remember_played(record, mario, 200);
+    remember_played(record, kirby, 300);
+    CHECK_EQ(played_games(record).size(), 2u);
+
+    LaunchableGame listed;
+    listed.id = "file:" + kirby;
+    listed.title = "Kirby";
+    listed.system = "ds";
+    listed.path = kirby;
+    std::vector<LaunchableGame> games{listed};
+    add_played(games, record);
+    CHECK_EQ(games.size(), 2u);
+    for (const LaunchableGame& game : games) {
+        if (game.path == kirby) CHECK_EQ(game.last_played, 300);
+        else CHECK_EQ(game.last_played, 200);
+    }
+    // One gone since is not offered.
+    remove(mario.c_str());
+    games = {listed};
+    add_played(games, record);
+    CHECK_EQ(games.size(), 1u);
+}
+
+// A computer that answered is remembered, by id, with how to wake it, and
+// waking one that is awake finds it straight away.
+void test_a_computer_is_remembered_and_woken() {
+    const std::string tokens = make_sandbox() + "/remote_start_tokens.json";
+    CHECK(remembered_computers(tokens).empty());
+    LaunchService::Config config;
+    config.query_port = kWakeQueryPort;
+    config.port = kWakePort;
+    config.name = "Study PC";
+    config.macs = {"aa:bb:cc:dd:ee:01"};
+    config.record_path = make_sandbox() + "/remote_start.json";
+    LaunchService service(config);
+    std::string error;
+    CHECK_MSG(service.start(&error), error);
+    LaunchSearch search;
+    search.query_port = kWakeQueryPort;
+    search.addresses = {"127.0.0.1"};
+    search.timeout_ms = 500;
+    const std::vector<LaunchHost> hosts = search_launch_hosts(search);
+    CHECK_EQ(hosts.size(), 1u);
+    if (hosts.empty()) {
+        service.stop();
+        return;
+    }
+    remember_computer(tokens, hosts[0]);
+    CHECK(keep_remote_start_token(tokens, hosts[0].id, "abc"));
+    remember_computer(tokens, hosts[0]);
+    const std::vector<LaunchHost> remembered = remembered_computers(tokens);
+    CHECK_EQ(remembered.size(), 1u);
+    CHECK(!remembered.empty() && remembered[0].name == "Study PC" && remembered[0].macs == config.macs);
+    CHECK_STR_EQ(remote_start_token(tokens, hosts[0].id), "abc");
+
+    LaunchHost asleep = remembered.empty() ? hosts[0] : remembered[0];
+    asleep.address = "127.0.0.1";
+    asleep.asleep = true;
+    std::atomic<bool> cancelled{false};
+    LaunchHost awake;
+    CHECK_MSG(wake_and_wait(asleep, 5000, cancelled, awake, &error, kWakeQueryPort), error);
+    CHECK_STR_EQ(awake.id, hosts[0].id);
+    // Put away while waiting: stops, saying nothing.
+    service.stop();
+    cancelled = true;
+    error.clear();
+    CHECK(!wake_and_wait(asleep, 5000, cancelled, awake, &error, kWakeQueryPort));
+    CHECK(error.empty());
+    // Never woken in time: says so.
+    cancelled = false;
+    CHECK(!wake_and_wait(asleep, 1500, cancelled, awake, &error, kWakeQueryPort));
+    CHECK(!error.empty());
+}
+
+// The first screen's recent games: only ones played, newest first, at most
+// as many as asked for, from each computer paired with.
+void test_the_recent_games_feed() {
+    const std::string sandbox = make_sandbox();
+    LaunchService::Config config;
+    config.query_port = kWakeQueryPort;
+    config.port = kWakePort;
+    config.name = "Den PC";
+    config.record_path = sandbox + "/remote_start.json";
+    config.games = [] {
+        std::vector<LaunchableGame> games;
+        const char* titles[] = {"Never", "Older", "Newest", "Middle"};
+        const int64_t played[] = {0, 100, 300, 200};
+        for (int at = 0; at < 4; ++at) {
+            LaunchableGame game;
+            game.id = "steam:" + std::to_string(at + 1);
+            game.title = titles[at];
+            game.system = "ds";
+            game.steam_run_id = static_cast<uint64_t>(at + 1);
+            game.last_played = played[at];
+            games.push_back(game);
+        }
+        return games;
+    };
+    LaunchService service(config);
+    std::string error;
+    CHECK_MSG(service.start(&error), error);
+    LaunchSearch search;
+    search.query_port = kWakeQueryPort;
+    search.addresses = {"127.0.0.1"};
+    search.timeout_ms = 500;
+    const std::vector<LaunchHost> hosts = search_launch_hosts(search);
+    CHECK_EQ(hosts.size(), 1u);
+    if (hosts.empty()) {
+        service.stop();
+        return;
+    }
+    RemoteStartRecord record(config.record_path);
+    std::string token;
+    CHECK_MSG(pair_with_host(hosts[0], record.show_code(now()), "Switch", token, &error), error);
+    const std::string tokens = sandbox + "/remote_start_tokens.json";
+    CHECK(keep_remote_start_token(tokens, hosts[0].id, token));
+
+    RecentGamesFeed feed;
+    feed.start(tokens, 2);
+    feed.set_hosts(hosts);
+    std::vector<RecentGamesFeed::Game> games;
+    for (int tries = 0; tries < 50 && games.size() < 2; ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        games = feed.games();
+    }
+    CHECK_EQ(games.size(), 2u);
+    if (games.size() == 2u) {
+        CHECK_STR_EQ(games[0].game.title, "Newest");
+        CHECK_STR_EQ(games[1].game.title, "Middle");
+        CHECK_STR_EQ(games[0].host.id, hosts[0].id);
+    }
+    feed.stop();
+    CHECK(!feed.running());
+    service.stop();
+}
+
 }  // namespace
 
 int main() {
@@ -228,5 +383,8 @@ int main() {
     test_the_finder_finds_a_computer();
     test_base64();
     test_the_wake_packet();
+    test_games_played_are_remembered();
+    test_a_computer_is_remembered_and_woken();
+    test_the_recent_games_feed();
     return test::finish("launch-service");
 }

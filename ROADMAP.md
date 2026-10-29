@@ -10,13 +10,6 @@ numbers can change freely.
 
 ### After remapping
 
-- **Waking a computer to start a game on.** Remote Start (Settings) lets a
-  paired device start a game on a PC or Deck that is on; still to do is
-  Wake-on-LAN for one that is asleep, with the PC's MAC remembered from its
-  answer to an earlier search (the packet itself is built and tested in
-  `net/launch_service`; needs WoL enabled on the PC; a Steam Deck cannot be
-  woken this way).
-
 - The background service should also be able to make the device visible
   for save data syncing even when Dualscreen isn't open, making automatic
   save file syncing more useful.

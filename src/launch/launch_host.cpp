@@ -235,7 +235,9 @@ int run_launch_service() {
     config.games = [paths] {
         // Read again each time: a folder the file picker moved to since counts.
         const Settings settings = Settings::load(paths);
-        return launchable_games(home_dir(), rom_folders(settings));
+        std::vector<LaunchableGame> games = launchable_games(home_dir(), rom_folders(settings));
+        add_played(games, paths.data_dir + "/played_games.json");
+        return games;
     };
     config.launch = [](const LaunchableGame& game, std::string* error) { return launch_game_here(game, error); };
     config.icon = [](const LaunchableGame& game, int& width, int& height, std::vector<uint8_t>& rgba) {

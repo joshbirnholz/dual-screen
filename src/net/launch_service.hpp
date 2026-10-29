@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -47,6 +48,9 @@ struct LaunchHost {
     // Every network card's hardware address, for waking it -- see
     // wake_on_lan().
     std::vector<std::string> macs;
+    // Not found by the last search, but remembered from before -- see
+    // remembered_computers(): asleep, perhaps, and woken to be asked.
+    bool asleep = false;
 };
 
 // The PC end's own record: who it is, the code being shown, and the devices
@@ -130,16 +134,23 @@ public:
     LaunchHostFinder& operator=(const LaunchHostFinder&) = delete;
 
     void start(LaunchSearch search = {}, int every_ms = 3000);
+    // At once: the thread, which may be part way through a search, is let
+    // go, and what it finds after is dropped.
     void stop();
-    bool running() const { return thread_.joinable(); }
+    bool running() const { return shared_ != nullptr; }
+    // Whether a search has finished since start().
+    bool searched() const;
     // What the last search found.
     std::vector<LaunchHost> hosts() const;
 
 private:
-    std::thread thread_;
-    std::atomic<bool> stopping_{false};
-    mutable std::mutex mutex_;
-    std::vector<LaunchHost> hosts_;
+    struct Shared {
+        std::atomic<bool> stopping{false};
+        std::atomic<bool> searched{false};
+        std::mutex mutex;
+        std::vector<LaunchHost> hosts;
+    };
+    std::shared_ptr<Shared> shared_;
 };
 
 // The tokens this device was given by the computers it paired with, by each
@@ -148,10 +159,59 @@ private:
 std::string remote_start_token(const std::string& path, const std::string& host_id);
 // Kept, or with an empty `token` forgotten.
 bool keep_remote_start_token(const std::string& path, const std::string& host_id, const std::string& token);
+// The computers this device has paired with, as each last answered --
+// name, address and hardware addresses -- kept in the same file, so one
+// asleep can still be listed and woken.
+void remember_computer(const std::string& path, const LaunchHost& host);
+std::vector<LaunchHost> remembered_computers(const std::string& path);
+
 // Whether the games are shown as a grid of icons rather than a list, kept
 // in the same file -- a grid unless the list was chosen.
 bool remote_start_grid(const std::string& path);
 bool keep_remote_start_grid(const std::string& path, bool grid);
+
+// The games most recently played on every computer found that this device
+// is paired with, newest first, with their icons: the first screen's rows of
+// them. Gathered on a thread of its own, again every few seconds, from the
+// computers last handed to set_hosts() and the tokens in `tokens_path`.
+//
+// Its thread is let go rather than waited for when it stops -- it may be
+// waiting on a computer slow to answer -- and shares nothing with this
+// object but what both hold.
+class RecentGamesFeed {
+public:
+    struct Game {
+        LaunchHost host;
+        LaunchableGame game;
+        int icon_width = 0;
+        int icon_height = 0;
+        std::vector<uint8_t> icon_rgba;
+    };
+
+    RecentGamesFeed() = default;
+    ~RecentGamesFeed() { stop(); }
+    RecentGamesFeed(const RecentGamesFeed&) = delete;
+    RecentGamesFeed& operator=(const RecentGamesFeed&) = delete;
+
+    // At most `most` games, only ones played at all.
+    void start(std::string tokens_path, std::size_t most);
+    void stop();
+    bool running() const { return shared_ != nullptr; }
+    void set_hosts(const std::vector<LaunchHost>& hosts);
+    std::vector<Game> games() const;
+    // Changes whenever games() does, so a screen knows to look again.
+    uint64_t version() const;
+
+private:
+    struct Shared {
+        std::atomic<bool> stopping{false};
+        std::atomic<uint64_t> version{0};
+        std::mutex mutex;
+        std::vector<LaunchHost> hosts;
+        std::vector<Game> games;
+    };
+    std::shared_ptr<Shared> shared_;
+};
 
 // The other end's errors are the player's to read; `unpaired` is set when the
 // token was not one the PC knows, so the device can ask for a code instead.
@@ -176,6 +236,16 @@ std::vector<std::string> this_machine_macs();
 // A magic packet for `mac`, broadcast on the usual ports: a PC asleep with
 // Wake-on-LAN on wakes up.
 bool wake_on_lan(const std::string& mac, std::string* error);
+// Wakes a computer remembered from before, the way Moonlight wakes a PC: a
+// magic packet for each of its network cards, to every local network's
+// broadcast address, to 255.255.255.255, and straight to the address it
+// last had, on ports 7 and 9 -- whichever of those reaches it.
+bool wake_computer(const LaunchHost& host, std::string* error);
+// Wakes it, then asks after it until it answers, sending the packets again
+// every few seconds, for up to `timeout_ms`; `awake` is how it answered.
+// Stops early when `cancelled` is set.
+bool wake_and_wait(const LaunchHost& host, int timeout_ms, const std::atomic<bool>& cancelled, LaunchHost& awake,
+                   std::string* error, uint16_t query_port = kLaunchQueryPort);
 // The packet itself, for a test.
 std::vector<uint8_t> wake_on_lan_packet(const std::string& mac);
 

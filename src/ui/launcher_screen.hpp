@@ -27,10 +27,24 @@ enum class LauncherChoice {
     // Data Management is in here, as its first row.
     Settings,
     Quit,
+    // One of the recently played games along the foot: `recent` says which.
+    StartRecent,
 };
 
 struct LauncherResult {
     LauncherChoice choice = LauncherChoice::None;
+    int recent = -1;
+};
+
+// A game recently played on a computer this device can start games on, as
+// the launcher shows it along its foot: only its icon.
+struct LauncherTile {
+    // The same game on the same computer: a texture made once.
+    std::string key;
+    std::string system;
+    int icon_width = 0;
+    int icon_height = 0;
+    std::vector<uint8_t> icon_rgba;
 };
 
 // The opening screen when no ROM was named: play a game here, or join one
@@ -43,6 +57,10 @@ public:
     // actually running one. What is left is joining a game running somewhere
     // else, and leaving.
     void open(bool runs_games = true);
+    // The recently played games along the foot, two rows at most, in the
+    // order given -- newest first. Empty takes them away.
+    void set_recent(std::vector<LauncherTile> tiles);
+    std::size_t recent_count() const { return tiles_.size(); }
     void close() { open_ = false; }
     bool is_open() const { return open_; }
     // What a press here could have changed -- see UiSoundJudge.
@@ -110,6 +128,14 @@ private:
 
     std::vector<PixelRect> compute_rows(float output_width, float output_height, float& out_scale)
         const;
+    // Where each tile shown goes; fewer than given when two rows cannot hold
+    // them all.
+    std::vector<PixelRect> compute_tiles(float output_width, float output_height, int& columns) const;
+    std::vector<LauncherTile> tiles_;
+    std::map<std::string, Texture> tile_textures_;
+    // How many tiles fit, last laid out: the cursor goes no further.
+    int tiles_shown_ = 0;
+    int tile_columns_ = 1;
 
     bool open_ = false;
     int focus_ = 0;
