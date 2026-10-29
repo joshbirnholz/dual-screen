@@ -435,6 +435,18 @@ void Texture::set_linear_filtering(bool linear) {
         linear_ = linear;
         filter_dirty_ = true;
     }
+    // Asked after the upload -- as most callers ask it -- it has to take now:
+    // otherwise only the next upload would see it, and a picture uploaded
+    // once, an icon, stays blocky for good.
+    if (filter_dirty_ && id_ != 0 && native_ == nullptr && gl::BindTexture != nullptr) {
+        const GLint filter = linear_ ? GL_LINEAR : GL_NEAREST;
+        gl::BindTexture(GL_TEXTURE_2D, id_);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        filter_dirty_ = false;
+    }
 }
 
 // Shared by upload_xrgb8888() and upload_rgba8888(): the two differ only in
