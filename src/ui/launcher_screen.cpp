@@ -97,9 +97,8 @@ std::vector<PixelRect> LauncherScreen::compute_tiles(float output_width, float o
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     const float below = rows.empty() ? frame.content_top : rows.back().y + rows.back().h;
-    // One row, centred in what is left under the menu -- as much room above
-    // it as below, and the row in the middle of the page, as a Wii U
-    // GamePad's Quick Start lays its icons out.
+    // One row along the left of the page, centred in what is left under the
+    // menu -- as much room above it as below.
     const float gap = std::round(frame.line * 1.6f);
     const float margin = std::round(frame.line * 1.4f);
     const float room = frame.content_bottom - below;
@@ -107,8 +106,7 @@ std::vector<PixelRect> LauncherScreen::compute_tiles(float output_width, float o
     if (tile < frame.line * 2.5f) return tiles;
     columns = std::max(1, static_cast<int>((frame.panel.w + gap) / (tile + gap)));
     const int shown = std::min(static_cast<int>(tiles_.size()), columns);
-    const float width = shown * tile + (shown - 1) * gap;
-    const float left = std::round(frame.panel.x + (frame.panel.w - width) * 0.5f);
+    const float left = std::round(frame.panel.x);
     const float top = std::round(below + (room - tile) * 0.5f);
     for (int index = 0; index < shown; ++index) {
         tiles.push_back(PixelRect{left + index * (tile + gap), top, tile, tile});
