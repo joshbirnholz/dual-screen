@@ -30,7 +30,8 @@ set(not_pages
     TextEntryPopup
     # An update's offer, over Settings, answered as Settings is.
     UpdatePrompt
-    # A message that any press or tap at all puts away: nothing to land on.
+    # A message that any press or tap at all puts away, or an alert whose
+    # buttons a PopupCursor answers, as every popup's are.
     MessageScreen
     # The host's game dialog on the companion: hands it all to its
     # GameDialogScreen, which is a MenuPage.

@@ -663,6 +663,22 @@ struct App::Impl {
     std::string host_picker_status() const;
     void leave_host_picker();
     MessageScreen message;
+    // The emulator a console is played with, not here: the alert a game
+    // puts up then offers to download it, or to open its row under Updates
+    // in Settings, instead of saying how to point at one by hand. False
+    // where this device has nothing to download it with.
+    bool offer_emulator(SystemId system, const std::string& rom_path, bool fatal_on_failure);
+    void answer_emulator_offer(int chosen);
+    // What the alert up is offering, and for which game.
+    std::optional<SystemId> emulator_offered;
+    std::string emulator_offered_for;
+    // Download was chosen: the game that started it, started once it is
+    // here.
+    std::optional<update::Component> download_for_game;
+    std::string start_after_download;
+    // open_core() found no core at all for the console, as opposed to one
+    // that would not open.
+    bool core_not_found = false;
 
     // Two-device mode. Exactly one of these is live at a time: a device either
     // runs the game and serves a screen, or joins someone else's game.
@@ -1579,11 +1595,13 @@ struct App::Impl {
     bool open_core(const std::string& rom_path, std::string* error,
                    std::vector<std::string>* details);
     void open_browser();
+    // With `choices`, an alert to be answered: see MessageScreen::show().
     void enter_message(MessageKind kind,
                        const std::string& title,
                        const std::string& body,
                        const std::vector<std::string>& details,
-                       bool fatal);
+                       bool fatal,
+                       const std::vector<std::string>& choices = {});
     void persist_game_config();
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
     // The menus' own sounds: which one a press has earned, decided from what
@@ -5671,6 +5689,21 @@ void App::Impl::poll_updates() {
         updater->set_automatic(installed, true);
     }
     if (changed && !settings.save(paths)) log_warn("could not save settings.json");
+    // Downloaded from the alert a game put up without it: that game, now.
+    if (download_for_game) {
+        const bool here = std::find(result.installed.begin(), result.installed.end(), *download_for_game) !=
+                          result.installed.end();
+        if (here || !update_prompt.open()) {
+            download_for_game.reset();
+            const std::string rom = std::move(start_after_download);
+            start_after_download.clear();
+            if (here && state == State::Launcher) {
+                log_info("starting " + rom + " with the emulator just downloaded");
+                stop_recent_games();
+                start_game(rom, false);
+            }
+        }
+    }
     if (!result.installed.empty()) {
         settings_screen->refresh_settings(settings);
         settings_screen->set_cores(resolve_core_statuses(options, settings));
@@ -5917,9 +5950,11 @@ void App::Impl::enter_message(MessageKind kind,
                               const std::string& title,
                               const std::string& body,
                               const std::vector<std::string>& details,
-                              bool fatal) {
-    message.show(kind, title, body, details);
+                              bool fatal,
+                              const std::vector<std::string>& choices) {
+    message.show(kind, title, body, details, choices);
     message_is_fatal = fatal;
+    emulator_offered.reset();
     // Said in the log too: a message on screen is otherwise the one thing a
     // log sent afterwards cannot show.
     std::string said = "showing a message: " + title;
@@ -5927,6 +5962,44 @@ void App::Impl::enter_message(MessageKind kind,
     log_info(said);
     state = State::Message;
     input.set_game_input_enabled(false);
+}
+
+bool App::Impl::offer_emulator(SystemId system, const std::string& rom_path, bool fatal_on_failure) {
+    if (!updater) return false;
+    const update::Component wanted = system == SystemId::WiiU ? update::Component::Cemu : core_component_for(system);
+    const update::ComponentSpec* found = nullptr;
+    for (const update::ComponentSpec& component : updater->components()) {
+        if (component.id == wanted) found = &component;
+    }
+    if (found == nullptr || found->installed != update::kNotInstalled) return false;
+    const SystemProfile& profile = system_profile(system);
+    enter_message(MessageKind::Error, found->name + " is not installed",
+                  profile.name + " games are played with " + found->name +
+                      ", which is not on this device yet. Dualscreen can download it and start the game.",
+                  {}, fatal_on_failure, {"Download", "Settings", "Not Now"});
+    emulator_offered = system;
+    emulator_offered_for = rom_path;
+    return true;
+}
+
+void App::Impl::answer_emulator_offer(int chosen) {
+    const SystemId system = *emulator_offered;
+    emulator_offered.reset();
+    // Wherever it goes, it is from the main menu: that is where Not Now
+    // leaves it too, and where a game started from a shortcut has
+    // somewhere to go back to.
+    open_launcher();
+    if (!running) return;
+    if (chosen == 0) {
+        const update::Component wanted = system == SystemId::WiiU ? update::Component::Cemu : core_component_for(system);
+        log_info("downloading the emulator " + emulator_offered_for + " needs");
+        download_for_game = wanted;
+        start_after_download = emulator_offered_for;
+        update_prompt.download(wanted);
+    } else if (chosen == 1) {
+        open_settings();
+        settings_screen->open_download_row(system);
+    }
 }
 
 void App::Impl::open_browser() {
@@ -6010,6 +6083,7 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
                                    " games only: its emulator is part of the app, and there is "
                                    "no other to load.");
             } else if (resolved_core_path.empty()) {
+                core_not_found = true;
                 details->push_back("Looked for " + profile.core_filenames.front() +
                                    " in the RetroArch core folders and /usr/lib/libretro.");
                 details->push_back("Point at it directly with --core, or set \"" +
@@ -6242,8 +6316,10 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             }
             std::string source_error;
             std::vector<std::string> details;
+            core_not_found = false;
             if (!open_core(rom_path, &source_error, &details)) {
                 if (save_store) save_store->note_game_stopped(rom_path);
+                if (core_not_found && offer_emulator(system, rom_path, fatal_on_failure)) return false;
                 enter_message(MessageKind::Error, "Could not start the game", source_error, details,
                               fatal_on_failure);
                 return false;
@@ -6315,6 +6391,19 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                 apply_pad_rumble();
             });
 
+            // Nothing to start, or nothing where it is said to be: the
+            // emulator is offered instead of a wait for one that is not
+            // coming. A bare name is looked for along PATH, so it is tried.
+            {
+                const std::string& program = settings.external_program_for(system);
+                const bool missing =
+                    program.empty() ? options.external_socket.empty()
+                                    : program.find('/') != std::string::npos && !file_exists(program);
+                if (missing && offer_emulator(system, rom_path, fatal_on_failure)) {
+                    external_source.reset();
+                    return false;
+                }
+            }
             const std::string socket_path = options.external_socket.empty()
                                                 ? ExternalFrameLink::default_socket_path()
                                                 : options.external_socket;
@@ -6634,8 +6723,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
     switch (state) {
         case State::Message: {
-            if (message.update(actions, pointers, last_delta_seconds)) {
+            if (message.update(actions, pointers, last_delta_seconds, static_cast<float>(output_width),
+                               static_cast<float>(output_height))) {
+                const int chosen = message.chosen();
                 message.clear();
+                if (emulator_offered) {
+                    answer_emulator_offer(chosen);
+                    break;
+                }
                 if (!message_is_fatal && is_companion()) {
                     state = State::Companion;
                     input.set_game_input_enabled(true);
@@ -9141,9 +9236,7 @@ int App::run(const AppOptions& options) {
             impl.enter_message(MessageKind::Error, profile.core_description + " did not start",
                                "It stopped without handing over a game.",
                                {"Command: " + impl.settings.external_program_for(impl.system),
-                                "Socket: " + impl.external_socket_path,
-                                "Check \"wii_u_program\" and \"wii_u_arguments\" in " +
-                                    impl.paths.settings_file + "."},
+                                "Socket: " + impl.external_socket_path},
                                true);
         }
         if (!(playing != nullptr && game_running) && impl.speed_window_start != 0) {

@@ -134,6 +134,24 @@ void UpdatePrompt::choose(std::optional<update::Component> only) {
     waiting_only_ = only;
 }
 
+void UpdatePrompt::download(update::Component id) {
+    if (updater_ == nullptr) return;
+    looking_for_.clear();
+    for (const update::ComponentSpec& component : updater_->components()) {
+        if (component.id == id) looking_for_ = component.name;
+    }
+    // Already going, it is only shown; otherwise the check that answers it
+    // is shown as the download it is about to be.
+    const bool fresh = !updater_->busy();
+    choose(id);
+    install_found_ = fresh;
+    if (install_found_) {
+        install_round_ = 0;
+        popup_ = Popup::Progress;
+        cursor_.reset(0, 0);
+    }
+}
+
 std::string UpdatePrompt::component_value(update::Component id) const {
     if (updater_ == nullptr) return std::string();
     std::string name;
@@ -272,6 +290,8 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
             // The two answers are offered together.
         } else if (waiting_asked_) {
             waiting_round_ = 0;
+            const bool install_found = install_found_;
+            install_found_ = false;
             offer_peer_ = !waiting_only_ && peer_state_ == PeerState::Answered &&
                           peer_answer_.answer == net::UpdateAnswer::Available;
             if (offer_peer_) offer_peer_answer_ = peer_answer_;
@@ -286,6 +306,11 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                 show_notice(waiting_only_ ? "Dualscreen could not reach " + only_name + "'s builds."
                                           : "Dualscreen could not check for updates.",
                             {status_.error});
+            } else if (install_found && !status_.offers.empty()) {
+                // Asked for from the alert: nothing more to ask.
+                show_offer(status_);
+                start_install();
+                install_found_ = true;
             } else if (!status_.offers.empty() || offer_peer_) {
                 show_offer(status_);
             } else if (!waiting_only_) {
@@ -348,7 +373,8 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                     restart_reported_ = true;
                     result.restart = true;
                 }
-            } else if (status_.handed_to_system) {
+            } else if (status_.handed_to_system || install_found_) {
+                // Downloaded for a game, which the shell starts now.
                 popup_ = Popup::None;
             } else {
                 // An emulator, new to this device or updated: said by name,
@@ -373,12 +399,15 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                 if (offer.component.id == Component::Cemu) result.cemu_installed = true;
             }
             installing_.clear();
+            install_found_ = false;
         } else if (status_.phase == Phase::Failed) {
             installing_.clear();
+            install_found_ = false;
             show_notice("The update was not installed.", {status_.error});
         } else if (status_.phase == Phase::Checked) {
             // Cancelled.
             installing_.clear();
+            install_found_ = false;
             popup_ = Popup::None;
         }
     }
@@ -445,6 +474,17 @@ PopupText UpdatePrompt::words() const {
             text.message = "Installing " + status_.current + "...";
             text.lines = {" "};
             break;
+        case Phase::Idle:
+        case Phase::Checking:
+        case Phase::Checked:
+        case Phase::Failed:
+            // download()'s, before the download itself has started.
+            if (install_round_ == 0) {
+                text.message = "Downloading " + looking_for_ + "...";
+                text.lines = {" "};
+                break;
+            }
+            [[fallthrough]];
         default:
             text.message = "Downloading " + status_.current + "...";
             text.lines = {status_.progress >= 0.0f ? percent(status_.progress) : std::string(" ")};
