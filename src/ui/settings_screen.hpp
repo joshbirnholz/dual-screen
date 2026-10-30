@@ -138,6 +138,10 @@ public:
     void set_updates_value(std::string value) { updates_value_ = std::move(value); }
     // Back from Data Management: the cursor where it was, on its row.
     void return_from_data_management();
+    // Straight to the row under Updates that downloads the emulator
+    // `system` is played with -- from the alert a game not starting without
+    // it puts up -- or to Check for Updates when there is none.
+    void open_download_row(SystemId system);
     // Straight into a group's rows, the cursor on the first.
     void open_group(SettingsGroup group);
     // The group highlighted on the left, and whether the cursor is over in
@@ -333,6 +337,9 @@ private:
     int group_ = 0;
     bool in_group_ = false;
     int focus_ = 0;
+    // The cursor was put somewhere from outside, and the view goes to it at
+    // the next update().
+    bool reveal_focus_ = false;
     bool open_ = false;
     bool over_game_ = false;
 

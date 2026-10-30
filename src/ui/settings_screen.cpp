@@ -686,6 +686,22 @@ void SettingsScreen::return_from_data_management() {
     }
 }
 
+void SettingsScreen::open_download_row(SystemId system) {
+    open_group(SettingsGroup::System);
+    if (group() != SettingsGroup::System) return;
+    int index = 0;
+    int check = -1;
+    int download = -1;
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        if (item.kind == Item::Kind::CheckUpdates) check = index;
+        if (item.kind == Item::Kind::Download && item.system == system) download = index;
+        ++index;
+    }
+    if (download >= 0 || check >= 0) focus_ = download >= 0 ? download : check;
+    reveal_focus_ = true;
+}
+
 std::string SettingsScreen::footnote() const {
     if (group() != SettingsGroup::Consoles || !melonds_available_) return std::string();
     std::string note = "melonDS's settings take effect the next time a game starts. They are kept in " +
@@ -1036,7 +1052,8 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     scroll_ = std::max(0.0f, std::min(scroll_, moved.max_scroll()));
     // The cursor brings the view with it when it is moved -- and only then,
     // so a page dragged by a finger stays where the finger left it.
-    if (!actions.empty()) {
+    if (!actions.empty() || reveal_focus_) {
+        reveal_focus_ = false;
         drag_.stop();
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }

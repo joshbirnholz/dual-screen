@@ -7,6 +7,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -22,10 +23,15 @@ class MessageScreen {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
+    // With `choices`, it is an alert instead -- the body and details in a
+    // popup, the choices as its buttons -- for a failure the app can do
+    // something about: an emulator not here yet, which it can download.
+    // B, or the last choice, puts it away as Continue would.
     void show(MessageKind kind,
               const std::string& title,
               const std::string& body,
-              const std::vector<std::string>& details = {});
+              const std::vector<std::string>& details = {},
+              const std::vector<std::string>& choices = {});
     void clear();
     bool is_visible() const { return visible_; }
     // Over a paused game, which shows through blurred; otherwise on the app's
@@ -34,7 +40,8 @@ public:
 
     const std::string& title() const { return title_; }
 
-    // Returns true when the player dismissed the message.
+    // Returns true when the player dismissed the message, or answered it:
+    // chosen() says which.
     //
     // A message cannot be dismissed for a moment after it appears. Launchers --
     // Steam Input especially -- deliver a press as the app starts, and without
@@ -43,7 +50,12 @@ public:
     // no reason.
     bool update(const std::vector<UiAction>& actions,
                 const std::vector<PointerEvent>& pointers,
-                double delta_seconds);
+                double delta_seconds,
+                float output_width,
+                float output_height);
+    // The choice the last update() was answered with, or -1 for none: put
+    // away with B, or a message with no choices.
+    int chosen() const { return chosen_; }
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -58,6 +70,11 @@ private:
     std::string title_;
     std::string body_;
     std::vector<std::string> details_;
+    std::vector<std::string> choices_;
+    int chosen_ = -1;
+    PopupCursor cursor_;
+    PopupGeometry alert_geometry(float output_width, float output_height) const;
+    std::vector<PopupButton> buttons() const;
     double seconds_visible_ = 0.0;
     std::vector<GuideHit> guide_hits_;
 };

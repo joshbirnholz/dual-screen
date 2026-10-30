@@ -83,6 +83,12 @@ public:
     // finds -- or, while one is already found, offers it. With `only`, the
     // Settings row that downloads that one component instead.
     void choose(std::optional<update::Component> only = std::nullopt);
+    // Download chosen on the alert a game puts up when the emulator it needs
+    // is not here: that one component downloaded at once, without asking
+    // again, how far it has got shown from the start. Done, it says nothing
+    // -- the shell goes on to start the game, through poll()'s `downloaded`
+    // -- and failed, it says why as Settings' row would.
+    void download(update::Component id);
     // What a component's row says: its build, "Not installed", or what the
     // updater is doing with it.
     std::string component_value(update::Component id) const;
@@ -138,6 +144,10 @@ private:
     bool waiting_asked_ = false;
     std::optional<update::Component> waiting_only_;
     bool offered_at_start_ = false;
+    // Installed as soon as found, and put away without a word when done:
+    // see download().
+    bool install_found_ = false;
+    std::string looking_for_;
     // Whether the offer up is the start-up one, and what it offered.
     bool offer_from_start_ = false;
     std::string offer_key_;
