@@ -81,9 +81,10 @@ struct ComponentSpec {
     std::string asset;
     // The build here: a CI run's number, kLocalBuild or kNotInstalled.
     int installed = kLocalBuild;
-    // Whether a check made at start-up, or Settings' Updates row, looks at it
-    // at all. Cemu and the cores only while they are the ones games are
-    // played with; otherwise only when Settings asks by name.
+    // Whether a check made at start-up looks at it at all. Cemu and the
+    // cores only while they are the ones games are played with. Settings'
+    // Check for Updates looks at every one installed too, and a missing one
+    // is downloaded when Settings asks for it by name.
     bool automatic = true;
     Source source = Source::GitHubNightly;
     // A core's: the files it may be on the buildbot, the one wanted first
@@ -103,8 +104,8 @@ std::string describe_release(const ComponentSpec& component, const ReleaseInfo& 
 // is offered the nightly only when the player asked -- a build made by hand
 // is somebody working on this, and an app they did not ask for is not one to
 // put on their screen at every start.
-// `asked` is whether the player asked about this component: Settings'
-// Updates row, for one that is automatic, or the Wii U group in Settings, for Cemu.
+// `asked` is whether the player asked: Settings' Check for Updates, or its
+// row for downloading an emulator not here yet.
 bool worth_offering(const ComponentSpec& component, const ReleaseInfo& release, bool asked);
 
 // Where the work of fetching and installing is done, which is all a platform's

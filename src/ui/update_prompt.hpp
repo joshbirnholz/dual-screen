@@ -27,6 +27,9 @@ struct UpdatePromptResult {
     // Every component installed: Cemu, or a core, which the shell makes the
     // one its console is played with.
     std::vector<update::Component> installed;
+    // Of those, the ones that were not here before: downloaded rather than
+    // updated, which makes them the ones their consoles are played with.
+    std::vector<update::Component> downloaded;
     // On a companion: what to tell the host it asked -- see host_requests().
     std::optional<net::UpdateAnswerMessage> answer_host;
 };
@@ -36,7 +39,7 @@ struct UpdatePromptResult {
 // shell that has an updater -- the desktop app, and the companion's menu on a
 // Switch or an Android device -- which put it up from two places: their main
 // menu, when the check made at start-up finds something, and Settings'
-// Updates row, which checks again.
+// Check for Updates, which checks again.
 class UpdatePrompt {
 public:
     // Null is a device with no updater, on which nothing here ever opens.
@@ -60,7 +63,7 @@ public:
     }
 
     // The device connected to this host, by its name -- empty for none --
-    // and how to ask it. Settings' Updates row asks it to check too, and
+    // and how to ask it. Settings' Check for Updates asks it to check too, and
     // the offer waits for its answer, so that an update of its own is
     // offered beside this one's and installed there, as its own Settings
     // would. See net::UpdateRequestMessage.
@@ -70,15 +73,15 @@ public:
     void peer_answered(const net::UpdateAnswerMessage& answer);
     // On a companion, the host asking: a check is answered through poll(),
     // as it starts and as it ends; an install shows how it goes here, as
-    // Settings' Updates row would.
+    // Settings' Check for Updates would.
     void host_requests(net::UpdateRequest request);
 
     // The check made at start-up, whose answer is offered the first time
     // the shell is somewhere it can be -- see poll().
     void check_at_start();
-    // Settings' Updates row was chosen: checks again, and says what it
+    // Settings' Check for Updates was chosen: checks again, and says what it
     // finds -- or, while one is already found, offers it. With `only`, the
-    // Settings row for that one component instead -- Cemu's.
+    // Settings row that downloads that one component instead.
     void choose(std::optional<update::Component> only = std::nullopt);
     // What a component's row says: its build, "Not installed", or what the
     // updater is doing with it.
@@ -97,7 +100,7 @@ public:
                 float output_height);
     void describe_for_sound(UiSoundView& view) const;
 
-    // What Settings' Updates row says: which build this is, or what the
+    // What Settings says beside Dualscreen under Updates: which build this is, or what the
     // updater is doing.
     std::string row_value() const;
 
@@ -148,7 +151,7 @@ private:
     std::vector<update::Offer> installing_;
     bool restart_reported_ = false;
     // The device connected to this host, and what it said of its own
-    // update, asked when Settings' Updates row was.
+    // update, asked when Settings' Check for Updates was.
     enum class PeerState { None, Asked, Checking, Answered };
     std::string peer_name_;
     std::function<void(net::UpdateRequest)> peer_ask_;

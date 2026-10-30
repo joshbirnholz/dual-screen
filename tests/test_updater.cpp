@@ -239,6 +239,21 @@ void test_cemu_is_offered_beside_dualscreen() {
     CHECK(!cemu.status().restart);
 }
 
+// Settings' one Check for Updates looks at every emulator Dualscreen keeps,
+// in use or not; the check at start-up only at the ones in use.
+void test_check_for_updates_covers_every_emulator_kept() {
+    auto backend = std::make_unique<FakeBackend>();
+    backend->pages[kDualscreenVersion] = R"({"build": 15})";
+    backend->pages[kCemuVersion] = R"({"build": 4})";
+    Updater updater(std::move(backend), components_for("dualscreen-steamos.tar.gz", 12, true, 3, false));
+    updater.check(false);
+    updater.wait();
+    CHECK_EQ(static_cast<int>(updater.status().offers.size()), 1);
+    updater.check(true);
+    updater.wait();
+    CHECK_EQ(static_cast<int>(updater.status().offers.size()), 2);
+}
+
 // A download that fails installs nothing, and a failed install says why.
 void test_failures_leave_what_is_installed() {
     auto backend = std::make_unique<FakeBackend>();
@@ -564,7 +579,7 @@ void test_a_core_is_downloaded_when_asked() {
     std::vector<ComponentSpec> components = components_for("dualscreen-steamos.tar.gz", 12, true, kNotInstalled, false);
     components.push_back(core_component(Component::ThreeDsCore, make_temp_dir(), false));
     Updater updater(std::move(backend), components);
-    // Not automatic: Settings' Updates row does not look at it.
+    // Not here: Check for Updates does not look at it.
     updater.check(true);
     updater.wait();
     CHECK(updater.status().phase == Phase::Failed);  // no Dualscreen page in the fake
@@ -707,6 +722,7 @@ int main() {
     test_up_to_date_offers_nothing();
     test_a_check_that_cannot_reach_github_fails();
     test_cemu_is_offered_beside_dualscreen();
+    test_check_for_updates_covers_every_emulator_kept();
     test_failures_leave_what_is_installed();
     test_a_system_installer_is_not_a_restart();
     test_managed_cemu_build();

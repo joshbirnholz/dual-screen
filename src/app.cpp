@@ -5640,10 +5640,10 @@ void App::Impl::poll_updates() {
     if (result.answer_host && is_companion()) companion_session->answer_update(*result.answer_host);
     const std::string cemu = update::managed_cemu_path(paths.data_dir);
     bool changed = false;
-    for (const update::Component installed : result.installed) {
-        // Asked for in Settings, or updated because it was already
-        // the one in use: either way it is the one its console is played
-        // with now, and kept up to date from here on.
+    for (const update::Component installed : result.downloaded) {
+        // Downloaded, from its row under Updates: it is the one its console
+        // is played with now, and kept up to date from here on. One only
+        // updated stays as much in use as it was.
         if (installed == update::Component::Cemu) {
             if (settings.wii_u_program != cemu) {
                 log_info("Wii U games will be played with the Cemu at " + cemu);
@@ -5669,27 +5669,20 @@ void App::Impl::poll_updates() {
         settings_screen->refresh_settings(settings);
         settings_screen->set_cores(resolve_core_statuses(options, settings));
     }
-    // The consoles' groups' rows in Settings: Dualscreen's own copy of each emulator,
-    // named as what it would take over from when another is in use.
-    if (device_plays(SystemId::WiiU)) {
-        settings_screen->set_download_row(
-            SystemId::WiiU,
-            settings.wii_u_program.empty() || settings.wii_u_program == cemu
-                ? "Dualscreen's Cemu"
-                : "Use Dualscreen's own Cemu",
-            update_prompt.component_value(update::Component::Cemu));
-    }
+    // Under Updates in Settings: Dualscreen's own copy of each emulator, and
+    // what it is at -- with a row to download one not here yet.
+    std::vector<SettingsScreen::UpdateLine> lines;
     for (const update::ComponentSpec& component : updater->components()) {
-        if (component.source != update::Source::Buildbot) continue;
-        const SystemId system =
-            component.id == update::Component::ThreeDsCore ? SystemId::ThreeDs : SystemId::Ds;
+        if (component.id == update::Component::Dualscreen) continue;
+        const SystemId system = component.id == update::Component::Cemu          ? SystemId::WiiU
+                                : component.id == update::Component::ThreeDsCore ? SystemId::ThreeDs
+                                                                                 : SystemId::Ds;
         if (!device_plays(system)) continue;
-        const bool ours = resolve_core_path(options, settings, system) == managed_core_path(system);
-        settings_screen->set_download_row(
-            system, (ours || component.installed == update::kNotInstalled ? "Dualscreen's " : "Use Dualscreen's own ") +
-                        component.name,
-            update_prompt.component_value(component.id));
+        SettingsScreen::UpdateLine line{component.name, update_prompt.component_value(component.id), std::nullopt};
+        if (component.installed == update::kNotInstalled) line.download = system;
+        lines.push_back(line);
     }
+    settings_screen->set_update_lines(std::move(lines));
     if (result.restart) {
         log_info("leaving to start the new build");
         update::request_restart();

@@ -97,7 +97,7 @@ void UpdatePrompt::host_requests(net::UpdateRequest request) {
         // As Update on this device's own offer: how it goes is shown here.
         start_install();
     } else {
-        // Found no longer, or downloading already: as Settings' Updates row.
+        // Found no longer, or downloading already: as Settings' Check for Updates.
         choose();
     }
 }
@@ -279,13 +279,27 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
             if (status_.phase == Phase::Failed && offer_peer_) {
                 show_offer(status_, true);
             } else if (status_.phase == Phase::Failed) {
-                show_notice(waiting_only_ ? "Dualscreen could not reach Cemu's builds."
+                std::string only_name;
+                for (const update::ComponentSpec& component : updater_->components()) {
+                    if (waiting_only_ == component.id) only_name = component.name;
+                }
+                show_notice(waiting_only_ ? "Dualscreen could not reach " + only_name + "'s builds."
                                           : "Dualscreen could not check for updates.",
                             {status_.error});
             } else if (!status_.offers.empty() || offer_peer_) {
                 show_offer(status_);
+            } else if (!waiting_only_) {
+                // Everything checked: Dualscreen, and each emulator it keeps.
+                std::vector<std::string> lines;
+                for (const update::ComponentSpec& component : updater_->components()) {
+                    if (component.id != Component::Dualscreen && component.installed == update::kNotInstalled) continue;
+                    lines.push_back(component.source == update::Source::Buildbot
+                                        ? component.name + " is the buildbot's latest."
+                                        : component.name + " is " + describe_build(component.installed) + ".");
+                }
+                show_notice(lines.size() > 1 ? "Everything is up to date." : "Dualscreen is up to date.", lines);
             } else {
-                const Component asked_about = waiting_only_.value_or(Component::Dualscreen);
+                const Component asked_about = *waiting_only_;
                 int installed = update::kLocalBuild;
                 std::string name = "Dualscreen";
                 bool core = false;
@@ -355,6 +369,7 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
             }
             for (const update::Offer& offer : installing_) {
                 result.installed.push_back(offer.component.id);
+                if (offer.component.installed == update::kNotInstalled) result.downloaded.push_back(offer.component.id);
                 if (offer.component.id == Component::Cemu) result.cemu_installed = true;
             }
             installing_.clear();

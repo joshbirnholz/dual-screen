@@ -1178,8 +1178,10 @@ A build from there knows its own number, and updates itself from the next ones
 (`src/update/`). At start it looks at the nightly's `version.json`; when there
 is a newer build, the main menu offers it -- **Update** downloads and installs
 it, **Not Now** leaves it, and that build is not offered at start again.
-**Settings > System > Updates** says which build this is and checks again whenever it is
-chosen, including on a build made by hand, which never looks on its own.
+**Updates**, in Settings > System, is the one place for everything
+Dualscreen keeps up to date: it says which build of Dualscreen this is and
+what each emulator it keeps is at, and **Check for Updates** checks all of them
+at once -- including on a build made by hand, which never looks on its own.
 
 - **SteamOS**: the tarball is downloaded with the system's `curl`, unpacked
   with `tar`, and its files are put in place of the ones in the folder
@@ -1204,9 +1206,9 @@ listed.
 | Group | Rows |
 | --- | --- |
 | General | Controller Icons, Confirm/Cancel, Streaming Quality, Vsync, Sound Effects |
-| DS & 3DS | Nickname, Favorite Color, Birth Month, Birth Day, Run Ahead; then each console's emulator |
+| DS & 3DS | Nickname, Favorite Color, Birth Month, Birth Day, Run Ahead; then each console's emulator and where it is |
 | Wii U | Default Wii U Screen, Pause Wii U Games in the Quick Menu, Wii U TV Audio, Wii Remote Rumble Strength; then Cemu |
-| System | Discord Rich Presence, Enable Remote Start, Data Management, Updates |
+| System | Discord Rich Presence, Enable Remote Start, Data Management; then Updates: Check for Updates, Dualscreen and each emulator it keeps |
 
 ### Emulators
 
@@ -1215,9 +1217,11 @@ for each console the device plays: which emulator plays it, where it was found,
 and that emulator's own settings (melonDS's CPU clock and frame pipeline, on a
 Switch).
 
-On a PC or a Steam Deck each section also has a row for Dualscreen's own copy
-of the emulator, which it downloads when chosen and keeps up to date from then
-on -- checked at start-up with Dualscreen itself, and offered the same way:
+On a PC or a Steam Deck, Dualscreen can download its own copy of each
+emulator from **Updates** in Settings > System -- a **Download** row for each one
+not here yet -- and keeps it up to date from then on: **Check for Updates**
+looks at every one it has, and the check at start-up at the ones in use,
+offered the same way as Dualscreen itself:
 
 | Console | Emulator | From | Kept in |
 | --- | --- | --- | --- |
@@ -1226,8 +1230,8 @@ on -- checked at start-up with Dualscreen itself, and offered the same way:
 | Wii U | Cemu, this project's fork | the fork's nightly (`joshbirnholz/cemu-dualscreen`) | `~/.local/share/dualscreen/cemu/` |
 
 A downloaded emulator becomes the one its console is played with (the core
-path, or `wii_u_program`, in settings.json); one of your own is used until then,
-and its row says "Use Dualscreen's own". A buildbot core is told apart by the
+path, or `wii_u_program`, in settings.json); one of your own is used until then.
+Updating one later leaves whichever is in use as it is. A buildbot core is told apart by the
 date and hash in the buildbot's index, which is kept beside it as
 `<core>.version`. A Switch's DS emulator is built into Dualscreen, and an
 Android device's comes in its APK, so both are updated with Dualscreen itself.

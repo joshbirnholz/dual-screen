@@ -241,8 +241,8 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             items.push_back(item);
         }
     };
-    // A console's emulator: its heading, where it was found, its own
-    // settings, and the row that downloads it.
+    // A console's emulator: its heading, where it was found, and its own
+    // settings. Keeping it up to date is Updates', in System.
     const auto add_core = [&](const CoreStatus& core) {
         items.push_back(Item{Item::Kind::Heading, Row::Count, core.system_name, core.emulator});
         const bool built_in = core.resolved_path == kBuiltInCorePath;
@@ -255,12 +255,6 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
                                                   : "Not found at " + core.resolved_path;
         items.push_back(where);
         if (core.system == SystemId::Ds && melonds_available_) add_melon_rows();
-        const auto download = download_rows_.find(core.system);
-        if (download != download_rows_.end()) {
-            Item row{Item::Kind::Download, Row::Count, download->second[0], download->second[1], true};
-            row.system = core.system;
-            items.push_back(row);
-        }
     };
     switch (group) {
         case SettingsGroup::General:
@@ -309,7 +303,21 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
 #endif
             if (offers_data_management_) items.push_back(Item{Item::Kind::DataManagement, Row::Count, "Data Management"});
             if (offers_updates_) {
-                items.push_back(Item{Item::Kind::Updates, Row::Count, "Updates", updates_value_});
+                // Everything Dualscreen keeps up to date, in one place: the
+                // one check for all of it, then each and what it is at, then
+                // a row for each emulator not here yet.
+                items.push_back(Item{Item::Kind::Heading, Row::Count, "Updates"});
+                items.push_back(Item{Item::Kind::CheckUpdates, Row::Count, "Check for Updates"});
+                items.push_back(Item{Item::Kind::Status, Row::Count, "Dualscreen", updates_value_});
+                for (const UpdateLine& line : update_lines_) {
+                    if (!line.download) items.push_back(Item{Item::Kind::Status, Row::Count, line.name, line.value});
+                }
+                for (const UpdateLine& line : update_lines_) {
+                    if (!line.download) continue;
+                    Item row{Item::Kind::Download, Row::Count, "Download " + line.name, line.value};
+                    row.system = *line.download;
+                    items.push_back(row);
+                }
             }
             break;
         case SettingsGroup::Count: break;
@@ -762,10 +770,20 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                 row_y += index > 0 ? line * 1.3f : line * 0.3f;
                 geometry.texts.push_back(Geometry::Text{index, row_y});
                 row_y += line * 1.45f;
+                // Clear of the cursor's ring, on a row straight under it.
+                if (index + 1 < items_.size() && items_[index + 1].focusable()) row_y += line * 0.6f;
                 break;
             case Item::Kind::Location:
                 geometry.texts.push_back(Geometry::Text{index, row_y});
                 row_y += line * 1.8f;
+                break;
+            case Item::Kind::Status:
+                // Under a row, a little room first; before one, a little
+                // after.
+                if (index > 0 && items_[index - 1].focusable()) row_y += line * 0.9f;
+                geometry.texts.push_back(Geometry::Text{index, row_y});
+                row_y += line * 1.5f;
+                if (index + 1 < items_.size() && items_[index + 1].focusable()) row_y += line * 0.6f;
                 break;
             default:
                 geometry.rows.push_back(PixelRect{geometry.detail.x, row_y, row_width, row_height});
@@ -803,9 +821,10 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
         // Downloading or updating is the app's -- and asked first.
         case Item::Kind::Download: result.open_download = item->system; return;
         case Item::Kind::DataManagement: result.open_data_management = true; return;
-        case Item::Kind::Updates: result.open_updates = true; return;
+        case Item::Kind::CheckUpdates: result.open_updates = true; return;
         case Item::Kind::Heading:
-        case Item::Kind::Location: return;
+        case Item::Kind::Location:
+        case Item::Kind::Status: return;
         case Item::Kind::Setting: break;
     }
     // Only the switches and Remote Start get here: every other row has its
@@ -1178,6 +1197,14 @@ void SettingsScreen::render(QuadRenderer& quads,
                 const float name_width = TextRenderer::measure_width(item.text + "  ", scale);
                 text.draw(quads, item.value, text_x + name_width, placed.y, scale, theme.text_dim);
             }
+        } else if (item.kind == Item::Kind::Status) {
+            // A name, and what it is at, set out as a row's are.
+            const float status_scale = scale * 0.9f;
+            text.draw(quads, item.text, text_x, placed.y, status_scale, theme.text);
+            const float name_width = TextRenderer::measure_width(item.text, status_scale);
+            text.draw(quads,
+                      TextRenderer::elide_left(item.value, detail_width - name_width - line * 2.0f, status_scale),
+                      text_x + detail_width, placed.y, status_scale, theme.text_dim, TextAlign::Right);
         } else {
             text.draw(quads, TextRenderer::elide_left(item.text, detail_width, scale * 0.85f), text_x, placed.y,
                       scale * 0.85f, theme.text_dim);

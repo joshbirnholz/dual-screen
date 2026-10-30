@@ -259,7 +259,9 @@ void Updater::run_check(bool asked, std::optional<Component> only) {
     std::string index_error;
     for (ComponentSpec component : components()) {
         if (only && component.id != *only) continue;
-        if (!only && !component.automatic) continue;
+        // Asked for, every one Dualscreen keeps is looked at -- in use or
+        // not; at start-up, only the ones in use.
+        if (!only && !component.automatic && !(asked && component.installed != kNotInstalled)) continue;
         std::string body;
         std::string error;
         ReleaseInfo release;

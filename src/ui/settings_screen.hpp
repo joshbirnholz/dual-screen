@@ -63,12 +63,11 @@ struct SettingsScreenResult {
     // Its Data Management row was chosen: the app opens it, and comes back
     // here when it is left.
     bool open_data_management = false;
-    // Its Updates row was chosen: the app checks for a newer build -- see
-    // UpdatePrompt.
+    // Check for Updates was chosen: the app checks for a newer build of
+    // Dualscreen and of every emulator it keeps -- see UpdatePrompt.
     bool open_updates = false;
-    // One of the consoles' groups' download rows was chosen: the app
-    // downloads or updates the emulator it keeps for that console -- Cemu, or
-    // a core -- see UpdatePrompt.
+    // A Download row under Updates was chosen: the app downloads the emulator
+    // it keeps for that console -- Cemu, or a core -- see UpdatePrompt.
     std::optional<SystemId> open_download;
 };
 
@@ -83,9 +82,10 @@ const char* settings_group_name(SettingsGroup group);
 // laid out as Graphics Packs and a Switch's System Settings are: the groups
 // listed on the left, and on the right the rows of the one highlighted there.
 // Each console's group also says which emulator plays it and where it was
-// found, with that emulator's own settings under it -- melonDS's on a Switch,
-// and on a PC or a Steam Deck the Cemu that Dualscreen downloads and keeps up
-// to date. Paths are edited in settings.json.
+// found, with that emulator's own settings under it -- melonDS's on a Switch.
+// Everything Dualscreen keeps up to date -- itself, and on a PC or a Steam
+// Deck the emulators it downloads -- is under Updates in System, with one
+// Check for Updates for all of them. Paths are edited in settings.json.
 class SettingsScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
@@ -115,21 +115,25 @@ public:
     // config/melonds_tuning.hpp. `deko` is whether the core is RSDuck's, which
     // reads all of it; libretro's melonDS has only the CPU clock to set.
     void set_melonds_page(bool deko, std::string path);
-    // A row in a console's group for the emulator Dualscreen downloads and
-    // keeps for it -- Cemu, or a libretro core: `label`, and what it says --
-    // its build, Not installed, how far a download has got. Chosen, the app
-    // downloads or updates it.
-    void set_download_row(SystemId system, std::string label, std::string value) {
-        download_rows_[system] = {std::move(label), std::move(value)};
-    }
+    // Each emulator Dualscreen downloads and keeps -- Cemu, or a libretro
+    // core -- listed under Updates in System, below Dualscreen itself: its
+    // name, and what it says -- its build, Not installed, how far a download
+    // has got. One not here yet, with `download`, is a row that downloads it;
+    // the rest are kept up to date by Check for Updates.
+    struct UpdateLine {
+        std::string name;
+        std::string value;
+        std::optional<SystemId> download;
+    };
+    void set_update_lines(std::vector<UpdateLine> lines) { update_lines_ = std::move(lines); }
     // A Data Management row, in System, on a device that keeps saves of its
     // own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
-    // An Updates row, last in System, on a device that can update itself,
-    // saying what `value` does -- which build this is, or what the updater is
-    // doing. Over a game too, for a game started from a shortcut, whose
-    // Settings is the only one there is: the offer says what restarting does
-    // to the game.
+    // Updates, last in System, on a device that can update itself: Check for
+    // Updates, then Dualscreen, saying what `value` does -- which build this
+    // is, or what the updater is doing -- then each emulator it keeps. Over a
+    // game too, for a game started from a shortcut, whose Settings is the
+    // only one there is: the offer says what restarting does to the game.
     void set_offers_updates(bool offers) { offers_updates_ = offers; }
     void set_updates_value(std::string value) { updates_value_ = std::move(value); }
     // Back from Data Management: the cursor where it was, on its row.
@@ -240,7 +244,9 @@ private:
     // cursor -- a console's heading and where its emulator is do not -- and
     // focus_ counts those alone.
     struct Item {
-        enum class Kind { Setting, Heading, Location, Melon, Download, DataManagement, Updates };
+        // Status: a name and what it says, under Updates, that the cursor
+        // passes over.
+        enum class Kind { Setting, Heading, Location, Status, Melon, Download, DataManagement, CheckUpdates };
         Kind kind = Kind::Setting;
         Row row = Row::Count;
         std::string text;
@@ -248,7 +254,9 @@ private:
         bool found = false;
         MelonRow melon = MelonRow::CpuClock;
         SystemId system = SystemId::Ds;
-        bool focusable() const { return kind != Kind::Heading && kind != Kind::Location; }
+        bool focusable() const {
+            return kind != Kind::Heading && kind != Kind::Location && kind != Kind::Status;
+        }
     };
     std::vector<Item> group_items(SettingsGroup group) const;
     // The groups with anything in them, in order.
@@ -331,7 +339,7 @@ private:
     bool offers_data_management_ = false;
     bool offers_updates_ = false;
     std::string updates_value_;
-    std::map<SystemId, std::array<std::string, 2>> download_rows_;
+    std::vector<UpdateLine> update_lines_;
     bool melonds_available_ = false;
     bool melonds_deko_ = false;
     std::string melonds_path_;
