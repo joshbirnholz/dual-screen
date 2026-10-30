@@ -1,6 +1,7 @@
 #include "net/host_session.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <random>
 
@@ -902,14 +903,20 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 return;
             }
             if (hello.protocol_version != kProtocolVersion) {
-                RejectMessage reject;
                 // Said to the player on the other device, so in which of the
-                // two needs the update rather than protocol numbers.
-                reject.reason = hello.protocol_version < kProtocolVersion
-                                    ? "This device is on an older build of Dualscreen than the other. It will "
-                                      "need to be updated before it can connect."
-                                    : "The other device is on an older build of Dualscreen than this one. It "
-                                      "will need to be updated before this device can connect.";
+                // two needs the update, by name, rather than protocol numbers.
+                const std::string them = hello.device_name.empty() ? std::string("that device")
+                                                                   : hello.device_name;
+                const std::string us = config_.device_name.empty() ? std::string("the other device")
+                                                                   : config_.device_name;
+                const bool they_are_older = hello.protocol_version < kProtocolVersion;
+                RejectMessage reject;
+                const std::string& older = they_are_older ? them : us;
+                const std::string& newer = they_are_older ? us : them;
+                std::string sentence_start = older;
+                sentence_start[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(older[0])));
+                reject.reason = sentence_start + " is on an older build of Dualscreen than " + newer + ". " +
+                                sentence_start + " will need to be updated before the two can play together.";
                 log_warn("turned away a device speaking version " + std::to_string(hello.protocol_version) +
                          " of the protocol; this speaks " + std::to_string(kProtocolVersion));
                 std::vector<uint8_t> out;

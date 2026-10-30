@@ -644,6 +644,14 @@ void test_command_line() {
     CHECK(bare_options.parse_error.empty());
     CHECK_STR_EQ(bare_options.game_path, "/roms/b.nds");
 
+    // Remote Start says so, and a game started any other way does not.
+    CHECK_EQ(bare_options.from_remote_start, false);
+    const char* remote[] = {"dualscreen", "--from-remote-start", "--game", "/roms/c.nds"};
+    const AppOptions remote_options = parse_command_line(4, const_cast<char**>(remote));
+    CHECK(remote_options.parse_error.empty());
+    CHECK_EQ(remote_options.from_remote_start, true);
+    CHECK_STR_EQ(remote_options.game_path, "/roms/c.nds");
+
     // A flag with no value is reported, not silently swallowed.
     const char* truncated[] = {"dualscreen", "--game"};
     CHECK(!parse_command_line(2, const_cast<char**>(truncated)).parse_error.empty());

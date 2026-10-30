@@ -228,13 +228,13 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     }
     if (config.core_path != kBuiltInCorePath && !file_exists(config.core_path)) {
         if (error != nullptr) {
-            *error = "The core file does not exist: " + config.core_path;
+            *error = "There's no emulator at " + config.core_path + ".";
         }
         return false;
     }
     if (!file_exists(config.rom_path)) {
         if (error != nullptr) {
-            *error = "The ROM file does not exist: " + config.rom_path;
+            *error = "There's no file at " + config.rom_path + ".";
         }
         return false;
     }
@@ -447,9 +447,9 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
             std::string reason;
             compute_top_bottom_split(system_, static_cast<int>(core_->video_frame().width),
                                      static_cast<int>(core_->video_frame().height), &reason);
-            *error = "The core is not rendering in the screen layout this app pins it to: " + reason +
-                     ". Check that the loaded core accepts the stacked screen layout this app "
-                     "pins it to.";
+            log_warn("the core's picture is not in the stacked layout it was set to: " + reason);
+            *error = "The emulator isn't drawing the two screens one above the other, which "
+                     "Dualscreen needs to split them.";
         }
         return false;
     }

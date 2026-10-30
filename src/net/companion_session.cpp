@@ -117,9 +117,13 @@ bool CompanionSession::begin_search(const std::string& device_name,
     device_name_ = device_name;
     wanted_screen_ = wanted_screen;
     granted_screen_ = wanted_screen;
-    if (!browser_.running() && !browser_.start(error)) {
+    std::string why;
+    if (!browser_.running() && !browser_.start(&why)) {
+        log_warn("cannot listen for other devices: " + why);
         status_ = Status::Failed;
-        status_detail_ = error != nullptr ? *error : "cannot listen for hosts";
+        status_detail_ = "This device couldn't listen for other devices on the network. Another "
+                         "copy of Dualscreen may already be running here.";
+        if (error != nullptr) *error = status_detail_;
         return false;
     }
     status_ = Status::Searching;
@@ -271,11 +275,11 @@ void CompanionSession::begin_connect() {
             owe_another_attempt(error);
             return;
         }
-        fail(error);
+        fail("Couldn't reach " + other_device() + ".", error);
         return;
     }
     if (!media_socket_.open() && !media_socket_.start(0, false, &error)) {
-        fail(error);
+        fail("This device couldn't open a connection to " + other_device() + ".", error);
         return;
     }
     start_receiver();
@@ -441,7 +445,11 @@ void CompanionSession::disconnect() {
     }
 }
 
-void CompanionSession::fail(const std::string& reason) {
+std::string CompanionSession::other_device() const {
+    return joining_.device_name.empty() ? std::string("the other device") : joining_.device_name;
+}
+
+void CompanionSession::fail(const std::string& said, const std::string& why) {
     stream_.close();
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
@@ -544,11 +552,11 @@ void CompanionSession::fail(const std::string& reason) {
     host_wants_motion_ = false;
     forget_the_pictures();
     status_ = Status::Failed;
-    status_detail_ = reason;
+    status_detail_ = said;
     if (rumble_callback_) {
         rumble_callback_(false, RumbleMessage::kWholeDevice, 0, 100);
     }
-    log_warn("companion session failed: " + reason);
+    log_warn("companion session failed: " + said + (why.empty() ? std::string() : " (" + why + ")"));
 }
 
 void CompanionSession::handle_message(MessageType type, const std::vector<uint8_t>& payload) {
@@ -556,7 +564,9 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::Welcome: {
             WelcomeMessage welcome;
             if (!decode_welcome(payload.data(), payload.size(), welcome)) {
-                fail("the host sent something we could not read");
+                fail(other_device() + " sent something this device couldn't understand. Both "
+                     "may need to be on the same version of Dualscreen.",
+                     "the welcome would not decode");
                 return;
             }
             game_title_ = welcome.game_title;
@@ -603,7 +613,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::Reject: {
             RejectMessage reject;
             if (!decode_reject(payload.data(), payload.size(), reject)) {
-                fail("the host refused the connection");
+                fail(other_device() + " didn't let this device join.", "the reject would not decode");
                 return;
             }
             fail(reject.reason);
@@ -771,7 +781,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             disconnect();
             status_detail_ = host_quit_for_this_device_
                                  ? "the game was quit from this device"
-                                 : "the host closed the session";
+                                 : other_device() + " ended the session";
             break;
         case MessageType::ScreensCleared: {
             uint64_t last_serial = 0;
@@ -1562,8 +1572,15 @@ void CompanionSession::poll(uint64_t now_ms) {
             // What went wrong, where anything did. A join that spent its whole
             // deadline being refused the local network must not tell the
             // player the other device stayed quiet: it never heard the ask.
-            fail(connect_failure_.empty() ? std::string("that device did not answer")
-                                          : connect_failure_);
+            if (connect_failure_.empty()) {
+                fail(other_device() + " didn't answer. Check that it's still on and on the same "
+                     "network as this device.");
+            } else {
+                fail("This device isn't allowed onto the local network, so it couldn't reach " +
+                         other_device() + ". Allow Dualscreen under Local Network in this "
+                         "device's Privacy & Security settings.",
+                     connect_failure_);
+            }
             return;
         }
         // An attempt the operating system had not made its mind up about is
@@ -1622,7 +1639,13 @@ void CompanionSession::poll(uint64_t now_ms) {
                 return;  // ended by what it said, not by the close
             }
         }
-        fail(error);
+        if (status_ == Status::Connected) {
+            fail(other_device() + " stopped answering. It may have closed Dualscreen, or "
+                 "left the network.",
+                 error);
+        } else {
+            fail("Couldn't reach " + other_device() + ".", error);
+        }
         return;
     }
 
@@ -1662,7 +1685,9 @@ void CompanionSession::poll(uint64_t now_ms) {
         bool fatal = false;
         if (!take_message(inbox_, type, payload, fatal)) {
             if (fatal) {
-                fail("the host sent a malformed message");
+                fail(other_device() + " sent something this device couldn't understand. Both "
+                     "may need to be on the same version of Dualscreen.",
+                     "a message would not frame");
             }
             break;
         }
@@ -3441,7 +3466,8 @@ void CompanionSession::apply_frame(const FrameMessage& frame) {
                 ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
                 : decode_screen_rgb565(frame.payload, frame.width, frame.height, target.rgb565);
         if (!decoded) {
-            fail("a frame from the host could not be decompressed");
+            fail("A picture from " + other_device() + " arrived damaged.",
+                 "a tiled frame would not decompress");
             return;
         }
         target.video = false;
@@ -3477,7 +3503,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         // frame that kept it from ever reaching 60. See DecodedLayout.
         decoder.set_planar_output_wanted(true);
         if (!decoder.open(config, &error)) {
-            fail("the host sent video this device cannot decode: " + error);
+            fail(other_device() + " sent video this device can't play.", error);
             return false;
         }
     }
@@ -3500,7 +3526,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         unsigned& failures =
             (frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_;
         if (++failures >= kMaxConsecutiveDecodeFailures) {
-            fail("a frame from the host could not be decoded: " + error);
+            fail("This device couldn't play the video " + other_device() + " sent.", error);
             return false;
         }
         bool& wanted =

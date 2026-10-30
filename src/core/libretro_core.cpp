@@ -99,7 +99,8 @@ void* open_core_library(const std::string& core_path, std::string* error) {
     void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr && error != nullptr) {
         const char* reason = dlerror();
-        *error = "could not load core '" + path + "': " + (reason ? reason : "unknown error");
+        log_warn("could not load the core at " + path + ": " + (reason ? reason : "no reason given"));
+        *error = "The emulator at " + path + " couldn't be loaded.";
     }
     return handle;
 }
@@ -366,7 +367,8 @@ bool LibretroCore::resolve_symbol(const char* name, T& out, std::string* error) 
     void* symbol = find_core_symbol(handle_, name);
     if (symbol == nullptr) {
         if (error != nullptr) {
-            *error = std::string("core is missing the libretro entry point '") + name + "'";
+            log_warn(std::string("the core has no ") + name);
+            *error = "The emulator file isn't a libretro core.";
         }
         return false;
     }
@@ -427,8 +429,9 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
     const unsigned api_version = api_->retro_api_version();
     if (api_version != RETRO_API_VERSION) {
         if (error != nullptr) {
-            *error = "core targets libretro API version " + std::to_string(api_version) +
-                     ", this build speaks version " + std::to_string(RETRO_API_VERSION);
+            log_warn("the core is for libretro API version " + std::to_string(api_version) +
+                     "; this build is for version " + std::to_string(RETRO_API_VERSION));
+            *error = "The emulator was made for a different version of libretro than Dualscreen.";
         }
         close_core_library(handle_);
         handle_ = nullptr;
@@ -476,18 +479,18 @@ bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
     if (!needs_fullpath_) {
         std::ifstream file(rom_path, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
-            if (error != nullptr) *error = "could not open ROM: " + rom_path;
+            if (error != nullptr) *error = "The game's file couldn't be opened.";
             return false;
         }
         const std::streamsize size = file.tellg();
         if (size <= 0) {
-            if (error != nullptr) *error = "ROM file is empty: " + rom_path;
+            if (error != nullptr) *error = "The game's file is empty.";
             return false;
         }
         file.seekg(0, std::ios::beg);
         rom_data_.resize(static_cast<std::size_t>(size));
         if (!file.read(rom_data_.data(), size)) {
-            if (error != nullptr) *error = "could not read ROM: " + rom_path;
+            if (error != nullptr) *error = "The game's file couldn't be read.";
             rom_data_.clear();
             return false;
         }
@@ -498,9 +501,11 @@ bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
     if (!api_->retro_load_game(&info)) {
         rom_data_.clear();
         if (error != nullptr) {
-            *error = "the core refused to load this ROM";
+            *error = "The emulator couldn't open this game.";
+            // Often the one useful thing said: a missing BIOS, a file it
+            // does not recognise.
             if (!core_messages_.empty()) {
-                *error += ": " + core_messages_.back();
+                *error += " It said: " + core_messages_.back();
             }
         }
         return false;
@@ -516,7 +521,7 @@ bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
         // load. Only then is the core told its context is ready.
         if (!ensure_hw_target()) {
             if (error != nullptr) {
-                *error = "could not give the core a framebuffer to render into";
+                *error = "The emulator couldn't be given a screen to draw on.";
             }
             api_->retro_unload_game();
             game_loaded_ = false;

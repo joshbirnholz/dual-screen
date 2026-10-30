@@ -1040,7 +1040,7 @@ void test_screen_source_reports_missing_files_clearly() {
     bad_core.core_path = "/tmp/definitely-not-here.so";
     bad_core.rom_path = "/tmp/whatever.nds";
     CHECK(!source.open(bad_core, &error));
-    CHECK(error.find("does not exist") != std::string::npos);
+    CHECK(error.find("no emulator at /tmp/definitely-not-here.so") != std::string::npos);
 
     const std::string core_path = mock_core_path();
     if (!core_path.empty()) {
@@ -1048,7 +1048,7 @@ void test_screen_source_reports_missing_files_clearly() {
         missing_rom.core_path = core_path;
         missing_rom.rom_path = "/tmp/definitely-not-here.nds";
         CHECK(!source.open(missing_rom, &error));
-        CHECK(error.find("ROM") != std::string::npos);
+        CHECK(error.find("no file at /tmp/definitely-not-here.nds") != std::string::npos);
     }
 }
 

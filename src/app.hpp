@@ -14,6 +14,10 @@ namespace ds {
 // testable without starting SDL.
 struct AppOptions {
     std::string game_path;
+    // Set by the Remote Start service when it starts --game for a device
+    // that asked, so a game that cannot be found says where it was picked
+    // rather than blaming a Steam shortcut there is none of.
+    bool from_remote_start = false;
     std::string core_path;    // overrides settings.json / the search paths
     // What makes forwarders on this device, where it can: the file picker
     // offers Create Forwarder only when there is one. Set by the Switch's

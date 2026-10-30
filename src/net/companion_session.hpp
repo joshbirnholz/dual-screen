@@ -518,6 +518,8 @@ public:
 
     Status status() const { return status_; }
     const std::string& status_detail() const { return status_detail_; }
+    // The name of the device last joined, or being joined. Empty before any.
+    const std::string& host_name() const { return joining_.device_name; }
     const std::vector<DiscoveredHost>& hosts() const { return browser_.hosts(); }
     const std::string& game_title() const { return game_title_; }
     // The game's icon as the host sent it, RGBA8 -- see
@@ -1109,7 +1111,11 @@ private:
     unsigned native_texture_failures_ = 0;
     static constexpr unsigned kNativeTextureFailuresToGiveUp = 3;
     void send_request(RequestMessage request);
-    void fail(const std::string& reason);
+    // Ends the session. `said` is what the player reads, naming the other
+    // device by its name -- see other_device(); `why` is for the log only.
+    void fail(const std::string& said, const std::string& why = {});
+    // The device being joined, by its name, for saying what went wrong.
+    std::string other_device() const;
     // One attempt at reaching joining_. Leaves the session Connecting either
     // way: a failure the operating system may answer differently in a moment
     // schedules another attempt rather than ending the join.

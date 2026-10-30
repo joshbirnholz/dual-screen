@@ -252,7 +252,7 @@ bool launch_game_here(const LaunchableGame& game, std::string* error) {
         if (on_path("flatpak")) return spawn_detached("flatpak", {"run", "com.valvesoftware.Steam", url}, error);
         return spawn_detached("xdg-open", {url}, error);
     }
-    return spawn_detached(this_program(), {"--game", game.path}, error);
+    return spawn_detached(this_program(), {"--from-remote-start", "--game", game.path}, error);
 }
 
 bool service_starts_at_login() {
