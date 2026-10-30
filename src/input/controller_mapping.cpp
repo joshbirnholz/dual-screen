@@ -95,6 +95,18 @@ PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
     }
 }
 
+SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam,
+                                             SDL_GameControllerType type) {
+    if (!presented_by_steam || pad_letter_layout(type) != PadLetterLayout::Nintendo) return button;
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A: return SDL_CONTROLLER_BUTTON_B;  // A: east
+        case SDL_CONTROLLER_BUTTON_B: return SDL_CONTROLLER_BUTTON_A;  // B: south
+        case SDL_CONTROLLER_BUTTON_X: return SDL_CONTROLLER_BUTTON_Y;  // X: north
+        case SDL_CONTROLLER_BUTTON_Y: return SDL_CONTROLLER_BUTTON_X;  // Y: west
+        default: return button;
+    }
+}
+
 MenuButtonLabels menu_button_labels(PadLetterLayout layout) {
     MenuButtonLabels labels;
     if (layout == PadLetterLayout::Nintendo) {

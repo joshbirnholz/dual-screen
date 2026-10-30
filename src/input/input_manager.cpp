@@ -285,6 +285,19 @@ bool is_steam_virtual_pad(SDL_GameController* controller) {
 }  // namespace
 #endif
 
+namespace {
+
+// Whether Steam Input presents this pad, as one of its virtual gamepads.
+bool presented_by_steam(SDL_GameController* controller) {
+#ifdef __SWITCH__
+    (void)controller;
+    return false;
+#else
+    return controller != nullptr && is_steam_virtual_pad(controller);
+#endif
+}
+
+}  // namespace
 
 bool InputManager::reads_pad(SDL_JoystickID id) const {
 #ifdef __SWITCH__
@@ -867,8 +880,14 @@ void InputManager::handle_event(const SDL_Event& event) {
             SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(event.cbutton.button);
             last_pad_pressed_ = event.cbutton.which;
             // Every button is what SDL says it is -- for a Steam Input pad,
-            // what the player mapped it to in Steam -- and Confirm/Cancel
-            // alone says which of the two lower face buttons answers yes.
+            // what the player mapped it to in Steam, with a Nintendo pad's
+            // letters as Steam gives them -- and Confirm/Cancel alone says
+            // which of the two lower face buttons answers yes.
+            const auto pressed_on = controllers_.find(event.cbutton.which);
+            if (pressed_on != controllers_.end() && pressed_on->second != nullptr) {
+                button = face_button_as_read(button, presented_by_steam(pressed_on->second),
+                                             SDL_GameControllerGetType(pressed_on->second));
+            }
             const ConfirmButton confirm_choice = confirm_button_;
 
             // Every press is logged under --verbose with the name SDL gives it,
@@ -1369,6 +1388,13 @@ RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     }
     for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
         raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
+    }
+    if (face_button_as_read(SDL_CONTROLLER_BUTTON_A, presented_by_steam(controller),
+                            SDL_GameControllerGetType(controller)) != SDL_CONTROLLER_BUTTON_A) {
+        // A Nintendo pad Steam presents, read by its letters: see
+        // face_button_as_read().
+        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_A], raw.buttons[SDL_CONTROLLER_BUTTON_B]);
+        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_X], raw.buttons[SDL_CONTROLLER_BUTTON_Y]);
     }
     return raw;
 }

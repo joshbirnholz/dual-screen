@@ -80,6 +80,18 @@ enum class PadLetterLayout {
 
 PadLetterLayout pad_letter_layout(SDL_GameControllerType type);
 
+// A face button as this app reads it, from what SDL reported.
+//
+// Every pad is read by place -- except a Nintendo controller that Steam Input
+// presents. Steam hands those over with the letters printed on them, the A
+// on the right reported as Steam's A, and a Nintendo pad's letters are the
+// places this app reads by anyway: so Steam's A is east, B south, X north and
+// Y west. Read by place instead, its A and B and its X and Y came out swapped
+// from what Steam was supplying. The Deck's own buttons and every other
+// Xbox-lettered pad Steam presents are read by place, as before.
+SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam,
+                                             SDL_GameControllerType type);
+
 // The letters printed on the menu confirm/cancel buttons for a given pad.
 struct MenuButtonLabels {
     const char* confirm = "B";

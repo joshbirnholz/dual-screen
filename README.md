@@ -1795,8 +1795,11 @@ as SDL reports it -- for a pad Steam presents, with the player's mapping in
 it -- by place: the button reported as Xbox's A is the bottom one, B the right
 one, X the left and Y the top, whatever the controller underneath prints.
 While Steam presents controllers, the raw copy SDL may also show of one is
-never read. **Controller Icons** only changes the pictures, and
-**Confirm/Cancel** only which of the two lower buttons says yes.
+never read. The one exception is a Nintendo controller Steam presents: Steam
+hands it over with its printed letters, so its A is A (the right-hand button),
+B is B, X is X and Y is Y, just as Steam supplies them. **Controller Icons**
+only changes the pictures, and **Confirm/Cancel** only which of the two lower
+buttons says yes.
 
 Every pad -- through Steam or not -- uses **Nintendo positional** controls:
 

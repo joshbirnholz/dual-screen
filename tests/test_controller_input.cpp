@@ -220,6 +220,32 @@ void test_steam_input_pads_are_read_as_steam_presents_them() {
                      UiAction::Cancel));
 }
 
+// A Nintendo controller Steam presents arrives with its printed letters --
+// Steam's A is the one on the right -- and those are the places this app
+// reads by, so they are taken as given. Any other pad Steam presents, and a
+// Nintendo pad SDL reads itself, is read by place.
+void test_steam_nintendo_pads_keep_their_letters() {
+    const SDL_GameControllerType kPro = SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO;
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro) == SDL_CONTROLLER_BUTTON_B);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_B, true, kPro) == SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_X, true, kPro) == SDL_CONTROLLER_BUTTON_Y);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_Y, true, kPro) == SDL_CONTROLLER_BUTTON_X);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR) ==
+          SDL_CONTROLLER_BUTTON_B);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_START, true, kPro) == SDL_CONTROLLER_BUTTON_START);
+    // So Steam's A says yes and is DS A, with Confirm/Cancel on east.
+    DsButton gives = DsButton::B;
+    CHECK(ds_button_for_controller_button(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro), gives));
+    CHECK(gives == DsButton::A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro) == confirm_button_for(ConfirmButton::East));
+
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, false, kPro) == SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_XBOXONE) ==
+          SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN) ==
+          SDL_CONTROLLER_BUTTON_A);
+}
+
 // Nintendo positional, end to end: south is DS B, east is DS A.
 void test_face_buttons_follow_ds_positions() {
     DsInputState state = press_and_read(SDL_CONTROLLER_BUTTON_A);
@@ -1540,6 +1566,7 @@ int main() {
     test_holding_a_direction_keeps_moving();
     test_a_pad_arriving_pushed_does_not_move_the_menu();
     test_steam_input_pads_are_read_as_steam_presents_them();
+    test_steam_nintendo_pads_keep_their_letters();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();
