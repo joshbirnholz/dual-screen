@@ -112,6 +112,7 @@ void test_the_activity_names_the_game_and_clearing_sends_none() {
 
     // With the game's own icon: that, large, and this app's small in its corner.
     activity.details = "Mario Kart 7";
+    activity.state.clear();
     activity.image = discord_game_icon_url("3ds/0004000000030800");
     CHECK(activity.image.find("/icons/3ds/0004000000030800.png") != std::string::npos);
     const nlohmann::json pictured = nlohmann::json::parse(discord_activity_command(activity, 42, "10"));
