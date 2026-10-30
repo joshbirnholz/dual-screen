@@ -101,6 +101,22 @@
 namespace ds {
 namespace {
 
+// "the emulator" at the start of a sentence; a name such as "melonDS DS" is
+// left as it is spelled.
+std::string sentence_start(std::string text) {
+    if (text.rfind("the ", 0) == 0) text[0] = 'T';
+    return text;
+}
+
+// Where the game being started was picked, for what to say when its file is
+// not there: each of these is fixed somewhere different.
+enum class GameSource {
+    CommandLine,   // --game: a Steam shortcut, or whoever typed the command
+    RemoteStart,   // a device asked the Remote Start service for it
+    Browser,       // picked from the list of games here
+    Restart,       // the game that was just playing, started again
+};
+
 // Forwarder Creation on a machine that cannot make forwarders, for looking at
 // it: --start-screen forwarder-preview. No keyboard, no network and no
 // install, each of which says so.
@@ -313,6 +329,8 @@ AppOptions parse_command_line(int argc, char** argv) {
             options.show_help = true;
         } else if (argument == "--game") {
             options.game_path = next_argument(argc, argv, index, "--game", options.parse_error);
+        } else if (argument == "--from-remote-start") {
+            options.from_remote_start = true;
         } else if (argument == "--core") {
             options.core_path = next_argument(argc, argv, index, "--core", options.parse_error);
         } else if (argument == "--layout") {
@@ -672,10 +690,14 @@ struct App::Impl {
     // What the alert up is offering, and for which game.
     std::optional<SystemId> emulator_offered;
     std::string emulator_offered_for;
+    // Where that game was picked, for what to say if it is gone by the time
+    // the emulator is here -- see GameSource.
+    GameSource emulator_offered_from = GameSource::Browser;
     // Download was chosen: the game that started it, started once it is
     // here.
     std::optional<update::Component> download_for_game;
     std::string start_after_download;
+    GameSource start_after_download_from = GameSource::Browser;
     // open_core() found no core at all for the console, as opposed to one
     // that would not open.
     bool core_not_found = false;
@@ -1575,10 +1597,16 @@ struct App::Impl {
     void apply_lcd_grid();
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
+    // The emulator playing this console, as a player would name it: the
+    // loaded core's own name, or the one program this console is played
+    // with, or "the emulator" when either of two could be.
+    std::string emulator_name() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
-    bool start_game(const std::string& rom_path, bool fatal_on_failure);
+    bool start_game(const std::string& rom_path, bool fatal_on_failure, GameSource from);
+    // Where the game start_game() was last asked for was picked.
+    GameSource starting_from = GameSource::Browser;
     // The game that was playing has closed, and its save may have changed.
     void note_game_closed();
     // The same for a game another program plays: Cemu writes its saves
@@ -5561,7 +5589,7 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
         std::string error;
         const bool changed = result.restart_with(&error);
         if (!changed) log_warn("the save was not changed: " + error);
-        if (start_game(rom, false)) {
+        if (start_game(rom, false, GameSource::Restart)) {
             game_notice = changed ? result.restart_notice : "The save could not be changed: " + error;
             state = State::ResumeNotice;
             input.set_game_input_enabled(false);
@@ -5700,7 +5728,7 @@ void App::Impl::poll_updates() {
             if (here && state == State::Launcher) {
                 log_info("starting " + rom + " with the emulator just downloaded");
                 stop_recent_games();
-                start_game(rom, false);
+                start_game(rom, false, start_after_download_from);
             }
         }
     }
@@ -5823,7 +5851,9 @@ void App::Impl::end_companion_session() {
         return;
     }
     if (companion_session->status() == net::CompanionSession::Status::Failed) {
-        enter_message(MessageKind::Error, "Lost the connection",
+        const std::string& host = companion_session->host_name();
+        enter_message(MessageKind::Error,
+                      host.empty() ? std::string("Disconnected") : "Disconnected from " + host,
                       companion_session->status_detail(), {}, false);
         return;
     }
@@ -5906,9 +5936,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     attach_companion_callbacks();
     std::string error;
     if (!companion_session->begin_search(settings.device_name, wanted_screen, &error)) {
-        enter_message(MessageKind::Error, "Cannot look for other devices", error,
-                      {"Another copy of dualscreen may already be searching on this device."},
-                      false);
+        enter_message(MessageKind::Error, "Can't look for other devices", error, {}, false);
         return;
     }
     local_screen = wanted_screen;
@@ -5979,6 +6007,7 @@ bool App::Impl::offer_emulator(SystemId system, const std::string& rom_path, boo
                   {}, fatal_on_failure, {"Download", "Settings", "Not Now"});
     emulator_offered = system;
     emulator_offered_for = rom_path;
+    emulator_offered_from = starting_from;
     return true;
 }
 
@@ -5995,6 +6024,7 @@ void App::Impl::answer_emulator_offer(int chosen) {
         log_info("downloading the emulator " + emulator_offered_for + " needs");
         download_for_game = wanted;
         start_after_download = emulator_offered_for;
+        start_after_download_from = emulator_offered_from;
         update_prompt.download(wanted);
     } else if (chosen == 1) {
         open_settings();
@@ -6157,7 +6187,14 @@ void App::Impl::update_save_rom_dirs() {
     save_store->set_folder_roots(std::move(roots));
 }
 
-bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
+std::string App::Impl::emulator_name() const {
+    if (source && !source->core_name().empty()) return source->core_name();
+    const std::string& described = system_profile(system).core_description;
+    return described.find(" or ") == std::string::npos ? described : std::string("the emulator");
+}
+
+bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure, GameSource from) {
+    starting_from = from;
     // The game being left is left where it was, for when it is next started.
     write_resume_point("another game is starting");
     resume_writer.finish();
@@ -6178,8 +6215,28 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     game_config = GameConfig();
 
     if (!file_exists(rom_path)) {
-        enter_message(MessageKind::Error, "ROM not found", "There is no file at " + rom_path,
-                      {"Check the path in this game's Steam shortcut."}, fatal_on_failure);
+        // Where to look depends on where the game was picked: blaming a Steam
+        // shortcut for a game chosen from the list here sends the player
+        // looking for something that does not exist.
+        std::string where;
+        switch (from) {
+            case GameSource::CommandLine:
+                where = std::getenv("SteamGameId") != nullptr || std::getenv("SteamAppId") != nullptr
+                            ? "Check the game's path in its Steam shortcut."
+                            : "Check the path Dualscreen was started with.";
+                break;
+            case GameSource::RemoteStart:
+                where = "It may have been moved or deleted since Remote Start listed it.";
+                break;
+            case GameSource::Browser:
+                where = "It may have been moved or deleted. Pick it again from the list.";
+                break;
+            case GameSource::Restart:
+                where = "It was moved or deleted while it was being played.";
+                break;
+        }
+        enter_message(MessageKind::Error, "Can't find this game", "There's no file at " + rom_path + ".",
+                      {where}, fatal_on_failure);
         return false;
     }
 
@@ -6298,10 +6355,11 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // all if the answer is no.
     std::string context_error;
     if (!ensure_gl_context(profile.gl_context, &context_error)) {
-        enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
-                      context_error,
-                      {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},
-                      fatal_on_failure);
+        log_warn("no OpenGL context for " + profile.core_description + ": " + context_error);
+        enter_message(MessageKind::Error, "Can't play " + profile.name + " games here",
+                      profile.name + " games need OpenGL 3.3, which this device's graphics "
+                      "don't offer.",
+                      {}, fatal_on_failure);
         return false;
     }
 
@@ -6320,8 +6378,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             if (!open_core(rom_path, &source_error, &details)) {
                 if (save_store) save_store->note_game_stopped(rom_path);
                 if (core_not_found && offer_emulator(system, rom_path, fatal_on_failure)) return false;
-                enter_message(MessageKind::Error, "Could not start the game", source_error, details,
-                              fatal_on_failure);
+                enter_message(MessageKind::Error, "Couldn't start " + game_title, source_error,
+                              details, fatal_on_failure);
                 return false;
             }
             break;
@@ -6411,9 +6469,14 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             std::string link_error;
             if (!external_source->open(socket_path, &link_error)) {
                 external_source.reset();
-                enter_message(MessageKind::Error,
-                              "Could not open the way in for " + profile.core_description,
-                              link_error, {"Socket: " + socket_path}, fatal_on_failure);
+                log_warn("could not open " + socket_path + " for " + profile.core_description + ": " +
+                         link_error);
+                enter_message(MessageKind::Error, "Couldn't get ready for " + profile.core_description,
+                              "Dualscreen couldn't open the link " + profile.core_description +
+                                  " sends its screens through.",
+                              {"Another copy of Dualscreen may already be playing a " + profile.name +
+                               " game on this device."},
+                              fatal_on_failure);
                 return false;
             }
             render_scale = 1;  // whatever is playing the game owns its resolution
@@ -6523,7 +6586,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
 
     if (source && !source->warnings().empty()) {
-        enter_message(MessageKind::Info, "The core did not accept every setting",
+        enter_message(MessageKind::Info, sentence_start(emulator_name()) + " didn't accept every setting",
                       "The game will still run, but the screen split may not look right until this "
                       "is resolved.",
                       source->warnings(), false);
@@ -7078,7 +7141,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 settings.last_browse_dir = browser->current_directory();
                 update_save_rom_dirs();
                 settings.save(paths);
-                start_game(result.chosen_path, false);
+                start_game(result.chosen_path, false, GameSource::Browser);
             }
             break;
         }
@@ -7992,7 +8055,7 @@ int App::run(const AppOptions& options) {
         std::string search_error;
         if (!impl.companion_session->begin_search(impl.settings.device_name, wanted,
                                                   &search_error)) {
-            impl.enter_message(MessageKind::Error, "Cannot look for other devices", search_error,
+            impl.enter_message(MessageKind::Error, "Can't look for other devices", search_error,
                                {}, true);
         } else {
             // The same setup start_companion() does for the menu route. This
@@ -8027,7 +8090,8 @@ int App::run(const AppOptions& options) {
         }
         impl.open_launcher();
     } else {
-        impl.start_game(expand_user_path(options.game_path), true);
+        impl.start_game(expand_user_path(options.game_path), true,
+                        options.from_remote_start ? GameSource::RemoteStart : GameSource::CommandLine);
     }
 
     // Test hook: bring a menu up without synthesising input events. The layout
@@ -8792,8 +8856,11 @@ int App::run(const AppOptions& options) {
             // it, is untouched either way.
             std::string video_error;
             if (impl.host_session->take_video_error(video_error)) {
-                impl.enter_message(MessageKind::Error, "Video streaming isn't working",
-                                   video_error, {}, false);
+                const std::string other = impl.host_session->companion_name();
+                impl.enter_message(MessageKind::Error, "Can't send video to " + other,
+                                   "This device couldn't make video of the game, so " + other +
+                                       " isn't being sent a picture.",
+                                   {}, false);
             }
             // Whichever screen the companion took, the host shows the other.
             // Moot for a Wii U -- this app never composites either of its
@@ -9233,10 +9300,11 @@ int App::run(const AppOptions& options) {
             !impl.external_program.running()) {
             impl.external_program_wanted = false;
             const SystemProfile& profile = system_profile(impl.system);
-            impl.enter_message(MessageKind::Error, profile.core_description + " did not start",
-                               "It stopped without handing over a game.",
-                               {"Command: " + impl.settings.external_program_for(impl.system),
-                                "Socket: " + impl.external_socket_path},
+            log_warn(profile.core_description + " stopped before connecting; it was waited for at " +
+                     impl.external_socket_path);
+            impl.enter_message(MessageKind::Error, profile.core_description + " closed",
+                               profile.core_description + " closed before the game started.",
+                               {"It was started with: " + impl.settings.external_program_for(impl.system)},
                                true);
         }
         if (!(playing != nullptr && game_running) && impl.speed_window_start != 0) {
@@ -9417,8 +9485,12 @@ int App::run(const AppOptions& options) {
                     // that program closing, which is an ordinary way to stop
                     // and is handled by wants_shutdown below.
                     if (!playing->wants_shutdown()) {
-                        impl.enter_message(MessageKind::Error, "The core stopped running",
-                                           frame_error, {}, true);
+                        const std::string emulator = impl.emulator_name();
+                        log_warn(emulator + " stopped running: " + frame_error);
+                        impl.enter_message(MessageKind::Error, sentence_start(emulator) + " stopped",
+                                           impl.game_title + " stopped because " + emulator +
+                                               " ran into a problem.",
+                                           {}, true);
                     }
                     break;
                 }

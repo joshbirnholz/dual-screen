@@ -749,6 +749,44 @@ else()
     endif()
 endif()
 
+# A game that is not there says where to go and fix it, which depends on
+# where it was picked: Remote Start's has no Steam shortcut to blame.
+foreach(MISSING_CASE IN ITEMS
+        "--from-remote-start|since Remote Start listed it"
+        "none|Check the path Dualscreen was started with")
+    string(REPLACE "|" ";" MISSING_PARTS "${MISSING_CASE}")
+    list(GET MISSING_PARTS 0 MISSING_FLAG)
+    list(GET MISSING_PARTS 1 MISSING_SAID)
+    set(MISSING_FLAGS)
+    if(NOT MISSING_FLAG STREQUAL "none")
+        set(MISSING_FLAGS "${MISSING_FLAG}")
+    endif()
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env --unset=SteamGameId --unset=SteamAppId
+                "XDG_CONFIG_HOME=${WORK_DIR}/config"
+                "XDG_DATA_HOME=${WORK_DIR}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    ${MISSING_FLAGS}
+                    --game "${WORK_DIR}/not-here.nds"
+                    --core "${MOCK_CORE}"
+                    --windowed
+                    --exit-after-frames 4
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+    string(FIND "${RUN_OUTPUT}${RUN_ERROR}" "showing a message: Can't find this game" SHOWN_AT)
+    string(FIND "${RUN_OUTPUT}${RUN_ERROR}" "${MISSING_SAID}" SAID_AT)
+    if(SHOWN_AT EQUAL -1 OR SAID_AT EQUAL -1)
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "a missing game started with '${MISSING_FLAG}' did not say: ${MISSING_SAID}")
+        set(ANY_FAILED TRUE)
+    endif()
+endforeach()
+
 if(ANY_FAILED)
     message(FATAL_ERROR "smoke test failed")
 endif()
