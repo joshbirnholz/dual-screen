@@ -445,6 +445,9 @@ private:
     // whether menu navigation by stick has been. Once is a mapping; every
     // press is noise. See SDL_CONTROLLERBUTTONDOWN.
     uint32_t said_buttons_ = 0;
+    // How each pad's face buttons were last said to be read -- by Steam's
+    // letters or by place -- so the log says it once, and again on a change.
+    std::map<SDL_JoystickID, bool> said_face_reading_;
     bool said_axis_navigation_ = false;
     bool quit_requested_ = false;
     bool window_size_changed_ = false;

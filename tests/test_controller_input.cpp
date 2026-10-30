@@ -244,6 +244,18 @@ void test_steam_nintendo_pads_keep_their_letters() {
           SDL_CONTROLLER_BUTTON_A);
     CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN) ==
           SDL_CONTROLLER_BUTTON_A);
+    // Steam gives no type for some Nintendo pads, a Switch 2 controller
+    // through an SInput adapter among them; its name says what it is.
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch2-Pico SInput") ==
+          SDL_CONTROLLER_BUTTON_B);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_X, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch 2 Controller") ==
+          SDL_CONTROLLER_BUTTON_Y);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Steam Virtual Gamepad") ==
+          SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Steam Deck") ==
+          SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, false, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch 2 Controller") ==
+          SDL_CONTROLLER_BUTTON_A);
 }
 
 // Nintendo positional, end to end: south is DS B, east is DS A.

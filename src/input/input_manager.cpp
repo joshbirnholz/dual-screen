@@ -627,6 +627,7 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
     controllers_.erase(it);
     steam_pads_.erase(instance_id);
     arrived_among_others_.erase(instance_id);
+    said_face_reading_.erase(instance_id);
     unrested_pads_.erase(instance_id);
     said_unrested_pads_.erase(instance_id);
     log_info("controller disconnected");
@@ -933,8 +934,24 @@ void InputManager::handle_event(const SDL_Event& event) {
             // which of the two lower face buttons answers yes.
             const auto pressed_on = controllers_.find(event.cbutton.which);
             if (pressed_on != controllers_.end() && pressed_on->second != nullptr) {
-                button = face_button_as_read(button, presented_by_steam(pressed_on->second),
-                                             SDL_GameControllerGetType(pressed_on->second));
+                SDL_GameController* pad = pressed_on->second;
+                const char* pad_name = SDL_GameControllerName(pad);
+                const SDL_GameControllerType pad_type = SDL_GameControllerGetType(pad);
+                const bool steam = presented_by_steam(pad);
+                const bool letters = steam_pad_has_nintendo_letters(steam, pad_type, pad_name);
+                button = face_button_as_read(button, steam, pad_type, pad_name);
+                // Said once per pad, and again if Steam changes its mind about
+                // what the pad is: which pad a press came from, and how its
+                // face buttons are being taken, is the first thing a swapped
+                // A and B needs to know.
+                const auto said = said_face_reading_.find(event.cbutton.which);
+                if (said == said_face_reading_.end() || said->second != letters) {
+                    said_face_reading_[event.cbutton.which] = letters;
+                    log_info(std::string(pad_name != nullptr ? pad_name : "a controller") + " (SDL type: " +
+                             to_string(pad_type) + (steam ? ", through Steam Input" : "") + ") is read " +
+                             (letters ? "by Steam's letters: its A is A, on the right"
+                                      : "by place: the button at the bottom is B"));
+                }
             }
             const ConfirmButton confirm_choice = confirm_button_;
 
@@ -1437,8 +1454,8 @@ RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
         raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
     }
-    if (face_button_as_read(SDL_CONTROLLER_BUTTON_A, presented_by_steam(controller),
-                            SDL_GameControllerGetType(controller)) != SDL_CONTROLLER_BUTTON_A) {
+    if (steam_pad_has_nintendo_letters(presented_by_steam(controller), SDL_GameControllerGetType(controller),
+                                       SDL_GameControllerName(controller))) {
         // A Nintendo pad Steam presents, read by its letters: see
         // face_button_as_read().
         std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_A], raw.buttons[SDL_CONTROLLER_BUTTON_B]);
