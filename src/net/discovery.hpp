@@ -32,8 +32,18 @@ struct DiscoveredHost {
     int icon_width = 0;
     int icon_height = 0;
     std::vector<uint8_t> icon_rgba;
+    // The protocol it speaks. Another than this build's is a host that is
+    // listed, so that the player sees it, but that cannot be joined until
+    // one device or the other is updated -- see needs_update().
+    uint16_t protocol_version = kProtocolVersion;
 
+    // Whether the two builds no longer match, and which is behind.
+    bool needs_update() const { return protocol_version != kProtocolVersion; }
+    bool is_older() const { return protocol_version < kProtocolVersion; }
+
+    // A host that needs an update offers nothing: connecting would only fail.
     bool offers(ScreenId screen) const {
+        if (needs_update()) return false;
         return screen == ScreenId::Top ? top_available : bottom_available;
     }
 };
@@ -111,9 +121,8 @@ private:
     UdpSocket socket_;
     std::vector<DiscoveredHost> hosts_;
     std::vector<IconAssembly> icons_;
-    // Hosts heard speaking another protocol version, said once each: they are
-    // not listed, and "the other device never shows up" is otherwise all the
-    // player sees of two builds that no longer match.
+    // Hosts heard speaking another protocol version, said once each in the
+    // log beside their row's "Needs Update".
     std::vector<std::string> other_versions_;
 };
 
