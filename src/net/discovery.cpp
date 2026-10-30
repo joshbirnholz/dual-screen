@@ -164,19 +164,16 @@ void HostBrowser::ingest_icon(const BeaconIconPiece& piece,
 }
 
 void HostBrowser::ingest(const BeaconMessage& beacon, const std::string& address, uint64_t now_ms) {
-    // A version we do not speak is not shown at all: connecting would only fail
-    // later, with a worse message.
-    if (beacon.protocol_version != kProtocolVersion) {
-        if (std::find(other_versions_.begin(), other_versions_.end(), address) ==
-            other_versions_.end()) {
-            other_versions_.push_back(address);
-            log_warn("heard " + beacon.device_name + " at " + address + " hosting " +
-                     beacon.game_title + ", but it speaks version " +
-                     std::to_string(beacon.protocol_version) + " of the protocol and this " +
-                     "speaks " + std::to_string(kProtocolVersion) +
-                     " -- not listed; update both to the same build");
-        }
-        return;
+    // A version we do not speak is listed all the same, as needing an update:
+    // "the other device never shows up" is otherwise all the player sees of two
+    // builds that no longer match. offers() keeps it from being joined.
+    if (beacon.protocol_version != kProtocolVersion &&
+        std::find(other_versions_.begin(), other_versions_.end(), address) == other_versions_.end()) {
+        other_versions_.push_back(address);
+        log_warn("heard " + beacon.device_name + " at " + address + " hosting " + beacon.game_title +
+                 ", but it speaks version " + std::to_string(beacon.protocol_version) +
+                 " of the protocol and this speaks " + std::to_string(kProtocolVersion) +
+                 " -- listed as needing an update; update both to the same build");
     }
 
     // Identity is address plus port, so two instances on one machine -- which is
@@ -188,6 +185,7 @@ void HostBrowser::ingest(const BeaconMessage& beacon, const std::string& address
             host.rom_sha1 = beacon.rom_sha1;
             host.top_available = beacon.top_available;
             host.bottom_available = beacon.bottom_available;
+            host.protocol_version = beacon.protocol_version;
             host.last_seen_ms = now_ms;
             return;
         }
@@ -201,6 +199,7 @@ void HostBrowser::ingest(const BeaconMessage& beacon, const std::string& address
     host.rom_sha1 = beacon.rom_sha1;
     host.top_available = beacon.top_available;
     host.bottom_available = beacon.bottom_available;
+    host.protocol_version = beacon.protocol_version;
     host.last_seen_ms = now_ms;
     for (const IconAssembly& icon : icons_) {
         if (icon.address == address && icon.session_port == beacon.session_port) {

@@ -1011,6 +1011,9 @@ void Client::begin_search(ScreenId wanted) {
     state_ = State::Browsing;
     close_menu();
     host_picker_.open(wanted);
+#if DS_LOCAL_PLAY
+    host_picker_.set_can_update(update_prompt_.available());
+#endif
 
     // What the host calls this device, on its Controllers screen among other
     // places. A Switch says which Switch rather than nothing, which the host
@@ -1647,7 +1650,11 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             host_picker_.update(session_.hosts(), actions, pointers,
                                 static_cast<float>(output_width_),
                                 static_cast<float>(output_height_));
-        if (result.chosen) {
+        if (result.check_for_updates) {
+#if DS_LOCAL_PLAY
+            update_prompt_.choose();
+#endif
+        } else if (result.chosen) {
             join(result.host);
         } else if (result.cancelled) {
             // Back to choosing which screen to be, rather than out of the app:
@@ -2388,6 +2395,9 @@ void Client::draw_scene() {
         }
         host_picker_.render(quads_, text_, button_glyphs_, width, height, session_.hosts(),
                             host_picker_status());
+#if DS_LOCAL_PLAY
+        update_prompt_.render(quads_, text_, button_glyphs_, width, height);
+#endif
         return;
     }
 

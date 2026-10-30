@@ -5896,6 +5896,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
         host_picker.reset(new HostPickerScreen());
     }
     host_picker->open(wanted_screen);
+    host_picker->set_can_update(update_prompt.available());
     state = State::HostPicker;
     input.set_game_input_enabled(false);
     awaited_launch.reset();
@@ -6737,7 +6738,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     }
                 }
             }
-            if (result.cancelled) {
+            if (result.check_for_updates) {
+                update_prompt.set_game_playing(false, false, false);
+                update_prompt.choose();
+            } else if (result.cancelled) {
                 leave_host_picker();
                 companion_session->disconnect();
                 open_launcher();
@@ -7307,6 +7311,7 @@ void App::Impl::render() {
     if (state == State::HostPicker) {
         host_picker->render(quads, text, button_glyphs, width, height,
                             companion_session->hosts(), host_picker_status());
+        update_prompt.render(quads, text, button_glyphs, width, height);
         swap();
         ++frames_rendered;
         return;

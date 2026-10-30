@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -171,6 +172,9 @@ struct HostPickerResult {
     bool cancelled = false;
     bool chosen = false;
     ds::net::DiscoveredHost host;
+    // A host on a newer build was chosen, and Check for Updates on its alert:
+    // the shell checks for this device's, as Settings' Check for Updates does.
+    bool check_for_updates = false;
 };
 
 // The line under a host's game title in the connection list. Its address is
@@ -183,6 +187,9 @@ public:
     void open(ScreenId wanted_screen);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
+    // Whether this device has an updater, which the alert for a host on a
+    // newer build offers.
+    void set_can_update(bool can_update) { can_update_ = can_update; }
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
     ScreenId wanted_screen() const { return wanted_screen_; }
@@ -197,7 +204,7 @@ public:
     bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
     // A host by its index in the list last handed to update().
     int entry_at(float x, float y, float output_width, float output_height) const override;
-    bool off_popup(float, float, float, float) const override { return false; }
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
     // Nothing scrolls.
     std::vector<float> scroll_state(float, float) const override { return {}; }
     void set_scroll_state(const std::vector<float>&, float, float) override {}
@@ -227,6 +234,15 @@ private:
     // entry_at() lays out.
     std::size_t host_count_ = 0;
     std::vector<GuideHit> guide_hits_;
+    bool can_update_ = false;
+    // The host on another build whose row was chosen, its alert up saying
+    // which device needs the update. Kept whole rather than by its index:
+    // the list can change under the alert.
+    std::optional<ds::net::DiscoveredHost> needs_update_;
+    PopupCursor alert_cursor_;
+    std::vector<PopupButton> alert_buttons() const;
+    std::string alert_message() const;
+    PopupGeometry alert_geometry(float output_width, float output_height) const;
     // Each host's game icon, by its address and port, loaded the first time
     // its row is drawn with it.
     struct HostIcon {

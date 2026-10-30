@@ -175,9 +175,41 @@ void test_the_connection_list_does_not_show_addresses() {
               "a screen someone else already holds no longer says so");
 }
 
+// A host on another build is listed, but choosing it says which device
+// needs the update instead of joining -- and offers this device's own update
+// only when this device is the one behind and has an updater.
+void test_a_host_that_needs_an_update_is_explained_not_joined() {
+    ds::net::DiscoveredHost host;
+    host.device_name = "Josh's PC";
+    host.game_title = "Some Game";
+    CHECK_MSG(host_row_detail(host, false).find("already taken") != std::string::npos, "an available row changed");
+    for (const int behind : {1, -1}) {
+        host.protocol_version = static_cast<uint16_t>(ds::net::kProtocolVersion + behind);
+        CHECK_MSG(host_row_detail(host, false).find("already taken") == std::string::npos,
+                  "a host on another build says its screen is taken");
+        for (const bool can_update : {true, false}) {
+            HostPickerScreen picker;
+            picker.open(ScreenId::Bottom);
+            picker.set_can_update(can_update);
+            const std::vector<ds::net::DiscoveredHost> hosts{host};
+            HostPickerResult result = picker.update(hosts, {UiAction::Confirm}, {}, 1280.0f, 720.0f);
+            CHECK_MSG(!result.chosen, "a host on another build was joined");
+            CHECK_MSG(picker.is_open(), "the picker closed under the alert");
+            CHECK_MSG(picker.off_popup(0.0f, 0.0f, 1280.0f, 720.0f), "no alert went up");
+            result = picker.update(hosts, {UiAction::Confirm}, {}, 1280.0f, 720.0f);
+            const bool offered = behind > 0 && can_update;
+            CHECK_MSG(result.check_for_updates == offered,
+                      std::string("Check for Updates was ") + (offered ? "not " : "") + "offered");
+            CHECK_MSG(!result.chosen, "answering the alert joined the host");
+            CHECK_MSG(!picker.off_popup(0.0f, 0.0f, 1280.0f, 720.0f), "the alert stayed up");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
+    test_a_host_that_needs_an_update_is_explained_not_joined();
     test_plus_only_quits_where_the_platform_says_so();
     test_the_other_face_buttons_do_nothing_here();
     test_quit_leads_the_control_guide();

@@ -258,7 +258,8 @@ bool LauncherScreen::off_popup(float x, float y, float output_width, float outpu
 }
 
 std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available) {
-    return host.device_name + (available ? "" : "   this screen is already taken");
+    // One on another build says so on the right of its row instead.
+    return host.device_name + (available || host.needs_update() ? "" : "   this screen is already taken");
 }
 
 std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
@@ -371,6 +372,38 @@ void HostPickerScreen::open(ScreenId wanted_screen) {
     open_ = true;
     focus_ = 0;
     wanted_screen_ = wanted_screen;
+    needs_update_.reset();
+}
+
+std::vector<PopupButton> HostPickerScreen::alert_buttons() const {
+    // Only this device's own update can be started from here: the other
+    // cannot be reached until both are on the same build.
+    if (needs_update_ && !needs_update_->is_older() && can_update_) {
+        return {{"Not Now", ""}, {"Check for Updates", ""}};
+    }
+    return {{"OK", ""}};
+}
+
+std::string HostPickerScreen::alert_message() const {
+    if (!needs_update_) return std::string();
+    const std::string& name = needs_update_->device_name;
+    if (needs_update_->is_older()) {
+        return name + " is on an older build of Dualscreen than this device. It will need to be updated before "
+                      "this device can connect: on " + name + ", choose Check for Updates in Settings.";
+    }
+    return name + " is on a newer build of Dualscreen than this device. This device will need to be updated "
+                  "before it can connect.";
+}
+
+PopupGeometry HostPickerScreen::alert_geometry(float output_width, float output_height) const {
+    const float width = popup_body_width(output_width, output_height);
+    return popup_geometry(output_width, output_height,
+                          popup_text_height(PopupText{alert_message(), {}, 0}, width, output_height),
+                          alert_buttons());
+}
+
+bool HostPickerScreen::off_popup(float x, float y, float output_width, float output_height) const {
+    return needs_update_ && !alert_geometry(output_width, output_height).box.contains(x, y);
 }
 
 std::vector<PixelRect> HostPickerScreen::compute_rows(std::size_t count,
@@ -412,9 +445,28 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
 
     const int count = static_cast<int>(hosts.size());
     host_count_ = hosts.size();
+
+    // Saying which device needs an update: it takes every press until
+    // answered.
+    if (needs_update_) {
+        bool off = false;
+        for (const int tap : take_taps(pointers, output_width, output_height)) off = off || tap == kTapOffPopup;
+        const int answer = alert_cursor_.update(actions, pointers, alert_geometry(output_width, output_height));
+        if (answer == 1 && alert_buttons().size() == 2) result.check_for_updates = true;
+        if (answer != PopupCursor::kNone || off) needs_update_.reset();
+        return result;
+    }
+
     const auto choose = [&](int index) {
+        const ds::net::DiscoveredHost& host = hosts[static_cast<std::size_t>(index)];
+        if (host.needs_update()) {
+            needs_update_ = host;
+            const std::size_t buttons = alert_buttons().size();
+            alert_cursor_.reset(static_cast<int>(buttons), static_cast<int>(buttons) - 1);
+            return;
+        }
         result.chosen = true;
-        result.host = hosts[static_cast<std::size_t>(index)];
+        result.host = host;
     };
 
     for (const UiAction action : actions) {
@@ -504,7 +556,8 @@ void HostPickerScreen::render(QuadRenderer& quads,
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
         const ds::net::DiscoveredHost& host = hosts[index];
-        const bool focused = (static_cast<int>(index) == focus_);
+        // Behind the alert nothing is ringed.
+        const bool focused = (static_cast<int>(index) == focus_) && !needs_update_;
         const bool available = host.offers(wanted_screen_);
 
         draw_menu_row(quads, row, focused, scale, index + 1 == rows.size(), static_cast<int>(index) == focus_ + 1);
@@ -529,13 +582,29 @@ void HostPickerScreen::render(QuadRenderer& quads,
                   scale, available ? menu_row_text(focused) : theme.text_dim);
         text.draw(quads, host_row_detail(host, available), text_x, top + step, sub_scale,
                   theme.text_dim);
+        if (host.needs_update()) {
+            text.draw(quads, "Needs Update", row.x + row.w - pad, std::round(row.y + (row.h - line) * 0.5f), scale,
+                      theme.text_dim, TextAlign::Right);
+        }
     }
 
+    const bool on_host = focus_ >= 0 && focus_ < static_cast<int>(hosts.size());
+    const char* act = !on_host                                                 ? "Choose"
+                      : hosts[static_cast<std::size_t>(focus_)].needs_update() ? "Select"
+                                                                                : "Connect";
     draw_page_guide(quads, text, glyphs, frame,
-                    {{ButtonGlyph::A, focus_ >= static_cast<int>(hosts.size()) ? "Choose" : "Connect",
-                      PromptRole::ActsOnSelection},
+                    {{ButtonGlyph::A, act, PromptRole::ActsOnSelection},
                      {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                     &guide_hits_);
+
+    if (needs_update_) {
+        const std::vector<PopupButton> buttons = alert_buttons();
+        const PopupGeometry popup = alert_geometry(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, buttons, alert_cursor_.focus(),
+                   alert_cursor_.shown());
+        draw_popup_text(quads, text, PopupText{alert_message(), {}, 0}, popup.body.x, popup.body.y, popup.body.w,
+                        output_height);
+    }
 }
 
 void LauncherScreen::describe_for_sound(UiSoundView& view) const {
@@ -549,6 +618,8 @@ void LauncherScreen::describe_for_sound(UiSoundView& view) const {
 void HostPickerScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, needs_update_ ? 1u : 0u);
+    if (needs_update_) mix_sound_state(view.focus, static_cast<uint64_t>(alert_cursor_.focus() + 1000));
 }
 
 }  // namespace ds

@@ -70,12 +70,30 @@ void test_browser_merges_and_expires() {
     browser.expire(2000 + kHostExpiryMs + 1);
     CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(0));
 
-    // A beacon from a version we do not speak is never shown: connecting would
-    // only fail later with a worse message.
+    // A beacon from a version we do not speak is listed, as needing an update,
+    // rather than leaving the player looking at "No devices found yet" -- but
+    // it offers no screen, so nothing joins it.
     BeaconMessage future = beacon;
     future.protocol_version = kProtocolVersion + 1;
     browser.ingest(future, "192.168.1.11", 3000);
-    CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(0));
+    CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(1));
+    CHECK(browser.hosts()[0].needs_update());
+    CHECK(!browser.hosts()[0].is_older());
+    CHECK(!browser.hosts()[0].offers(ScreenId::Top));
+    CHECK(!browser.hosts()[0].offers(ScreenId::Bottom));
+
+    BeaconMessage past = beacon;
+    past.protocol_version = kProtocolVersion - 1;
+    browser.ingest(past, "192.168.1.12", 3000);
+    CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(2));
+    CHECK(browser.hosts()[1].needs_update());
+    CHECK(browser.hosts()[1].is_older());
+
+    // Updated in place, it can be joined.
+    browser.ingest(beacon, "192.168.1.12", 3500);
+    CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(2));
+    CHECK(!browser.hosts()[1].needs_update());
+    CHECK(browser.hosts()[1].offers(ScreenId::Top));
 }
 
 // A Wii U-sized icon: noisy enough that it takes several pieces even deflated.

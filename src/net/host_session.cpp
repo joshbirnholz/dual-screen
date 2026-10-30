@@ -903,9 +903,15 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             if (hello.protocol_version != kProtocolVersion) {
                 RejectMessage reject;
-                reject.reason = "This device is running a different version of dualscreen (theirs " +
-                                std::to_string(hello.protocol_version) + ", ours " +
-                                std::to_string(kProtocolVersion) + ").";
+                // Said to the player on the other device, so in which of the
+                // two needs the update rather than protocol numbers.
+                reject.reason = hello.protocol_version < kProtocolVersion
+                                    ? "This device is on an older build of Dualscreen than the other. It will "
+                                      "need to be updated before it can connect."
+                                    : "The other device is on an older build of Dualscreen than this one. It "
+                                      "will need to be updated before this device can connect.";
+                log_warn("turned away a device speaking version " + std::to_string(hello.protocol_version) +
+                         " of the protocol; this speaks " + std::to_string(kProtocolVersion));
                 std::vector<uint8_t> out;
                 encode_reject(reject, out);
                 companion_.send(out);
