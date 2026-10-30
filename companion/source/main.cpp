@@ -855,6 +855,8 @@ void Client::follow_recent_games() {
         LauncherTile tile;
         tile.key = game.host.id + "/" + game.game.id;
         tile.system = RemoteStartScreen::system_label(game.game.system);
+        tile.title = game.game.title;
+        tile.computer = game.host.name;
         tile.icon_width = game.icon_width;
         tile.icon_height = game.icon_height;
         tile.icon_rgba = game.icon_rgba;
@@ -1038,7 +1040,9 @@ void Client::join(const net::DiscoveredHost& host) {
     launch_finder_.stop();
     recent_games_.stop();
     launcher_.set_recent({});
-    remote_start_.close();
+    // A game started from the first screen keeps its page up, saying it is
+    // connecting, until the game is on screen.
+    if (remote_start_.is_open()) remote_start_.connecting();
     awaited_launch_.reset();
     session_.connect_to(host);
     video_layers_.forget();
@@ -1247,7 +1251,7 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
     static const std::vector<GuideHit> none;
     switch (state_) {
         case State::Launcher: return launcher_.guide_hits();
-        case State::Connecting: return connecting_hits_;
+        case State::Connecting: return remote_start_.is_open() ? remote_start_.guide_hits() : connecting_hits_;
         case State::Browsing:
         case State::Failed: return host_picker_.guide_hits();
         // Nothing is drawn over a game. The way in to the menu there is two
@@ -1557,12 +1561,18 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 // Started on that computer, and joined as the bottom screen
                 // -- the one held -- once it is up there.
                 const std::vector<net::RecentGamesFeed::Game> games = recent_games_.games();
-                if (result.recent < 0 || result.recent >= static_cast<int>(games.size())) break;
-                const net::RecentGamesFeed::Game picked = games[static_cast<std::size_t>(result.recent)];
+                const auto picked = std::find_if(games.begin(), games.end(), [&](const auto& game) {
+                    return game.host.id + "/" + game.game.id == result.recent;
+                });
+                if (picked == games.end()) {
+                    launcher_.open(false);
+                    break;
+                }
                 begin_search(ScreenId::Bottom);
                 if (state_ != State::Browsing) break;
-                remote_start_.open_and_start(picked.host, net::remote_start_token(tokens_path(), picked.host.id),
-                                             picked.game);
+                remote_start_.open_and_start(picked->host, net::remote_start_token(tokens_path(), picked->host.id),
+                                             picked->game, picked->icon_width, picked->icon_height,
+                                             picked->icon_rgba);
                 state_ = State::RemoteStart;
                 break;
             }
@@ -1607,13 +1617,27 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         if (result.token_refused) net::keep_remote_start_token(tokens_path(), remote_start_.host().id, "");
         if (result.answered) net::remember_computer(tokens_path(), remote_start_.host());
         if (result.started) {
-            // Joined as the bottom screen as soon as it is up there.
+            // Joined as the bottom screen as soon as it is up there, the
+            // page still up.
             awaited_launch_ = AwaitedLaunch{remote_start_.host().address, result.started_title,
                                             remote_start_.host().name, net::monotonic_millis() + 120000};
-            host_picker_.open(host_picker_.wanted_screen());
-            state_ = State::Browsing;
         } else if (result.back) {
             open_launcher();
+            return;
+        }
+        if (remote_start_.awaiting_game() && awaited_launch_) {
+            if (net::monotonic_millis() > awaited_launch_->until_ms) {
+                log_warn(awaited_launch_->title + " did not show up from " + awaited_launch_->computer);
+                remote_start_.fail(awaited_launch_->title + " did not start on " + awaited_launch_->computer + ".");
+                awaited_launch_.reset();
+                return;
+            }
+            for (const net::DiscoveredHost& host : session_.hosts()) {
+                if (host.address == awaited_launch_->address && host.offers(ScreenId::Bottom)) {
+                    join(host);
+                    break;
+                }
+            }
         }
         return;
     }
@@ -1992,6 +2016,7 @@ void Client::run() {
                 break;
             case State::Connecting:
                 if (session_.status() == net::CompanionSession::Status::Connected) {
+                    remote_start_.close();
                     state_ = State::Playing;
                     close_menu();
                     input_.set_game_input_enabled(true);
@@ -2339,6 +2364,10 @@ void Client::draw_scene() {
 #if DS_LOCAL_PLAY
         update_prompt_.render(quads_, text_, button_glyphs_, width, height);
 #endif
+        return;
+    }
+    if (state_ == State::Connecting && remote_start_.is_open()) {
+        remote_start_.render(quads_, text_, button_glyphs_, width, height);
         return;
     }
     if (state_ == State::Connecting) {

@@ -12,6 +12,7 @@
 #include "render/texture.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/menu_page.hpp"
+#include "ui/popup.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
@@ -27,13 +28,14 @@ enum class LauncherChoice {
     // Data Management is in here, as its first row.
     Settings,
     Quit,
-    // One of the recently played games along the foot: `recent` says which.
+    // One of the recently played games along the foot, the start asked
+    // about and agreed to: `recent` says which, by its LauncherTile::key.
     StartRecent,
 };
 
 struct LauncherResult {
     LauncherChoice choice = LauncherChoice::None;
-    int recent = -1;
+    std::string recent;
 };
 
 // A game recently played on a computer this device can start games on, as
@@ -42,6 +44,10 @@ struct LauncherTile {
     // The same game on the same computer: a texture made once.
     std::string key;
     std::string system;
+    // For the alert asking before it is started: "Start <title> on
+    // <computer>?"
+    std::string title;
+    std::string computer;
     int icon_width = 0;
     int icon_height = 0;
     std::vector<uint8_t> icon_rgba;
@@ -103,7 +109,8 @@ public:
     bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
     // A row by its index.
     int entry_at(float x, float y, float output_width, float output_height) const override;
-    bool off_popup(float, float, float, float) const override { return false; }
+    // Off the alert asking before a game is started: it goes away.
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
     // Nothing scrolls.
     std::vector<float> scroll_state(float, float) const override { return {}; }
     void set_scroll_state(const std::vector<float>&, float, float) override {}
@@ -136,6 +143,12 @@ private:
     // How many tiles fit, last laid out: the cursor goes no further.
     int tiles_shown_ = 0;
     int tile_columns_ = 1;
+    // The game chosen along the foot, being asked about -- "Start it on
+    // that computer?" -- or -1.
+    int confirming_ = -1;
+    PopupCursor confirm_cursor_;
+    std::string confirm_message() const;
+    PopupGeometry confirm_geometry(float output_width, float output_height) const;
 
     bool open_ = false;
     int focus_ = 0;

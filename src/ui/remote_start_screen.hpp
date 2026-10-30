@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -11,6 +12,7 @@
 #include "net/launch_service.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/menu_page.hpp"
 #include "ui/popup.hpp"
@@ -21,7 +23,8 @@ namespace ds {
 struct RemoteStartResult {
     // B, or OK on an alert: back to the first screen.
     bool back = false;
-    // The game was started over there: the caller joins it once it shows up.
+    // The game was started over there: the caller joins it once it shows up,
+    // the page still up -- see connecting() and close().
     bool started = false;
     std::string started_title;
     // The computer no longer knows this device's token: the caller forgets it.
@@ -32,10 +35,14 @@ struct RemoteStartResult {
 };
 
 // A game chosen from the first screen's recently played, being started on
-// the computer it was played on -- see net/launch_service.hpp: that computer
-// woken first when it is asleep, and an alert when it cannot be woken or
-// will not start it. Nothing else is asked here; a device is let start games
-// on a computer by having joined a game there -- see RemoteStartGrant.
+// the computer it was played on -- see net/launch_service.hpp -- shown as
+// one page from the choice to the game: its icon and "Starting <title>..."
+// in the middle, with what is happening under it and a spinner, through
+// waking that computer when it is asleep, starting the game, waiting for it
+// to come up and joining it. B leaves at any point; an alert says when the
+// computer cannot be woken or will not start it. Nothing else is asked here;
+// a device is let start games on a computer by having joined a game there
+// -- see RemoteStartGrant.
 //
 // Everything asked over the network is asked on a thread of its own, so the
 // page never stops drawing while the computer answers.
@@ -43,9 +50,19 @@ class RemoteStartScreen : public MenuPage {
 public:
     ~RemoteStartScreen() override;
 
-    // `host.asleep`: woken first, then asked to start `game`.
-    void open_and_start(const net::LaunchHost& host, std::string token, const LaunchableGame& game);
+    // `host.asleep`: woken first, then asked to start `game`. `icon_rgba`
+    // is the game's icon, `icon_width` by `icon_height`, or empty.
+    void open_and_start(const net::LaunchHost& host, std::string token, const LaunchableGame& game,
+                        int icon_width = 0, int icon_height = 0, std::vector<uint8_t> icon_rgba = {});
+    // Started, and now being joined: said under the title until close().
+    void connecting();
+    // It never came up, or the joining failed: an alert says so, and OK
+    // leaves.
+    void fail(std::string message);
     void close();
+    // Waiting on the game to come up after starting it -- see
+    // RemoteStartResult::started -- for the caller to join it.
+    bool awaiting_game() const { return open_ && step_ == Step::Awaiting && alert_.empty(); }
     bool is_open() const { return open_; }
     const net::LaunchHost& host() const { return host_; }
     // What a press here could have changed -- see UiSoundJudge.
@@ -78,6 +95,10 @@ private:
         net::LaunchHost woken;
         bool ok = false;
         bool unpaired = false;
+        // Started: that game running there already, or another one, by
+        // its title -- see net::StartAnswer.
+        bool already = false;
+        std::string running;
         std::string error;
     };
     // Shared with its thread, which is let go rather than waited for: a
@@ -94,17 +115,31 @@ private:
     void run(std::function<Outcome(const std::atomic<bool>& cancelled)> work, std::string waiting_for);
     void drop_job();
     void wake();
-    void start();
+    // `replace`: the game running there closed first.
+    void start(bool replace = false);
     void alert(std::string message);
     void handle_outcome(const Outcome& outcome, RemoteStartResult& result);
+    std::string status() const;
 
+    // Where it has got to, said under the title.
+    enum class Step { Waking, Starting, Closing, Awaiting, Connecting };
+    Step step_ = Step::Starting;
     bool open_ = false;
+    int icon_width_ = 0;
+    int icon_height_ = 0;
+    std::vector<uint8_t> icon_rgba_;
+    Texture icon_;
+    std::chrono::steady_clock::time_point opened_at_{};
     net::LaunchHost host_;
     std::string token_;
     LaunchableGame game_;
     std::string waiting_for_;
     // Set when something went wrong: an alert says what, and OK leaves.
+    // Or, with `asking_close_`, another game is running there: Cancel
+    // leaves, and Close It closes that one and starts this one.
     std::string alert_;
+    bool asking_close_ = false;
+    std::string running_title_;
     PopupCursor alert_cursor_;
     std::shared_ptr<Job> job_;
     std::vector<GuideHit> guide_hits_;

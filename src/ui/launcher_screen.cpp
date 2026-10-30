@@ -48,6 +48,7 @@ std::vector<PixelRect> LauncherScreen::compute_rows(float output_width,
 void LauncherScreen::open(bool runs_games) {
     open_ = true;
     focus_ = 0;
+    confirming_ = -1;
     runs_games_ = runs_games;
     rows_.clear();
     if (runs_games || offers_load_game_) {
@@ -66,7 +67,16 @@ void LauncherScreen::open(bool runs_games) {
 }
 
 void LauncherScreen::set_recent(std::vector<LauncherTile> tiles) {
+    // The game being asked about stays the one asked about, wherever it
+    // moved to; gone, the alert goes too.
+    const std::string asked = confirming_ >= 0 && confirming_ < static_cast<int>(tiles_.size())
+                                  ? tiles_[static_cast<std::size_t>(confirming_)].key
+                                  : std::string();
     tiles_ = std::move(tiles);
+    confirming_ = -1;
+    for (std::size_t index = 0; index < tiles_.size() && !asked.empty(); ++index) {
+        if (tiles_[index].key == asked) confirming_ = static_cast<int>(index);
+    }
     // Textures for games no longer shown go.
     for (auto texture = tile_textures_.begin(); texture != tile_textures_.end();) {
         const bool kept = std::any_of(tiles_.begin(), tiles_.end(),
@@ -87,20 +97,21 @@ std::vector<PixelRect> LauncherScreen::compute_tiles(float output_width, float o
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     const float below = rows.empty() ? frame.content_top : rows.back().y + rows.back().h;
-    // One row in what is left under the menu, along the foot of the page,
-    // as a Wii U GamePad's Quick Start lays its icons out.
-    const float gap = std::round(frame.line * 1.2f);
-    const float room = frame.content_bottom - below - gap;
-    const float tile = std::round(std::min(frame.line * 7.0f, room));
+    // One row, centred in what is left under the menu -- as much room above
+    // it as below, and the row in the middle of the page, as a Wii U
+    // GamePad's Quick Start lays its icons out.
+    const float gap = std::round(frame.line * 1.6f);
+    const float margin = std::round(frame.line * 1.4f);
+    const float room = frame.content_bottom - below;
+    const float tile = std::round(std::min(frame.line * 6.0f, room - margin * 2.0f));
     if (tile < frame.line * 2.5f) return tiles;
     columns = std::max(1, static_cast<int>((frame.panel.w + gap) / (tile + gap)));
     const int shown = std::min(static_cast<int>(tiles_.size()), columns);
-    const int lines = (shown + columns - 1) / columns;
-    const float top = frame.content_bottom - lines * tile - (lines - 1) * gap;
+    const float width = shown * tile + (shown - 1) * gap;
+    const float left = std::round(frame.panel.x + (frame.panel.w - width) * 0.5f);
+    const float top = std::round(below + (room - tile) * 0.5f);
     for (int index = 0; index < shown; ++index) {
-        const int column = index % columns;
-        const int line = index / columns;
-        tiles.push_back(PixelRect{frame.panel.x + column * (tile + gap), top + line * (tile + gap), tile, tile});
+        tiles.push_back(PixelRect{left + index * (tile + gap), top, tile, tile});
     }
     return tiles;
 }
@@ -133,6 +144,20 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     if (count == 0) {
         return result;
     }
+    // Asking whether to start the game chosen along the foot: it takes every
+    // press until answered.
+    if (confirming_ >= 0) {
+        bool off = false;
+        for (const int tap : take_taps(pointers, output_width, output_height)) off = off || tap == kTapOffPopup;
+        const int answer = confirm_cursor_.update(actions, pointers, confirm_geometry(output_width, output_height));
+        if (answer == 1) {
+            result.choice = LauncherChoice::StartRecent;
+            result.recent = tiles_[static_cast<std::size_t>(confirming_)].key;
+            open_ = false;
+        }
+        if (answer != PopupCursor::kNone || off) confirming_ = -1;
+        return result;
+    }
     int columns = 1;
     tiles_shown_ = static_cast<int>(compute_tiles(output_width, output_height, columns).size());
     tile_columns_ = columns;
@@ -142,8 +167,10 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
         if (index < count) {
             result.choice = rows_[static_cast<std::size_t>(index)];
         } else if (index - count < tiles_shown_) {
-            result.choice = LauncherChoice::StartRecent;
-            result.recent = index - count;
+            // Asked first: it starts a game on another computer, perhaps
+            // waking it.
+            confirming_ = index - count;
+            confirm_cursor_.reset(2, 1);
         }
     };
 
@@ -215,6 +242,23 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     return result;
 }
 
+std::string LauncherScreen::confirm_message() const {
+    if (confirming_ < 0 || confirming_ >= static_cast<int>(tiles_.size())) return std::string();
+    const LauncherTile& tile = tiles_[static_cast<std::size_t>(confirming_)];
+    return "Start " + tile.title + " on " + tile.computer + "?";
+}
+
+PopupGeometry LauncherScreen::confirm_geometry(float output_width, float output_height) const {
+    static const std::vector<PopupButton> buttons{{"Cancel", ""}, {"Start", ""}};
+    const float width = popup_body_width(output_width, output_height);
+    return popup_geometry(output_width, output_height,
+                          popup_text_height(PopupText{confirm_message(), {}, 0}, width, output_height), buttons);
+}
+
+bool LauncherScreen::off_popup(float x, float y, float output_width, float output_height) const {
+    return confirming_ >= 0 && !confirm_geometry(output_width, output_height).box.contains(x, y);
+}
+
 std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available) {
     return host.device_name + (available ? "" : "   this screen is already taken");
 }
@@ -255,8 +299,10 @@ void LauncherScreen::render(QuadRenderer& quads,
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
-        const bool focused = (static_cast<int>(index) == focus_);
-        draw_menu_row(quads, row, focused, scale, index + 1 == rows.size(), static_cast<int>(index) == focus_ + 1);
+        // Behind the alert, nothing is ringed.
+        const bool focused = static_cast<int>(index) == focus_ && confirming_ < 0;
+        draw_menu_row(quads, row, focused, scale, index + 1 == rows.size(),
+                      static_cast<int>(index) == focus_ + 1 && confirming_ < 0);
 
         const float pad = menu_row_pad(line);
         // Centred on the row, since there is nothing under it any more: the
@@ -293,7 +339,7 @@ void LauncherScreen::render(QuadRenderer& quads,
         const bool held = pointer_holding(tile);
         if (held) {
             quads.draw_rounded_rect(tile, radius, menu_highlight_fill());
-        } else if (cursor_drawn(focus_ == static_cast<int>(rows_.size() + index))) {
+        } else if (confirming_ < 0 && cursor_drawn(focus_ == static_cast<int>(rows_.size() + index))) {
             const float ring = std::max(3.0f, std::round(scale * 1.6f));
             const float out = std::round(ring * 1.2f);
             quads.draw_rounded_ring(PixelRect{tile.x - out, tile.y - out, tile.w + out * 2.0f, tile.h + out * 2.0f},
@@ -310,6 +356,15 @@ void LauncherScreen::render(QuadRenderer& quads,
             : std::string("Looking for devices running a game...");
     draw_page_status(quads, text, glyphs, frame, found, hosts_found > 0 ? theme.success : theme.text_dim);
     draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
+
+    if (confirming_ >= 0) {
+        static const std::vector<PopupButton> buttons{{"Cancel", ""}, {"Start", ""}};
+        const PopupGeometry popup = confirm_geometry(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, buttons, confirm_cursor_.focus(),
+                   confirm_cursor_.shown());
+        draw_popup_text(quads, text, PopupText{confirm_message(), {}, 0}, popup.body.x, popup.body.y, popup.body.w,
+                        output_height);
+    }
 }
 
 // --- HostPickerScreen -------------------------------------------------------
@@ -489,6 +544,8 @@ void LauncherScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     mix_sound_state(view.rest, rows_.size());
+    mix_sound_state(view.rest, static_cast<uint64_t>(confirming_ + 1));
+    if (confirming_ >= 0) mix_sound_state(view.focus, static_cast<uint64_t>(confirm_cursor_.focus() + 1000));
 }
 
 void HostPickerScreen::describe_for_sound(UiSoundView& view) const {

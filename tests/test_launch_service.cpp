@@ -62,6 +62,21 @@ void test_a_device_pairs_then_starts_a_game() {
         started.push_back(game.title);
         return true;
     };
+    // What is running there, as the test says.
+    std::string running_title;
+    bool running_same = false;
+    int closed = 0;
+    config.running = [&](const LaunchableGame&, std::string& title, bool& same) {
+        if (running_title.empty()) return false;
+        title = running_title;
+        same = running_same;
+        return true;
+    };
+    config.close_running = [&] {
+        ++closed;
+        running_title.clear();
+        return true;
+    };
     config.icon = [](const LaunchableGame&, int& width, int& height, std::vector<uint8_t>& rgba) {
         width = 2;
         height = 3;
@@ -118,17 +133,37 @@ void test_a_device_pairs_then_starts_a_game() {
     CHECK(width == 2 && height == 3 && rgba.size() == 24u && rgba[23] == static_cast<uint8_t>(23 * 7));
     CHECK(!host_game_icon(host, token, "steam:999", width, height, rgba, &error));
 
-    CHECK_MSG(start_host_game(host, token, "steam:123", unpaired, &error), error);
+    StartAnswer answer;
+    CHECK_MSG(start_host_game(host, token, "steam:123", false, answer, &error), error);
+    CHECK(!answer.already && answer.running.empty());
     CHECK(started == std::vector<std::string>{"Kirby Mass Attack"});
     // Nothing it did not list.
-    CHECK(!start_host_game(host, token, "file:/usr/bin/xterm", unpaired, &error));
+    CHECK(!start_host_game(host, token, "file:/usr/bin/xterm", false, answer, &error));
     CHECK_EQ(started.size(), 1u);
     CHECK_EQ(service.launches(), 1u);
 
+    // Running already: joined as it is, nothing started again.
+    running_title = "Kirby Mass Attack";
+    running_same = true;
+    CHECK_MSG(start_host_game(host, token, "steam:123", false, answer, &error), error);
+    CHECK(answer.already);
+    CHECK_EQ(started.size(), 1u);
+    // Another game running: said, and nothing started until asked to
+    // close it.
+    running_title = "Mario Kart DS";
+    running_same = false;
+    CHECK(!start_host_game(host, token, "steam:123", false, answer, &error));
+    CHECK_STR_EQ(answer.running, "Mario Kart DS");
+    CHECK_EQ(started.size(), 1u);
+    CHECK_EQ(closed, 0);
+    CHECK_MSG(start_host_game(host, token, "steam:123", true, answer, &error), error);
+    CHECK_EQ(closed, 1);
+    CHECK_EQ(started.size(), 2u);
+
     // Forgotten: turned away again.
     record.forget_devices();
-    CHECK(!start_host_game(host, token, "steam:123", unpaired, &error));
-    CHECK(unpaired);
+    CHECK(!start_host_game(host, token, "steam:123", false, answer, &error));
+    CHECK(answer.unpaired);
 
     service.stop();
 }

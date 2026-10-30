@@ -776,9 +776,13 @@ computer, newest first, as one row of icons along the bottom. While the
 computer is on and found, the row has only the games it can start now; while
 it is off or asleep, the row keeps the ones last seen, icons and all.
 
-Choosing one starts it there -- through its Steam shortcut, so its Steam Input
-layout applies, or from its ROM folders when Steam has none -- and the device
-joins it as the bottom screen as soon as it is up. A computer that is asleep
+Choosing one asks first -- "Start <game> on <computer>?" -- then starts it
+there -- through its Steam shortcut, so its Steam Input layout applies, or
+from its ROM folders when Steam has none -- and the device joins it as the
+bottom screen as soon as it is up, all on one page showing the game's icon
+and what is happening, which B leaves. If that game is already running there,
+the device just joins it; if another one is, it asks before closing that one
+(its save written as it closes) and starting this one in its place. A computer that is asleep
 is first woken with Wake-on-LAN, as Moonlight does: a packet for each of its
 network cards, sent to the whole network and to its last address, again every
 few seconds for up to a minute and a half. If it does not wake, an alert says

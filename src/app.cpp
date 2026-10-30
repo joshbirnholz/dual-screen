@@ -5805,6 +5805,8 @@ void App::Impl::open_launcher() {
     launcher->open();
     state = State::Launcher;
     input.set_game_input_enabled(false);
+    remote_start.close();
+    awaited_launch.reset();
     // Looking for computers to start a game on from here, for the recently
     // played games along the foot.
     if (!launch_finder.running()) launch_finder.start();
@@ -5822,6 +5824,8 @@ void App::Impl::follow_recent_games() {
         LauncherTile tile;
         tile.key = game.host.id + "/" + game.game.id;
         tile.system = RemoteStartScreen::system_label(game.game.system);
+        tile.title = game.game.title;
+        tile.computer = game.host.name;
         tile.icon_width = game.icon_width;
         tile.icon_height = game.icon_height;
         tile.icon_rgba = game.icon_rgba;
@@ -6022,10 +6026,12 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
 }
 
 void App::Impl::note_game_closed() {
+    clear_running_game(paths.data_dir + "/running_game.json");
     if (save_store && !game_path.empty()) save_store->note_game_stopped(game_path);
 }
 
 void App::Impl::note_external_game_closed() {
+    clear_running_game(paths.data_dir + "/running_game.json");
     if (save_store && !external_save_rom.empty()) save_store->note_game_stopped(external_save_rom);
     external_save_rom.clear();
 }
@@ -6175,6 +6181,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // For a connected device's row of recently played games -- see
     // net/launch_service.hpp.
     remember_played(paths.data_dir + "/played_games.json", rom_path, static_cast<int64_t>(std::time(nullptr)));
+    // And which one is running now, for one asking to start another.
+    note_running_game(paths.data_dir + "/running_game.json", rom_path, game_title);
     refresh_game_icon();
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
@@ -6667,13 +6675,19 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     // Started on that computer, and joined as the bottom
                     // screen once it is up there.
                     const std::vector<net::RecentGamesFeed::Game> games = recent_games.games();
-                    if (result.recent < 0 || result.recent >= static_cast<int>(games.size())) break;
-                    const net::RecentGamesFeed::Game picked = games[static_cast<std::size_t>(result.recent)];
+                    const auto picked = std::find_if(games.begin(), games.end(), [&](const auto& game) {
+                        return game.host.id + "/" + game.game.id == result.recent;
+                    });
+                    if (picked == games.end()) {
+                        launcher->open();
+                        break;
+                    }
                     start_companion(ScreenId::Bottom);
                     if (state != State::HostPicker) break;
-                    remote_start.open_and_start(picked.host,
-                                                net::remote_start_token(remote_start_tokens(), picked.host.id),
-                                                picked.game);
+                    remote_start.open_and_start(picked->host,
+                                                net::remote_start_token(remote_start_tokens(), picked->host.id),
+                                                picked->game, picked->icon_width, picked->icon_height,
+                                                picked->icon_rgba);
                     state = State::RemoteStart;
                     break;
                 }
@@ -6733,17 +6747,36 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (result.token_refused) net::keep_remote_start_token(remote_start_tokens(), remote_start.host().id, "");
             if (result.answered) net::remember_computer(remote_start_tokens(), remote_start.host());
             if (result.started) {
-                // To the list, which joins the game once it is up there.
+                // Joined as soon as it is up there, the page still up.
                 stop_recent_games();
                 awaited_launch = AwaitedLaunch{remote_start.host().address, result.started_title,
                                                remote_start.host().name,
                                                std::chrono::steady_clock::now() + std::chrono::seconds(120)};
-                host_picker->open(host_picker->wanted_screen());
-                state = State::HostPicker;
             } else if (result.back) {
                 leave_host_picker();
                 companion_session->disconnect();
                 open_launcher();
+                break;
+            }
+            if (remote_start.awaiting_game() && awaited_launch) {
+                if (std::chrono::steady_clock::now() > awaited_launch->until) {
+                    log_warn(awaited_launch->title + " did not show up from " + awaited_launch->computer);
+                    remote_start.fail(awaited_launch->title + " did not start on " + awaited_launch->computer + ".");
+                    awaited_launch.reset();
+                    break;
+                }
+                for (const net::DiscoveredHost& host : companion_session->hosts()) {
+                    if (host.address != awaited_launch->address || !host.offers(ScreenId::Bottom)) continue;
+                    // Joined under this same page, which says so until the
+                    // game is on screen.
+                    awaited_launch.reset();
+                    joining_host = host;
+                    companion_session->connect_to(host);
+                    menu_backdrop.forget();
+                    remote_start.connecting();
+                    state = State::Companion;
+                    break;
+                }
             }
             break;
         }
@@ -6752,7 +6785,13 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             // Still joining: the connecting screen is up, its only offer is to
             // stop waiting, and nothing is connected for a button to drive.
             if (companion_session->status() == net::CompanionSession::Status::Connecting) {
-                for (const UiAction action : actions) {
+                std::vector<UiAction> pressed = actions;
+                // The quick start page's Cancel, tapped.
+                if (remote_start.is_open()) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(remote_start.guide_hits(), pressed, rest);
+                }
+                for (const UiAction action : pressed) {
                     if (action == UiAction::Cancel || action == UiAction::ToggleMenu) {
                         companion_session->disconnect();
                         open_launcher();
@@ -6761,6 +6800,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            // Joined: the quick start page that led here is done.
+            if (remote_start.is_open()) remote_start.close();
             // The host's settings are up. This device is not drawing them --
             // see MenuAction::Settings -- but the player is still holding a pad
             // and it is still their session, so the presses go over.
@@ -7277,8 +7318,14 @@ void App::Impl::render() {
                               "say yes; otherwise turn it on in System Settings, Privacy & "
                               "Security, Local Network.")
                 : std::string();
-        render_connecting_screen(quads, text, button_glyphs, width, height,
-                                 joining_host.device_name, joining_host.game_title, note);
+        if (remote_start.is_open() && note.empty()) {
+            // A game started from the first screen: its page stays up,
+            // saying it is connecting, until the game is on screen.
+            remote_start.render(quads, text, button_glyphs, width, height);
+        } else {
+            render_connecting_screen(quads, text, button_glyphs, width, height,
+                                     joining_host.device_name, joining_host.game_title, note);
+        }
         swap();
         ++frames_rendered;
         return;

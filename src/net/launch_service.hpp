@@ -86,6 +86,11 @@ public:
         std::function<std::vector<LaunchableGame>()> games;
         // Starts one. False with why, when it could not.
         std::function<bool(const LaunchableGame&, std::string*)> launch;
+        // Whether a game is running here already, asked before starting
+        // one: its title, and whether it is `wanted` itself. False for none.
+        std::function<bool(const LaunchableGame& wanted, std::string& title, bool& same)> running;
+        // Closes the one running, waiting until it has gone.
+        std::function<bool()> close_running;
         // One's icon, RGBA: false when it has none to give.
         std::function<bool(const LaunchableGame&, int&, int&, std::vector<uint8_t>&)> icon;
         // The hardware addresses to give out; empty means this machine's.
@@ -220,8 +225,18 @@ std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path);
 // token was not one the PC knows -- its devices forgotten since.
 bool list_host_games(const LaunchHost& host, const std::string& token, std::vector<LaunchableGame>& out,
                      bool& unpaired, std::string* error);
-bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id,
-                     bool& unpaired, std::string* error);
+// How a start was answered beyond yes or no.
+struct StartAnswer {
+    bool unpaired = false;
+    // That very game is running there already: nothing was started, and it
+    // is to be joined as it is.
+    bool already = false;
+    // Another game is running there, by its title: nothing was started.
+    // Asked again with `replace`, it is closed first.
+    std::string running;
+};
+bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id, bool replace,
+                     StartAnswer& answer, std::string* error);
 // A listed game's icon, RGBA. False when it has none -- or the computer is
 // one from before icons were asked for, which says it does not know the
 // question.

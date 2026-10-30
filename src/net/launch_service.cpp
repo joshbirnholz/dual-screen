@@ -126,12 +126,13 @@ json describe_game(const LaunchableGame& game) {
 }
 
 // One request, one answer.
-bool exchange(const LaunchHost& host, const json& request, json& reply, std::string* error) {
+bool exchange(const LaunchHost& host, const json& request, json& reply, std::string* error,
+              uint64_t timeout_ms = kRequestTimeoutMs) {
     TcpStream stream;
     if (!stream.start_connect(host.address, host.port, error)) return false;
     stream.send(make_frame(request));
     std::vector<uint8_t> inbox;
-    const uint64_t deadline = monotonic_millis() + kRequestTimeoutMs;
+    const uint64_t deadline = monotonic_millis() + timeout_ms;
     while (true) {
         std::string pump_error;
         const bool open = stream.pump(inbox, &pump_error);
@@ -306,8 +307,20 @@ bool LaunchService::start(std::string* error) {
                     const auto found = std::find_if(games.begin(), games.end(),
                                                     [&](const LaunchableGame& game) { return game.id == id; });
                     std::string error;
+                    std::string running_title;
+                    bool same = false;
+                    const bool running =
+                        found != games.end() && config_.running && config_.running(*found, running_title, same);
                     if (found == games.end()) {
                         reply["error"] = "That game is not on " + config_.name + " any more.";
+                    } else if (running && same) {
+                        reply = {{"ok", true}, {"already", true}};
+                        log_info(found->title + " is running already; the device will join it");
+                    } else if (running && !get_or<bool>(request, "replace", false)) {
+                        reply["running"] = running_title;
+                        reply["error"] = running_title + " is running on " + config_.name + ".";
+                    } else if (running && !(config_.close_running && config_.close_running())) {
+                        reply["error"] = running_title + " could not be closed on " + config_.name + ".";
                     } else if (config_.launch && config_.launch(*found, &error)) {
                         reply = {{"ok", true}};
                         ++launches_;
@@ -777,12 +790,19 @@ bool list_host_games(const LaunchHost& host, const std::string& token, std::vect
     return true;
 }
 
-bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id,
-                     bool& unpaired, std::string* error) {
-    unpaired = false;
+bool start_host_game(const LaunchHost& host, const std::string& token, const std::string& game_id, bool replace,
+                     StartAnswer& answer, std::string* error) {
+    answer = StartAnswer();
     json reply;
-    if (!exchange(host, {{"op", "launch"}, {"token", token}, {"game", game_id}}, reply, error)) return false;
-    return answered_yes(host, reply, unpaired, error);
+    // Closing a game first can take a while: its save is written on the
+    // way out.
+    if (!exchange(host, {{"op", "launch"}, {"token", token}, {"game", game_id}, {"replace", replace}}, reply, error,
+                  replace ? 30000 : kRequestTimeoutMs)) {
+        return false;
+    }
+    answer.running = get_or<std::string>(reply, "running", "");
+    answer.already = get_or<bool>(reply, "already", false);
+    return answered_yes(host, reply, answer.unpaired, error);
 }
 
 bool host_game_icon(const LaunchHost& host, const std::string& token, const std::string& game_id, int& width,

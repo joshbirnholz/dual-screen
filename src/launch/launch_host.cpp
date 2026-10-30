@@ -10,6 +10,8 @@
 #include <thread>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "core/console_title_info.hpp"
@@ -168,6 +170,79 @@ std::string this_program() {
     return "dualscreen";
 }
 
+void note_running_game(const std::string& record_path, const std::string& rom_path, const std::string& title) {
+#ifdef DUALSCREEN_CAN_SPAWN
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(record_path).parent_path(), error);
+    std::ofstream out(record_path, std::ios::trunc);
+    out << nlohmann::json{{"path", rom_path}, {"title", title}, {"pid", static_cast<int>(getpid())}}.dump();
+#else
+    (void)record_path;
+    (void)rom_path;
+    (void)title;
+#endif
+}
+
+void clear_running_game(const std::string& record_path) {
+#ifdef DUALSCREEN_CAN_SPAWN
+    RunningGame running;
+    if (!running_game(record_path, running) || running.pid != static_cast<int>(getpid())) return;
+    std::error_code error;
+    std::filesystem::remove(record_path, error);
+#else
+    (void)record_path;
+#endif
+}
+
+bool running_game(const std::string& record_path, RunningGame& out) {
+#ifdef DUALSCREEN_CAN_SPAWN
+    std::ifstream in(record_path);
+    if (!in) return false;
+    try {
+        const nlohmann::json record = nlohmann::json::parse(in);
+        out.path = record.value("path", std::string());
+        out.title = record.value("title", std::string());
+        out.pid = record.value("pid", 0);
+    } catch (const nlohmann::json::exception&) {
+        return false;
+    }
+    // A record left by one that ended without clearing it -- killed -- is no
+    // game running.
+    return out.pid > 0 && !out.path.empty() && kill(out.pid, 0) == 0;
+#else
+    (void)record_path;
+    (void)out;
+    return false;
+#endif
+}
+
+bool close_running_game(const RunningGame& game, int timeout_ms) {
+#ifdef DUALSCREEN_CAN_SPAWN
+    if (game.pid <= 0) return false;
+    if (kill(game.pid, SIGTERM) != 0) return false;
+    log_info("closing " + game.title + " for a connected device");
+    for (int waited = 0; waited < timeout_ms; waited += 100) {
+        if (kill(game.pid, 0) != 0) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return kill(game.pid, 0) != 0;
+#else
+    (void)game;
+    (void)timeout_ms;
+    return false;
+#endif
+}
+
+bool same_game_file(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty()) return false;
+    std::error_code error;
+    const std::filesystem::path first = std::filesystem::weakly_canonical(a, error);
+    if (error) return a == b;
+    const std::filesystem::path second = std::filesystem::weakly_canonical(b, error);
+    if (error) return a == b;
+    return first == second;
+}
+
 bool launch_game_here(const LaunchableGame& game, std::string* error) {
     if (game.steam_run_id != 0) {
         // Handed to the Steam already running, which starts the shortcut as
@@ -276,6 +351,19 @@ int run_launch_service() {
         return games;
     };
     config.launch = [](const LaunchableGame& game, std::string* error) { return launch_game_here(game, error); };
+    const std::string running_record = paths.data_dir + "/running_game.json";
+    config.running = [running_record](const LaunchableGame& wanted, std::string& title, bool& same) {
+        RunningGame running;
+        if (!running_game(running_record, running)) return false;
+        title = running.title;
+        same = same_game_file(running.path, wanted.path);
+        return true;
+    };
+    config.close_running = [running_record] {
+        RunningGame running;
+        if (!running_game(running_record, running)) return true;
+        return close_running_game(running, 20000);
+    };
     config.icon = [](const LaunchableGame& game, int& width, int& height, std::vector<uint8_t>& rgba) {
         return launchable_game_icon(game, width, height, rgba);
     };
