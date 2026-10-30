@@ -418,6 +418,8 @@ private:
     // pad_connected(): a controller connecting has Steam take the others'
     // away for a moment, and they are not gone for it.
     mutable std::map<SDL_JoystickID, std::chrono::steady_clock::time_point> steam_handle_seen_;
+    // When a pad last arrived, which is when Steam takes the handles away.
+    std::chrono::steady_clock::time_point pad_arrived_at_{};
     // See single_joycon_in_use(). -1 until anything is pressed.
     SDL_JoystickID last_pad_pressed_ = -1;
     MotionReader motion_;
