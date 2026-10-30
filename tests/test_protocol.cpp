@@ -114,9 +114,28 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(static_cast<int>(with_icon.icon_height), 3);
     CHECK(with_icon.icon_rgba == welcome.icon_rgba);
     CHECK_STR_EQ(with_icon.game_title, welcome.game_title);
+    CHECK(with_icon.icon_key.empty());
+
+    // And Discord's icon for it, after the picture -- or in its place.
+    welcome.icon_key = "3ds/0004000000030800";
+    buffer.clear();
+    encode_welcome(welcome, buffer);
+    CHECK(one_message(buffer, type, payload));
+    WelcomeMessage keyed;
+    CHECK(decode_welcome(payload.data(), payload.size(), keyed));
+    CHECK(keyed.icon_rgba == welcome.icon_rgba);
+    CHECK_STR_EQ(keyed.icon_key, welcome.icon_key);
     welcome.icon_width = 0;
     welcome.icon_height = 0;
     welcome.icon_rgba.clear();
+    buffer.clear();
+    encode_welcome(welcome, buffer);
+    CHECK(one_message(buffer, type, payload));
+    WelcomeMessage key_only;
+    CHECK(decode_welcome(payload.data(), payload.size(), key_only));
+    CHECK(key_only.icon_rgba.empty());
+    CHECK_STR_EQ(key_only.icon_key, welcome.icon_key);
+    welcome.icon_key.clear();
 
     SessionStateMessage state;
     state.layout_id = "upper_on_tv";

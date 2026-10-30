@@ -252,11 +252,13 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_u64(out, message.session_token);
     const std::size_t icon_bytes =
         static_cast<std::size_t>(message.icon_width) * message.icon_height * 4u;
-    if (icon_bytes > 0 && message.icon_rgba.size() == icon_bytes) {
-        put_u16(out, message.icon_width);
-        put_u16(out, message.icon_height);
-        out.insert(out.end(), message.icon_rgba.begin(), message.icon_rgba.end());
+    const bool has_icon = icon_bytes > 0 && message.icon_rgba.size() == icon_bytes;
+    if (has_icon || !message.icon_key.empty()) {
+        put_u16(out, has_icon ? message.icon_width : 0);
+        put_u16(out, has_icon ? message.icon_height : 0);
+        if (has_icon) out.insert(out.end(), message.icon_rgba.begin(), message.icon_rgba.end());
     }
+    if (!message.icon_key.empty()) put_string(out, message.icon_key);
     finish_message(out, start, MessageType::Welcome);
 }
 
@@ -1742,6 +1744,9 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
             out.icon_width = 0;
             out.icon_height = 0;
             out.icon_rgba.clear();
+        } else if (reader.remaining() > 0) {
+            reader.string(out.icon_key);
+            if (!reader.ok() || out.icon_key.size() > 128) out.icon_key.clear();
         }
     }
     return screen_from_wire(screen, out.granted_screen);

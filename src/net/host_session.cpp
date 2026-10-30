@@ -948,6 +948,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             welcome.icon_width = static_cast<uint16_t>(config_.game_icon_width);
             welcome.icon_height = static_cast<uint16_t>(config_.game_icon_height);
             welcome.icon_rgba = config_.game_icon_rgba;
+            welcome.icon_key = config_.game_icon_key;
             std::vector<uint8_t> out;
             encode_welcome(welcome, out);
             companion_.send(out);

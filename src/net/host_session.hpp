@@ -104,6 +104,8 @@ public:
         int game_icon_width = 0;
         int game_icon_height = 0;
         std::vector<uint8_t> game_icon_rgba;
+        // Its icon for Discord: see WelcomeMessage::icon_key.
+        std::string game_icon_key;
         std::string rom_sha1;
         // Which console is running, so the companion lays its screens out the
         // same way and clamps touches to the same coordinate space.

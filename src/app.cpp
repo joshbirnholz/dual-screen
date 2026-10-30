@@ -1080,8 +1080,9 @@ struct App::Impl {
     // What Discord shows under the player's name -- see update_discord().
     std::unique_ptr<DiscordPresence> discord;
     DiscordActivity discord_activity;
-    // The running game's own icon for Discord, from start_game().
-    std::string discord_icon;
+    // The running game's own icon for Discord, from start_game(): see
+    // discord_game_icon_url(). Passed on to a companion, whose status is this.
+    std::string discord_icon_key;
     void update_discord();
     // Whether this device is the one being held as the GamePad, which is the
     // one showing the GamePad's screen -- the bottom one. With a companion
@@ -2191,8 +2192,9 @@ const std::string& App::Impl::shown_game_title() const {
     return is_companion() ? companion_session->game_title() : game_title;
 }
 
-// The game's name, and the console it is played as -- or, joined to another
-// device, whose game it is. The clock starts again whenever either changes.
+// The game's name, the console it is played as, and its icon -- the same on a
+// companion as on the host, so it does not matter which one Discord hears it
+// from. The clock starts again whenever any of them changes.
 void App::Impl::update_discord() {
     if (!discord) return;
     DiscordActivity activity;
@@ -2200,11 +2202,12 @@ void App::Impl::update_discord() {
         // Cleared, below, as for no game at all.
     } else if (is_companion()) {
         activity.details = companion_session->game_title();
-        if (!joining_host.device_name.empty()) activity.state = "Second screen for " + joining_host.device_name;
+        activity.state = system_profile(companion_session->system()).name;
+        activity.image = discord_game_icon_url(companion_session->game_icon_key());
     } else if ((source || external_source) && !game_title.empty()) {
         activity.details = game_title;
         activity.state = system_profile(system).name;
-        activity.image = discord_icon;
+        activity.image = discord_game_icon_url(discord_icon_key);
     }
     if (activity.details != discord_activity.details || activity.state != discord_activity.state ||
         activity.image != discord_activity.image) {
@@ -6095,7 +6098,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // called. See game_title.hpp: every one of these formats carries the real
     // name, and the file name is the fallback rather than the answer.
     game_title = game_title_for_file(rom_path);
-    discord_icon = discord_game_icon_url(game_icon_key(rom_path));
+    discord_icon_key = game_icon_key(rom_path);
     if (game_title.empty()) {
         game_title = path_stem(rom_path);
         // Which is a guess, and says so. A Wii U keeps its name in
@@ -6373,6 +6376,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     net::HostSession::Config host_config;
     host_config.device_name = settings.device_name;
     host_config.game_title = game_title;
+    host_config.game_icon_key = discord_icon_key;
     refresh_game_icon();
     if (game_icon_for == "here:" + game_icon_rom) {
         host_config.game_icon_width = game_icon_width;

@@ -253,6 +253,11 @@ struct WelcomeMessage {
     uint16_t icon_width = 0;
     uint16_t icon_height = 0;
     std::vector<uint8_t> icon_rgba;
+    // Which of the icons kept for Discord is this game's ("wiiu/<title ID>"
+    // and so on -- see discord_game_icon_url()), so a companion's Discord
+    // status is the host's. Trailing and optional, after the icon -- sent
+    // as 0x0 when there is none, so this still has a place.
+    std::string icon_key;
 };
 
 // Which device an audio stream belongs to.

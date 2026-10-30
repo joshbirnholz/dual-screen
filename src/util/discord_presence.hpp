@@ -17,8 +17,7 @@ struct DiscordActivity {
     // The game's name, as the console calls it. Empty means nothing is being
     // played, and the status is cleared.
     std::string details;
-    // The line under it: the console, or whose game this device is the
-    // second screen of.
+    // The line under it: the console.
     std::string state;
     // When the game started, for Discord's "elapsed" clock.
     std::time_t started = 0;

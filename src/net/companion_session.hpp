@@ -525,6 +525,8 @@ public:
     int game_icon_width() const { return game_icon_width_; }
     int game_icon_height() const { return game_icon_height_; }
     const std::vector<uint8_t>& game_icon_rgba() const { return game_icon_rgba_; }
+    // Which icon Discord shows for it -- see WelcomeMessage::icon_key.
+    const std::string& game_icon_key() const { return game_icon_key_; }
     // Whether joining is being held up by this machine refusing this app the
     // local network, rather than by the host. Worth saying on screen: the
     // waiting looks identical either way, and only one of them is worth
@@ -1164,6 +1166,7 @@ private:
     int game_icon_width_ = 0;
     int game_icon_height_ = 0;
     std::vector<uint8_t> game_icon_rgba_;
+    std::string game_icon_key_;
     SystemId system_ = SystemId::Ds;
     std::string host_layout_id_;
     bool host_paused_ = false;
