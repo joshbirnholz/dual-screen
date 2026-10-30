@@ -320,8 +320,9 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
     const float row_scale = scale * 1.1f;
     const std::vector<Row> all = rows();
     quads.set_clip(menu_list_clip(geometry.list, scale));
-    if (switching_.on() && !profile_names_.empty()) {
-        // Over the profiles, what their switches are.
+    if (std::find(all.begin(), all.end(), Row::Profile) != all.end()) {
+        // Over the profiles, what their switches are -- when they are shown:
+        // a controller being added has none yet.
         const float heading_scale = scale * 0.9f;
         text.draw(quads, "Switch Between", geometry.list.x + std::round(line * 0.5f),
                   std::round(geometry.heading_y + std::round(line * 2.6f) - TextRenderer::line_height(heading_scale) -
