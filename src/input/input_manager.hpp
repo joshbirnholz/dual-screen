@@ -346,6 +346,12 @@ private:
     // whose SDL lists all eight of the console's controller slots from the
     // start, filled or not -- see pad_connected() in the .cpp.
     bool pad_connected(SDL_JoystickID id) const;
+#ifndef __SWITCH__
+    // Whether Steam has a controller behind one of its pads, as it says this
+    // instant, and that said once a frame -- see pad_connected().
+    bool steam_slot_filled(SDL_GameController* controller) const;
+    void update_steam_pads();
+#endif
     // Every pad actually plugged in, with the SDL pad that answers for it --
     // on a Switch, the handheld controls too, which SDL has none of its own
     // for. See kSwitchHandheldId in the .cpp.
@@ -414,12 +420,16 @@ private:
     // When a pad that has just arrived may be read directly, if Steam has
     // presented none of its own by then -- see pad_connected().
     std::chrono::steady_clock::time_point steam_settled_at_{};
-    // When each of Steam's pads was last seen with a Steam handle -- see
-    // pad_connected(): a controller connecting has Steam take the others'
-    // away for a moment, and they are not gone for it.
-    mutable std::map<SDL_JoystickID, std::chrono::steady_clock::time_point> steam_handle_seen_;
-    // When a pad last arrived, which is when Steam takes the handles away.
-    std::chrono::steady_clock::time_point pad_arrived_at_{};
+    // Each of Steam's pads as this app takes it, held steady while Steam
+    // rearranges them -- see update_steam_pads().
+    struct SteamPad {
+        bool shown = false;
+        bool filled = false;
+        std::chrono::steady_clock::time_point filled_since{};
+    };
+    std::map<SDL_JoystickID, SteamPad> steam_pads_;
+    // Steam's pads that arrived while it already had others here.
+    std::set<SDL_JoystickID> arrived_among_others_;
     // See single_joycon_in_use(). -1 until anything is pressed.
     SDL_JoystickID last_pad_pressed_ = -1;
     MotionReader motion_;

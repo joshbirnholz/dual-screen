@@ -328,7 +328,6 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
     if (it == controllers_.end() || it->second == nullptr) {
         return false;
     }
-    const SteamHandleFn handle_of = steam_handle_fn();
     if (!is_steam_virtual_pad(it->second)) {
         // Steam Input is the one word on what a button is. While Steam
         // presents controllers here, every controller it can see arrives
@@ -343,28 +342,19 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
         }
         return std::chrono::steady_clock::now() >= steam_settled_at_ || !launched_by_steam();
     }
-    if (handle_of == nullptr) {
+    // What it was last frame, held through Steam rearranging its pads -- see
+    // update_steam_pads(). One that arrived since is taken as it is now.
+    const auto held = steam_pads_.find(id);
+    if (held != steam_pads_.end()) return held->second.shown;
+    return steam_slot_filled(it->second);
+#endif
+}
+
+#ifndef __SWITCH__
+bool InputManager::steam_slot_filled(SDL_GameController* controller) const {
+    const SteamHandleFn handle_of = steam_handle_fn();
+    if (handle_of == nullptr || handle_of(controller) != 0) {
         return true;
-    }
-    const auto now = std::chrono::steady_clock::now();
-    if (handle_of(it->second) != 0) {
-        steam_handle_seen_[id] = now;
-        return true;
-    }
-    // While another controller connects, Steam takes every pad's handle away
-    // and gives it back: one that had a handle a moment ago is still that
-    // controller, not a slot left empty, so it does not drop out of the game
-    // and come back. The handles can be gone for longer than a moment --
-    // Steam may start before SDL has the new pad and take two or three
-    // seconds after -- so one that had its handle when a pad arrived waits
-    // out the arrival, not only a moment from when it was last seen.
-    const auto seen = steam_handle_seen_.find(id);
-    if (seen != steam_handle_seen_.end()) {
-        constexpr auto kMoment = std::chrono::seconds(3);
-        if (now - seen->second < kMoment) return true;
-        if (now - pad_arrived_at_ < std::chrono::seconds(10) && pad_arrived_at_ - seen->second < kMoment) {
-            return true;
-        }
     }
     for (const auto& [other_id, other] : controllers_) {
         if (other != nullptr && is_steam_virtual_pad(other) && handle_of(other) != 0) {
@@ -372,8 +362,47 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
         }
     }
     return true;
-#endif
 }
+
+void InputManager::update_steam_pads() {
+    // While a controller connects, Steam rewrites what it says about every
+    // one of its pads, for two or three seconds: handles go and come back,
+    // and names with them, one pad at a time and not always in step. Taken
+    // as it comes, every controller already connected dropped out of the
+    // game and the Controllers screen and came back. So a pad that is there
+    // stays there until it has been gone for longer than Steam ever takes,
+    // and one that arrives beside others waits until Steam has steadied
+    // before it is anybody's.
+    constexpr auto kSteady = std::chrono::milliseconds(500);
+    constexpr auto kGone = std::chrono::seconds(6);
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& [id, controller] : controllers_) {
+        if (controller == nullptr || !is_steam_virtual_pad(controller)) continue;
+        const bool filled = steam_slot_filled(controller);
+        auto found = steam_pads_.find(id);
+        if (found == steam_pads_.end()) {
+            SteamPad pad;
+            pad.filled = filled;
+            pad.filled_since = now;
+            pad.shown = filled && !arrived_among_others_.count(id);
+            found = steam_pads_.emplace(id, pad).first;
+        }
+        SteamPad& pad = found->second;
+        if (filled != pad.filled) {
+            pad.filled = filled;
+            pad.filled_since = now;
+            log_debug("controller " + std::to_string(id) + ": Steam says it is " +
+                      (filled ? "a controller again" : "an empty slot"));
+        }
+        if (!pad.shown && filled && now - pad.filled_since >= kSteady) {
+            pad.shown = true;
+        } else if (pad.shown && !filled && now - pad.filled_since >= kGone) {
+            pad.shown = false;
+            log_info("controller " + std::to_string(id) + " is an empty slot of Steam's");
+        }
+    }
+}
+#endif
 
 std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> InputManager::connected_pads() const {
     std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> pads;
@@ -485,7 +514,14 @@ void InputManager::open_controller(int device_index) {
     }
     controllers_[id] = controller;
     unrested_pads_.insert(id);
-    pad_arrived_at_ = std::chrono::steady_clock::now();
+#ifndef __SWITCH__
+    // Steam is rearranging all of them now -- see update_steam_pads().
+    for (const auto& [other_id, other] : controllers_) {
+        if (other_id != id && other != nullptr && is_steam_virtual_pad(other)) {
+            arrived_among_others_.insert(id);
+        }
+    }
+#endif
     // A pad arriving -- or Steam's arriving -- gives Steam a moment to say
     // which of its pads is which before a pad it may be presenting is read
     // directly. See pad_connected().
@@ -589,7 +625,8 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
         SDL_GameControllerClose(it->second);
     }
     controllers_.erase(it);
-    steam_handle_seen_.erase(instance_id);
+    steam_pads_.erase(instance_id);
+    arrived_among_others_.erase(instance_id);
     unrested_pads_.erase(instance_id);
     said_unrested_pads_.erase(instance_id);
     log_info("controller disconnected");
@@ -823,17 +860,7 @@ void InputManager::begin_frame() {
     padUpdate(&split.player_one);
     padUpdate(&split.handheld);
 #else
-    // Every frame, not only when something asks after a pad: when another
-    // one arrives, what counts is whether each had its handle just before --
-    // see pad_connected().
-    if (const SteamHandleFn handle_of = steam_handle_fn(); handle_of != nullptr) {
-        const auto now = std::chrono::steady_clock::now();
-        for (const auto& [id, controller] : controllers_) {
-            if (controller != nullptr && is_steam_virtual_pad(controller) && handle_of(controller) != 0) {
-                steam_handle_seen_[id] = now;
-            }
-        }
-    }
+    update_steam_pads();
 #endif
     refresh_pad_rumble();
 }
