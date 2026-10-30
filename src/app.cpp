@@ -3077,6 +3077,16 @@ void App::Impl::tick_change_order() {
     }
     change_order.pressing = std::move(pressing);
     if (changed) pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
+    // Every controller taken -- or every player there can be -- and nothing
+    // left to wait for: done, once the last press is over, so it reaches
+    // neither the menu nor the game.
+    constexpr uint32_t kSamePress = 200;
+    const bool all_taken = change_order.taken && (lineup.unused.empty() || change_order.next > kPadPlayers);
+    if (all_taken && now - change_order.taken_at >= kSamePress &&
+        std::all_of(pads.begin(), pads.end(), [](const KnownPad& pad) { return pad.pressing == 0; })) {
+        end_change_order(true);
+        return;
+    }
     // The row waiting for the next press, if there is one: past the
     // players there were, a press adds one, up to the last there can be.
     const std::vector<ControllerRowView> rows = wii_u_controller_rows();
@@ -3090,7 +3100,6 @@ void App::Impl::tick_change_order() {
     picker->set_wii_u_controllers(rows);
     // A or B, from a controller already taken -- not one being taken just
     // then, whose press might have reached the menu as well.
-    constexpr uint32_t kSamePress = 200;
     if (change_order.asked) {
         const bool near_a_take = change_order.taken && static_cast<int32_t>(change_order.taken_at -
                                                                             (change_order.asked_at - kSamePress)) >= 0;
