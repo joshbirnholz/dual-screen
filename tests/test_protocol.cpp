@@ -135,7 +135,19 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_welcome(payload.data(), payload.size(), key_only));
     CHECK(key_only.icon_rgba.empty());
     CHECK_STR_EQ(key_only.icon_key, welcome.icon_key);
+    CHECK(key_only.title_lines.empty());
     welcome.icon_key.clear();
+
+    // And its name over its lines, after the key -- even with no key or icon.
+    welcome.title_lines = {"THE LEGEND OF ZELDA", "The Wind Waker HD"};
+    buffer.clear();
+    encode_welcome(welcome, buffer);
+    CHECK(one_message(buffer, type, payload));
+    WelcomeMessage lined;
+    CHECK(decode_welcome(payload.data(), payload.size(), lined));
+    CHECK(lined.icon_key.empty());
+    CHECK(lined.title_lines == welcome.title_lines);
+    welcome.title_lines.clear();
 
     SessionStateMessage state;
     state.layout_id = "upper_on_tv";

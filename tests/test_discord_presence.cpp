@@ -121,6 +121,22 @@ void test_the_activity_names_the_game_and_clearing_sends_none() {
     CHECK(assets["small_image"] == shown["assets"]["large_image"]);
     CHECK(discord_game_icon_url("").empty());
 
+    // A name over two lines is two lines here, and one line is one.
+    discord_name_lines({"THE LEGEND OF ZELDA", "The Wind Waker HD"}, activity);
+    CHECK(activity.details == "THE LEGEND OF ZELDA");
+    CHECK(activity.state == "The Wind Waker HD");
+    const nlohmann::json two = nlohmann::json::parse(discord_activity_command(activity, 42, "11"));
+    CHECK(two["args"]["activity"]["state"] == "The Wind Waker HD");
+    CHECK(two["args"]["activity"]["assets"]["large_text"] == "THE LEGEND OF ZELDA The Wind Waker HD");
+    discord_name_lines({"Mario Kart 7"}, activity);
+    CHECK(activity.details == "Mario Kart 7" && activity.state.empty());
+    CHECK(!nlohmann::json::parse(discord_activity_command(activity, 42, "12"))["args"]["activity"].contains("state"));
+    discord_name_lines({"A", "B", "C"}, activity);
+    CHECK(activity.details == "A" && activity.state == "B C");
+    // Discord turns down a one-character line, so it stays on the first.
+    discord_name_lines({"Picross", "3"}, activity);
+    CHECK(activity.details == "Picross 3" && activity.state.empty());
+
     const nlohmann::json cleared = nlohmann::json::parse(discord_activity_command(DiscordActivity(), 42, "9"));
     CHECK(cleared["cmd"] == "SET_ACTIVITY");
     CHECK(!cleared["args"].contains("activity"));

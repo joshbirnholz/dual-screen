@@ -120,6 +120,21 @@ std::string join_with_spaces(const std::vector<std::string>& lines, std::size_t 
     return out;
 }
 
+// A title laid out as its console lays it out, one line per line.
+std::string join_lines(const std::vector<std::string>& lines, std::size_t count) {
+    std::string out;
+    for (std::size_t index = 0; index < count && index < lines.size(); ++index) {
+        if (!out.empty()) out.push_back('\n');
+        out += lines[index];
+    }
+    return out;
+}
+
+std::string on_one_line(const std::string& laid_out) {
+    const std::vector<std::string> lines = non_empty_lines(laid_out);
+    return join_with_spaces(lines, lines.size());
+}
+
 // English, in both formats: the DS banner and the 3DS SMDH happen to agree
 // that it is the second entry in their language tables, after Japanese.
 constexpr std::size_t kEnglish = 1;
@@ -141,7 +156,7 @@ std::vector<std::string> nds_banner_title_lines(const uint8_t* banner, std::size
     return {};
 }
 
-std::string nds_title_from_rom(const uint8_t* data, std::size_t size) {
+static std::string nds_title_laid_out(const uint8_t* data, std::size_t size) {
     if (data == nullptr) return std::string();
     // The header's pointer to the banner. Zero means the ROM has none, which
     // homebrew often does not.
@@ -154,10 +169,14 @@ std::string nds_title_from_rom(const uint8_t* data, std::size_t size) {
     if (lines.empty()) return std::string();
     // The last line is the publisher, by a convention every commercial DS
     // banner follows. One line on its own is the title and nothing else.
-    return lines.size() == 1 ? lines[0] : join_with_spaces(lines, lines.size() - 1);
+    return lines.size() == 1 ? lines[0] : join_lines(lines, lines.size() - 1);
 }
 
-std::string smdh_title(const uint8_t* data, std::size_t size) {
+std::string nds_title_from_rom(const uint8_t* data, std::size_t size) {
+    return on_one_line(nds_title_laid_out(data, size));
+}
+
+static std::string smdh_title_laid_out(const uint8_t* data, std::size_t size) {
     if (data == nullptr || !magic_at(data, size, 0, "SMDH")) return std::string();
     // Sixteen language entries after an eight-byte header, each holding a
     // short name, a long one and a publisher.
@@ -169,7 +188,11 @@ std::string smdh_title(const uint8_t* data, std::size_t size) {
     // The short description is the one line the HOME menu shows, so it is
     // already a title rather than a sentence -- but some carry a second line.
     const std::vector<std::string> lines = non_empty_lines(title);
-    return join_with_spaces(lines, lines.size());
+    return join_lines(lines, lines.size());
+}
+
+std::string smdh_title(const uint8_t* data, std::size_t size) {
+    return on_one_line(smdh_title_laid_out(data, size));
 }
 
 namespace {
@@ -203,7 +226,7 @@ std::string smdh_from_ncch(const uint8_t* data, std::size_t size, std::size_t nc
         if (!read_u32(data, size, at + 8, offset)) return std::string();
         const std::size_t smdh_at = exefs_at + kExeFsHeaderBytes + offset;
         if (smdh_at >= size) return std::string();
-        return smdh_title(data + smdh_at, size - smdh_at);
+        return smdh_title_laid_out(data + smdh_at, size - smdh_at);
     }
     return std::string();
 }
@@ -246,7 +269,7 @@ std::string smdh_from_cia(const uint8_t* data, std::size_t size) {
     constexpr std::size_t kSmdhInMeta = 0x400;
     const std::size_t smdh_at = meta_at + kSmdhInMeta;
     if (smdh_at >= size) return std::string();
-    return smdh_title(data + smdh_at, size - smdh_at);
+    return smdh_title_laid_out(data + smdh_at, size - smdh_at);
 }
 
 // A card image: eight partitions, of which the first is the game.
@@ -302,24 +325,32 @@ std::string decode_xml_entities(const std::string& text) {
 
 }  // namespace
 
-std::string three_ds_title_from_rom(const uint8_t* data, std::size_t size) {
+static std::string three_ds_title_laid_out(const uint8_t* data, std::size_t size) {
     if (data == nullptr) return std::string();
-    if (magic_at(data, size, 0, "SMDH")) return smdh_title(data, size);
+    if (magic_at(data, size, 0, "SMDH")) return smdh_title_laid_out(data, size);
     if (magic_at(data, size, 0x100, "NCSD")) return smdh_from_cci(data, size);
     if (magic_at(data, size, 0x100, "NCCH")) return smdh_from_ncch(data, size, 0);
     return smdh_from_cia(data, size);
 }
 
-std::string wii_u_title_from_meta_xml(const std::string& xml) {
-    const std::string raw = xml_element_text(xml, "longname_en");
-    if (raw.empty()) return std::string();
-    // The Wii U menu breaks long names across two lines; a log and a host list
-    // want them on one.
-    const std::vector<std::string> lines = non_empty_lines(decode_xml_entities(raw));
-    return join_with_spaces(lines, lines.size());
+std::string three_ds_title_from_rom(const uint8_t* data, std::size_t size) {
+    return on_one_line(three_ds_title_laid_out(data, size));
 }
 
-std::string game_title_for_file(const std::string& path) {
+static std::string wii_u_title_laid_out(const std::string& xml) {
+    const std::string raw = xml_element_text(xml, "longname_en");
+    if (raw.empty()) return std::string();
+    // The Wii U menu breaks long names across two lines.
+    const std::vector<std::string> lines = non_empty_lines(decode_xml_entities(raw));
+    return join_lines(lines, lines.size());
+}
+
+std::string wii_u_title_from_meta_xml(const std::string& xml) {
+    // A log and a host list want it on one line.
+    return on_one_line(wii_u_title_laid_out(xml));
+}
+
+std::vector<std::string> game_title_lines_for_file(const std::string& path) {
     const std::string extension = path_extension_lower(path);
 
     // A Wii U's title is not in the file the player picked -- an .rpx is code
@@ -338,22 +369,30 @@ std::string game_title_for_file(const std::string& path) {
         for (const std::string& candidate : candidates) {
             std::vector<uint8_t> bytes;
             if (!read_file(candidate, bytes, nullptr) || bytes.empty()) continue;
-            const std::string title = wii_u_title_from_meta_xml(
+            const std::string title = wii_u_title_laid_out(
                 std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-            if (!title.empty()) return title;
+            if (!title.empty()) return non_empty_lines(title);
         }
         // There is nothing inside these files themselves to fall back on.
-        return std::string();
+        return {};
     }
 
     std::vector<uint8_t> bytes;
-    if (!read_file(path, bytes, nullptr) || bytes.empty()) return std::string();
-    if (extension == "nds") return nds_title_from_rom(bytes.data(), bytes.size());
+    if (!read_file(path, bytes, nullptr) || bytes.empty()) return {};
+    if (extension == "nds") return non_empty_lines(nds_title_laid_out(bytes.data(), bytes.size()));
     if (extension == "3ds" || extension == "cci" || extension == "cia" || extension == "cxi" ||
         extension == "app" || extension == "smdh") {
-        return three_ds_title_from_rom(bytes.data(), bytes.size());
+        return non_empty_lines(three_ds_title_laid_out(bytes.data(), bytes.size()));
     }
-    return std::string();
+    return {};
+}
+
+std::string title_on_one_line(const std::vector<std::string>& lines) {
+    return join_with_spaces(lines, lines.size());
+}
+
+std::string game_title_for_file(const std::string& path) {
+    return title_on_one_line(game_title_lines_for_file(path));
 }
 
 }  // namespace ds

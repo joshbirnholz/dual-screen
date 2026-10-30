@@ -527,6 +527,9 @@ public:
     const std::vector<uint8_t>& game_icon_rgba() const { return game_icon_rgba_; }
     // Which icon Discord shows for it -- see WelcomeMessage::icon_key.
     const std::string& game_icon_key() const { return game_icon_key_; }
+    // Its name over the lines its console's menu gives it, for Discord --
+    // see WelcomeMessage::title_lines. Empty from an older host.
+    const std::vector<std::string>& game_title_lines() const { return game_title_lines_; }
     // Whether joining is being held up by this machine refusing this app the
     // local network, rather than by the host. Worth saying on screen: the
     // waiting looks identical either way, and only one of them is worth
@@ -1167,6 +1170,7 @@ private:
     int game_icon_height_ = 0;
     std::vector<uint8_t> game_icon_rgba_;
     std::string game_icon_key_;
+    std::vector<std::string> game_title_lines_;
     SystemId system_ = SystemId::Ds;
     std::string host_layout_id_;
     bool host_paused_ = false;

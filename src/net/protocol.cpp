@@ -253,12 +253,21 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     const std::size_t icon_bytes =
         static_cast<std::size_t>(message.icon_width) * message.icon_height * 4u;
     const bool has_icon = icon_bytes > 0 && message.icon_rgba.size() == icon_bytes;
-    if (has_icon || !message.icon_key.empty()) {
+    const bool has_lines = !message.title_lines.empty();
+    if (has_icon || !message.icon_key.empty() || has_lines) {
         put_u16(out, has_icon ? message.icon_width : 0);
         put_u16(out, has_icon ? message.icon_height : 0);
         if (has_icon) out.insert(out.end(), message.icon_rgba.begin(), message.icon_rgba.end());
     }
-    if (!message.icon_key.empty()) put_string(out, message.icon_key);
+    if (!message.icon_key.empty() || has_lines) put_string(out, message.icon_key);
+    if (has_lines) {
+        std::string joined;
+        for (const std::string& line : message.title_lines) {
+            if (!joined.empty()) joined.push_back('\n');
+            joined += line;
+        }
+        put_string(out, joined);
+    }
     finish_message(out, start, MessageType::Welcome);
 }
 
@@ -1747,6 +1756,15 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
         } else if (reader.remaining() > 0) {
             reader.string(out.icon_key);
             if (!reader.ok() || out.icon_key.size() > 128) out.icon_key.clear();
+            std::string joined;
+            if (reader.ok() && reader.remaining() > 0 && reader.string(joined) && joined.size() <= 512) {
+                std::size_t from = 0;
+                while (from <= joined.size()) {
+                    const std::size_t to = std::min(joined.find('\n', from), joined.size());
+                    if (to > from) out.title_lines.push_back(joined.substr(from, to - from));
+                    from = to + 1;
+                }
+            }
         }
     }
     return screen_from_wire(screen, out.granted_screen);

@@ -258,6 +258,11 @@ struct WelcomeMessage {
     // status is the host's. Trailing and optional, after the icon -- sent
     // as 0x0 when there is none, so this still has a place.
     std::string icon_key;
+    // The game's name as its console lays it out over its lines ("THE LEGEND
+    // OF ZELDA", "The Wind Waker HD"), so a companion's Discord status breaks
+    // it where the host's does. Trailing and optional, after icon_key -- sent
+    // empty when there is none, so this still has a place.
+    std::vector<std::string> title_lines;
 };
 
 // Which device an audio stream belongs to.

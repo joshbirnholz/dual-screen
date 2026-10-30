@@ -248,6 +248,18 @@ void test_a_wii_u_game_is_found_from_the_file_the_player_actually_picks() {
     CHECK(write_file_atomically(nds, rom.data(), rom.size(), nullptr));
     CHECK_STR_EQ(game_title_for_file(nds), std::string("Elite Beat Agents"));
 
+    // The same names over the lines their consoles' menus give them, for
+    // Discord: two for the Wii U's, and the DS's one, its publisher dropped.
+    const std::vector<std::string> toad = game_title_lines_for_file(game + "/code/Whatever.rpx");
+    CHECK(toad.size() == 2 && toad[0] == "Captain Toad" && toad[1] == "Treasure Tracker");
+    const std::vector<std::string> eba = game_title_lines_for_file(nds);
+    CHECK(eba.size() == 1 && eba[0] == "Elite Beat Agents");
+    const std::vector<uint8_t> zelda = nds_rom(u"The Legend of Zelda\nSpirit Tracks\nNintendo");
+    const std::string tracks = std::string(root) + "/st.nds";
+    CHECK(write_file_atomically(tracks, zelda.data(), zelda.size(), nullptr));
+    CHECK(game_title_lines_for_file(tracks).size() == 2);
+    CHECK_STR_EQ(game_title_for_file(tracks), std::string("The Legend of Zelda Spirit Tracks"));
+
     // Nothing to read is not an error, it is the file name's turn. The caller
     // falls back, so this must be empty rather than a guess.
     const std::string mystery = std::string(root) + "/mystery.rpx";

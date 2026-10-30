@@ -66,6 +66,21 @@ std::string discord_game_icon_url(const std::string& key) {
     return key.empty() ? std::string() : kGameIcons + key + ".png";
 }
 
+void discord_name_lines(const std::vector<std::string>& title_lines, DiscordActivity& activity) {
+    activity.details.clear();
+    activity.state.clear();
+    for (const std::string& line : title_lines) {
+        std::string& into = activity.details.empty() ? activity.details : activity.state;
+        if (!into.empty()) into.push_back(' ');
+        into += line;
+    }
+    // Discord refuses a line of one character, and the whole status with it.
+    if (activity.state.size() < 2 && !activity.state.empty()) {
+        activity.details += " " + activity.state;
+        activity.state.clear();
+    }
+}
+
 std::string discord_activity_command(const DiscordActivity& activity, long process_id, const std::string& nonce) {
     nlohmann::json args = {{"pid", process_id}};
     if (!activity.details.empty()) {
@@ -80,7 +95,8 @@ std::string discord_activity_command(const DiscordActivity& activity, long proce
             shown["assets"] = {{"large_image", kLargeImage}, {"large_text", "Dualscreen"}};
         } else {
             shown["assets"] = {{"large_image", activity.image},
-                               {"large_text", activity.details},
+                               {"large_text", activity.state.empty() ? activity.details
+                                                                     : activity.details + " " + activity.state},
                                {"small_image", kLargeImage},
                                {"small_text", "Dualscreen"}};
         }

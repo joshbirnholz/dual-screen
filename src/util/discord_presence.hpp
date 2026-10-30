@@ -14,10 +14,12 @@ namespace ds {
 // What a player's friends see under their name in Discord while a game is
 // going: its name, and what it is being played as.
 struct DiscordActivity {
-    // The game's name, as the console calls it. Empty means nothing is being
+    // The game's name, as the console calls it -- its first line, for one the
+    // console's menu breaks over two. Empty means nothing is being
     // played, and the status is cleared.
     std::string details;
-    // The line under it: the console.
+    // The line under it: the rest of the name, for one its console's menu
+    // breaks over two lines. Empty for one that fits on one.
     std::string state;
     // When the game started, for Discord's "elapsed" clock.
     std::time_t started = 0;
@@ -89,6 +91,11 @@ std::string discord_frame(uint32_t opcode, const std::string& json);
 // tools/build_icons.py there) and DS-Scene's DS icons. `key` is
 // "3ds/<title ID>", "wiiu/<title ID>" or "ds/<ds_icon_key()>".
 std::string discord_game_icon_url(const std::string& key);
+
+// A game's name, set out on Discord's two lines the way its console's menu
+// sets it out on its own: the first line, then the rest. A name of one line
+// is one line here too.
+void discord_name_lines(const std::vector<std::string>& title_lines, DiscordActivity& activity);
 
 // The SET_ACTIVITY command for `activity`, or the one that clears it when its
 // details are empty. Its image is used as given: the caller has checked it.

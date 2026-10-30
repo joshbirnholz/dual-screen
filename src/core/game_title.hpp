@@ -72,4 +72,13 @@ std::string wii_u_title_from_meta_xml(const std::string& xml);
 // is beside it in meta/meta.xml rather than inside it.
 std::string game_title_for_file(const std::string& path);
 
+// The same name, as its console lays it out over its lines -- the DS menu's
+// "The Legend of Zelda" over "Phantom Hourglass", the Wii U menu's "THE
+// LEGEND OF ZELDA" over "The Wind Waker HD" -- for Discord's two lines. One
+// line for a name that fits on one; empty where game_title_for_file() is.
+std::vector<std::string> game_title_lines_for_file(const std::string& path);
+
+// Those lines as the one line everything else shows.
+std::string title_on_one_line(const std::vector<std::string>& lines);
+
 }  // namespace ds

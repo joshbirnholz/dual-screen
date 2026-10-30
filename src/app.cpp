@@ -854,6 +854,9 @@ struct App::Impl {
     // steer_touch_spot().
     uint32_t spot_steer_ticks = 0;
     std::string game_title;
+    // The same, over the lines its console's menu breaks it into -- see
+    // game_title_lines_for_file(). For Discord, and passed on to a companion.
+    std::vector<std::string> game_title_lines;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
     // both come from the host; on a device running a game, from the ROM.
@@ -2192,8 +2195,8 @@ const std::string& App::Impl::shown_game_title() const {
     return is_companion() ? companion_session->game_title() : game_title;
 }
 
-// The game's name, the console it is played as, and its icon -- the same on a
-// companion as on the host, so it does not matter which one Discord hears it
+// The game's name, over as many lines as its console's menu gives it, and its
+// icon -- the same on a companion as on the host, so it does not matter which one Discord hears it
 // from. The clock starts again whenever any of them changes.
 void App::Impl::update_discord() {
     if (!discord) return;
@@ -2201,12 +2204,15 @@ void App::Impl::update_discord() {
     if (!settings.discord_status) {
         // Cleared, below, as for no game at all.
     } else if (is_companion()) {
-        activity.details = companion_session->game_title();
-        activity.state = system_profile(companion_session->system()).name;
+        discord_name_lines(companion_session->game_title_lines().empty()
+                               ? std::vector<std::string>{companion_session->game_title()}
+                               : companion_session->game_title_lines(),
+                           activity);
         activity.image = discord_game_icon_url(companion_session->game_icon_key());
     } else if ((source || external_source) && !game_title.empty()) {
-        activity.details = game_title;
-        activity.state = system_profile(system).name;
+        discord_name_lines(game_title_lines.empty() ? std::vector<std::string>{game_title}
+                                                    : game_title_lines,
+                           activity);
         activity.image = discord_game_icon_url(discord_icon_key);
     }
     if (activity.details != discord_activity.details || activity.state != discord_activity.state ||
@@ -6105,7 +6111,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // What the console itself would call this, rather than what the file is
     // called. See game_title.hpp: every one of these formats carries the real
     // name, and the file name is the fallback rather than the answer.
-    game_title = game_title_for_file(rom_path);
+    game_title_lines = game_title_lines_for_file(rom_path);
+    game_title = title_on_one_line(game_title_lines);
     discord_icon_key = game_icon_key(rom_path);
     if (game_title.empty()) {
         game_title = path_stem(rom_path);
@@ -6387,6 +6394,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     host_config.device_name = settings.device_name;
     host_config.game_title = game_title;
     host_config.game_icon_key = discord_icon_key;
+    host_config.game_title_lines = game_title_lines;
     refresh_game_icon();
     if (game_icon_for == "here:" + game_icon_rom) {
         host_config.game_icon_width = game_icon_width;
