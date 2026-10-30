@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "render/distance_field.hpp"
 #include "render/embedded_assets.hpp"
 #include "render/png_image.hpp"
 #include "render/quad_renderer.hpp"
@@ -59,17 +60,35 @@ inline bool load_ui_icons(Texture& texture, bool& tried) {
     if (texture.valid()) return true;
     if (tried) return false;
     tried = true;
-    DecodedImage image;
-    std::string error;
-    if (!decode_png(assets::kUiIconsPng, assets::kUiIconsPng_size, image, &error)) {
-        log_warn("the menus' icons would not load: " + error);
-        return false;
-    }
-    std::vector<uint8_t> coverage(image.pixels.size());
-    for (std::size_t index = 0; index < image.pixels.size(); ++index) {
-        coverage[index] = static_cast<uint8_t>(image.pixels[index] >> 24);
-    }
-    texture.upload_alpha8(coverage.data(), image.width, image.height);
+    // The strip as a distance field, so the edges stay sharp drawn large and
+    // smooth drawn small -- see distance_field.hpp. Worked out once however
+    // many pages upload it: it is the slow part.
+    struct Field {
+        std::vector<uint8_t> texels;
+        int width = 0;
+        int height = 0;
+    };
+    static const Field field = [] {
+        Field made;
+        DecodedImage image;
+        std::string error;
+        if (!decode_png(assets::kUiIconsPng, assets::kUiIconsPng_size, image, &error)) {
+            log_warn("the menus' icons would not load: " + error);
+            return made;
+        }
+        std::vector<uint8_t> coverage(image.pixels.size());
+        for (std::size_t index = 0; index < image.pixels.size(); ++index) {
+            coverage[index] = static_cast<uint8_t>(image.pixels[index] >> 24);
+        }
+        // The strip's cells are large enough that twice their size finds
+        // the edge closely enough.
+        made.texels = coverage_to_distance_field(coverage, image.width, image.height, 2);
+        made.width = image.width;
+        made.height = image.height;
+        return made;
+    }();
+    if (field.texels.empty()) return false;
+    texture.upload_alpha8(field.texels.data(), field.width, field.height);
     texture.set_linear_filtering(true);
     return texture.valid();
 }
@@ -80,7 +99,7 @@ inline void draw_ui_icon(QuadRenderer& quads, const Texture& texture, UiIcon ico
                          const PixelRect& rect, const Color& color) {
     const float cells = static_cast<float>(static_cast<int>(UiIcon::Count));
     const float cell = static_cast<float>(static_cast<int>(icon));
-    quads.draw_alpha_mask(rect, texture, color, cell / cells, 0.0f, (cell + 1.0f) / cells, 1.0f);
+    quads.draw_distance_field(rect, texture, color, cell / cells, 0.0f, (cell + 1.0f) / cells, 1.0f);
 }
 
 }  // namespace ds

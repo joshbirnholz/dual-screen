@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
+#include "render/distance_field.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -32,8 +34,10 @@ uniform sampler2D u_texture;
 uniform sampler2D u_chroma;   // NV12's interleaved UV, or YUV420P's U
 uniform sampler2D u_chroma_v; // YUV420P's V
 uniform vec4 u_color;
-// A rounded ring's: the rect's width and height, its corner radius and how
-// thick the ring is; and the colour at its right-hand edge.
+// A rounded ring's: the rect's width and height, how many of the target's
+// pixels one of those units is and how thick the ring is; and the colour at
+// its right-hand edge. A distance field's: x is how many of the target's
+// pixels one of its texels covers.
 uniform vec4 u_shape;
 uniform vec4 u_color2;
 // Each corner's radius, clockwise from the top left, where they differ.
@@ -110,10 +114,20 @@ void main() {
                             : (p.y < 0.0 ? u_radii.y : u_radii.z);
         vec2 q = abs(p) - (half_size - vec2(r));
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
-        float outer = clamp(0.5 - d, 0.0, 1.0);
-        float inner = clamp(0.5 - (d + u_shape.w), 0.0, 1.0);
+        // In the target's own pixels, so the edge is one of them wide however
+        // the page is scaled or zoomed.
+        float outer = clamp(0.5 - d * u_shape.z, 0.0, 1.0);
+        float inner = clamp(0.5 - (d + u_shape.w) * u_shape.z, 0.0, 1.0);
         vec4 tint = mix(u_color, u_color2, clamp(v_texcoord.x / max(u_shape.x, 1.0), 0.0, 1.0));
         gl_FragColor = vec4(tint.rgb, tint.a * (outer - inner));
+    } else if (u_mode == 9) {
+        // A signed distance field -- see distance_field.hpp: 0.5 on the edge,
+        // DS_SPREAD texels each way to 0 and 1. Turned back into coverage
+        // one target pixel wide, so the edge is as sharp as the target
+        // allows at any size the picture is drawn.
+        float texels = (texture2D(u_texture, v_texcoord).a - 0.5) * (2.0 * DS_SPREAD);
+        float coverage = clamp(texels * u_shape.x + 0.5, 0.0, 1.0);
+        gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
     } else if (u_mode == 6) {
         // A picture with see-through parts of its own: a game's icon.
         vec4 texel = texture2D(u_texture, v_texcoord);
@@ -142,7 +156,14 @@ std::string core_preamble(GLenum type) {
 }
 
 std::string preamble_for(GLenum type) {
-    if (gl::is_gles()) return "#version 100\nprecision mediump float;\n";
+    // High precision where the GPU has it: a rounded shape's edge is worked
+    // out from its position in pixels, and medium precision cannot tell one
+    // pixel from the next past 1024 of them -- the right-hand end of a wide
+    // panel would come out in steps.
+    if (gl::is_gles()) {
+        return "#version 100\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\n"
+               "precision mediump float;\n#endif\n";
+    }
     // A core profile is the one that will not take #version 120. Asking the
     // context rather than assuming from what was requested, because the app
     // takes whatever context it can get.
@@ -186,7 +207,8 @@ bool QuadRenderer::initialize(std::string* error) {
         compile_shader(GL_VERTEX_SHADER, preamble_for(GL_VERTEX_SHADER) + kVertexBody, error);
     if (vertex_shader == 0) return false;
     const GLuint fragment_shader =
-        compile_shader(GL_FRAGMENT_SHADER, preamble_for(GL_FRAGMENT_SHADER) + kFragmentBody, error);
+        compile_shader(GL_FRAGMENT_SHADER, preamble_for(GL_FRAGMENT_SHADER) +
+                           "#define DS_SPREAD " + std::to_string(kDistanceFieldSpread) + "\n" + kFragmentBody, error);
     if (fragment_shader == 0) {
         gl::DeleteShader(vertex_shader);
         return false;
@@ -420,7 +442,7 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     gl::UseProgram(program_);
     gl::Uniform1i(uniform_mode_, static_cast<GLint>(mode));
     gl::Uniform4f(uniform_color_, color.r, color.g, color.b, color.a * opacity_);
-    if (mode == Mode::RoundedRing) {
+    if (mode == Mode::RoundedRing || mode == Mode::DistanceField) {
         gl::Uniform4f(uniform_shape_, ring_shape_[0], ring_shape_[1], ring_shape_[2], ring_shape_[3]);
         gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b,
                       ring_color2_.a * opacity_);
@@ -550,57 +572,20 @@ void QuadRenderer::draw_outline(const PixelRect& rect, const Color& color, float
     draw_solid(PixelRect{rect.x + rect.w - t, rect.y + t, t, rect.h - 2.0f * t}, color);
 }
 
-// The disc the capsule caps come from: one channel of coverage, opaque
-// inside, fading over the last pixel at the rim so the curve has no stair on
-// it. Drawn at a fraction of this size and filtered down, which is why it is
-// built generously rather than at the size it will be used.
-bool QuadRenderer::build_disc() {
-    if (disc_.valid()) {
-        return true;
-    }
-    constexpr int kSize = 128;
-    const float centre = kSize * 0.5f;
-    std::vector<uint8_t> coverage(static_cast<std::size_t>(kSize) * kSize);
-    for (int y = 0; y < kSize; ++y) {
-        for (int x = 0; x < kSize; ++x) {
-            const float dx = static_cast<float>(x) + 0.5f - centre;
-            const float dy = static_cast<float>(y) + 0.5f - centre;
-            const float inside = centre - std::sqrt(dx * dx + dy * dy);
-            const float alpha = inside <= 0.0f ? 0.0f : (inside >= 1.0f ? 1.0f : inside);
-            coverage[static_cast<std::size_t>(y) * kSize + x] =
-                static_cast<uint8_t>(alpha * 255.0f + 0.5f);
-        }
-    }
-    disc_.upload_alpha8(coverage.data(), kSize, kSize);
-    return disc_.valid();
-}
-
 void QuadRenderer::draw_capsule(const PixelRect& rect, const Color& color) {
-    if (rect.w <= 0.0f || rect.h <= 0.0f) {
-        return;
-    }
     // Half the height, or half the width when the thing is shorter than it is
     // tall -- at which point it is a circle and there is no middle left.
-    const float radius = std::min(rect.h, rect.w) * 0.5f;
-    if (!build_disc()) {
-        // No disc, so square ends rather than nothing at all. A prompt that
-        // draws with corners is a cosmetic fault; one that does not draw is a
-        // control nobody can find.
-        draw_solid(rect, color);
-        return;
-    }
-    const float middle = rect.w - radius * 2.0f;
-    if (middle > 0.0f) {
-        draw_solid(PixelRect{rect.x + radius, rect.y, middle, rect.h}, color);
-    }
-    // Each cap is one half of the disc, stretched to the cap's box. The disc
-    // is square and the box is radius by height, which is exactly half of a
-    // square when the radius is half the height -- so the curve arrives
-    // unstretched.
-    draw_alpha_mask(PixelRect{rect.x, rect.y, radius, rect.h}, disc_, color, 0.0f, 0.0f, 0.5f,
-                    1.0f);
-    draw_alpha_mask(PixelRect{rect.x + rect.w - radius, rect.y, radius, rect.h}, disc_, color,
-                    0.5f, 0.0f, 1.0f, 1.0f);
+    draw_rounded_rect(rect, std::min(rect.h, rect.w) * 0.5f, color);
+}
+
+void QuadRenderer::draw_distance_field(const PixelRect& rect, const Texture& texture, const Color& color,
+                                       float u0, float v0, float u1, float v1) {
+    if (!texture.valid() || texture.width() <= 0 || rect.w <= 0.0f) return;
+    // How many of the target's pixels one texel covers, across: what turns
+    // the field's distances, in texels, into the target's pixels.
+    const float texels = std::fabs(u1 - u0) * static_cast<float>(texture.width());
+    ring_shape_[0] = texels > 0.0f ? rect.w * target_scale_ * zoom_ / texels : 1.0f;
+    draw(rect, &texture, color, Mode::DistanceField, u0, v0, u1, v1);
 }
 
 void QuadRenderer::draw_rounded_ring(const PixelRect& rect, float radius, float thickness,
@@ -618,7 +603,7 @@ void QuadRenderer::draw_rounded_ring(const PixelRect& rect, const float radii[4]
     for (int corner = 0; corner < 4; ++corner) {
         ring_radii_[corner] = std::max(0.0f, std::min(radii[corner], most));
     }
-    ring_shape_[2] = ring_radii_[0];
+    ring_shape_[2] = target_scale_ * zoom_;
     ring_shape_[3] = thickness;
     ring_color2_ = right;
     draw(rect, nullptr, left, Mode::RoundedRing, 0.0f, 0.0f, rect.w, rect.h);
@@ -628,26 +613,10 @@ void QuadRenderer::draw_rounded_rect(const PixelRect& rect, float radius, const 
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
         return;
     }
-    radius = std::max(0.0f, std::min(radius, std::min(rect.w, rect.h) * 0.5f));
-    if (radius < 0.5f || !build_disc()) {
-        draw_solid(rect, color);
-        return;
-    }
-    // Nine pieces that do not overlap -- where two pieces of a translucent
-    // fill overlap, the overlap is drawn darker: a column the full height, the
-    // two sides between the corners, and a quarter of the disc in each corner.
-    draw_solid(PixelRect{rect.x + radius, rect.y, rect.w - radius * 2.0f, rect.h}, color);
-    const float side = rect.h - radius * 2.0f;
-    if (side > 0.0f) {
-        draw_solid(PixelRect{rect.x, rect.y + radius, radius, side}, color);
-        draw_solid(PixelRect{rect.x + rect.w - radius, rect.y + radius, radius, side}, color);
-    }
-    const float right = rect.x + rect.w - radius;
-    const float bottom = rect.y + rect.h - radius;
-    draw_alpha_mask(PixelRect{rect.x, rect.y, radius, radius}, disc_, color, 0.0f, 0.0f, 0.5f, 0.5f);
-    draw_alpha_mask(PixelRect{right, rect.y, radius, radius}, disc_, color, 0.5f, 0.0f, 1.0f, 0.5f);
-    draw_alpha_mask(PixelRect{rect.x, bottom, radius, radius}, disc_, color, 0.0f, 0.5f, 0.5f, 1.0f);
-    draw_alpha_mask(PixelRect{right, bottom, radius, radius}, disc_, color, 0.5f, 0.5f, 1.0f, 1.0f);
+    // A ring as thick as the rect is all of it: one quad, its curve worked
+    // out per pixel, so the corners are as smooth at a 4K window's size as at
+    // a handheld's, and a translucent fill has no seams where pieces meet.
+    draw_rounded_ring(rect, radius, std::max(rect.w, rect.h), color, color);
 }
 
 }  // namespace ds

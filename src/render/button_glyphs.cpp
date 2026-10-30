@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "render/distance_field.hpp"
 #include "render/embedded_assets.hpp"
 #include "render/png_image.hpp"
 
@@ -162,20 +163,23 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
         for (std::size_t index = 0; index < hand.pixels.size(); ++index) {
             hand_coverage[index] = static_cast<uint8_t>(hand.pixels[index] >> 24);
         }
-        stylus_hand_.upload_alpha8(hand_coverage.data(), hand.width, hand.height);
-        stylus_hand_.set_linear_filtering(true);
+        upload_distance_field(stylus_hand_, hand_coverage, hand.width, hand.height);
     }
     constexpr int kSwapSize = 128;
     const std::vector<uint8_t> arrows = swap_arrows_coverage(kSwapSize);
-    swap_screens_.upload_alpha8(arrows.data(), kSwapSize, kSwapSize);
-    swap_screens_.set_linear_filtering(true);
+    upload_distance_field(swap_screens_, arrows, kSwapSize, kSwapSize);
 
     // Square cells, a row of them across the sheet.
     cell_width_ = image.width / kGlyphSheetColumns;
     cell_height_ = cell_width_;
     sheet_width_ = image.width;
     sheet_height_ = image.height;
-    texture_.upload_alpha8(coverage.data(), image.width, image.height);
+    // Kept as distance fields, so a 64-pixel cell drawn at a 4K window's size
+    // has sharp edges and drawn at a handheld's has smooth ones -- see
+    // distance_field.hpp. Worked out once, however many times the window is
+    // made again: it is the slow part.
+    static const std::vector<uint8_t> field = coverage_to_distance_field(coverage, image.width, image.height, 3);
+    texture_.upload_alpha8(field.data(), image.width, image.height);
     texture_.set_linear_filtering(true);
     if (!texture_.valid()) {
         if (error != nullptr) *error = "could not upload the button artwork";
@@ -189,13 +193,13 @@ void ButtonGlyphSheet::draw_stylus_hand(QuadRenderer& quads, const PixelRect& re
     if (!stylus_hand_.valid()) return;
     // As captured it is a left hand -- the Wii U shows it on its left-handed
     // layouts -- so a right hand reads the texture right to left.
-    quads.draw_alpha_mask(rect, stylus_hand_, color, left_handed ? 0.0f : 1.0f, 0.0f,
+    quads.draw_distance_field(rect, stylus_hand_, color, left_handed ? 0.0f : 1.0f, 0.0f,
                           left_handed ? 1.0f : 0.0f, 1.0f);
 }
 
 void ButtonGlyphSheet::draw_swap_screens(QuadRenderer& quads, const PixelRect& rect,
                                          const Color& color) const {
-    if (swap_screens_.valid()) quads.draw_alpha_mask(rect, swap_screens_, color);
+    if (swap_screens_.valid()) quads.draw_distance_field(rect, swap_screens_, color);
 }
 
 float ButtonGlyphSheet::width_for(float height) const {
@@ -221,7 +225,7 @@ void ButtonGlyphSheet::draw(QuadRenderer& quads,
     const float top = static_cast<float>((cell / kGlyphSheetColumns) * cell_height_);
     const float width = static_cast<float>(sheet_width_);
     const float tall = static_cast<float>(sheet_height_);
-    quads.draw_alpha_mask(PixelRect{x, y, width_for(height), height}, texture_, color, left / width,
+    quads.draw_distance_field(PixelRect{x, y, width_for(height), height}, texture_, color, left / width,
                           top / tall, (left + static_cast<float>(cell_width_)) / width,
                           (top + static_cast<float>(cell_height_)) / tall);
 }

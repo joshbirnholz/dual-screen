@@ -94,18 +94,19 @@ public:
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
     // A capsule: a rectangle with its two short ends rounded into
-    // semicircles. Drawn as a solid middle and two caps cut from a disc,
-    // because this shader has no rounded primitive and a curve sampled from a
-    // texture is both cheaper to add and smoother at the edge than teaching
-    // it one. The disc is built once, on first use.
-    //
-    // The radius is always half the height, which is what makes it a capsule
-    // rather than a rounded rectangle: there is no radius to choose, so two
-    // capsules of different widths always agree.
+    // semicircles. The radius is always half the height, which is what makes
+    // it a capsule rather than a rounded rectangle: there is no radius to
+    // choose, so two capsules of different widths always agree.
     void draw_capsule(const PixelRect& rect, const Color& color);
-    // A rectangle with its corners rounded to `radius` -- the capsule's disc,
-    // cut in quarters.
+    // A rectangle with its corners rounded to `radius`. Like the ring below,
+    // its edge is worked out per pixel rather than sampled from a picture, so
+    // it is smooth at any size.
     void draw_rounded_rect(const PixelRect& rect, float radius, const Color& color);
+    // A shape kept as a signed distance field -- see distance_field.hpp --
+    // in a flat colour: an icon or a button's artwork, sharp-edged however
+    // large it is drawn and smooth-edged however small.
+    void draw_distance_field(const PixelRect& rect, const Texture& texture, const Color& color,
+                             float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f);
     // The ring round the inside edge of a rounded rectangle, `thickness`
     // wide, its colour running from `left` to `right` across it -- or, as
     // thick as the rect, the whole of it filled, the edges smooth. Drawn in
@@ -129,6 +130,7 @@ private:
         Image = 6,
         LcdGrid = 7,
         RoundedRing = 8,
+        DistanceField = 9,
     };
 
     void draw(const PixelRect& rect,
@@ -167,7 +169,7 @@ private:
     GLint uniform_radii_ = -1;
     float ring_radii_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     // The next rounded ring's shape and right-hand colour -- see
-    // draw_rounded_ring().
+    // draw_rounded_ring() -- or the next distance field's scale.
     float ring_shape_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     Color ring_color2_{};
     GLint uniform_sampler_ = -1;
@@ -175,13 +177,8 @@ private:
     GLint uniform_chroma_v_ = -1;
     GLint uniform_chroma_v_in_alpha_ = -1;
 
-    // The alpha disc the capsule caps are cut from. Built on first use rather
-    // than at start-up: most of what this renderer draws is rectangles, and a
-    // build that never draws a capsule never pays for it.
     bool clipped_ = false;
     PixelRect clip_{};
-    Texture disc_;
-    bool build_disc();
 
     int output_width_ = 0;
     float target_scale_ = 1.0f;

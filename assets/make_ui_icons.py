@@ -117,7 +117,7 @@ def read_png_alpha(path):
         rows.append(row)
     return w, h, rows
 
-CELL = 96
+CELL = 192
 SS = 4
 UNIT = CELL / 36.0   # the actions are drawn on a 36-unit square
 STROKE = 2.6
