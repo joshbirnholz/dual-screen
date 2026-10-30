@@ -198,6 +198,12 @@ public:
     // passed to every draw: it is one choice for the whole app, and every
     // caller would otherwise have to carry it through to say anything.
     void set_style(PadGlyphStyle style) { style_ = style; }
+    // Whether the pad in use is read by the letters Steam Input assigns
+    // (InputManager::last_pad_reads_by_letter()). Its A is then Steam's A, the
+    // south button of Steam's pad, so an Xbox prompt for A draws Xbox's A, a
+    // PlayStation one the cross and a positional one the bottom dot. A
+    // Switch's letters are the letters either way.
+    void set_by_letter(bool by_letter) { by_letter_ = by_letter; }
     PadGlyphStyle style() const { return style_; }
     // The one other symbol the menus draw: the Wii U's hand holding a stylus,
     // filling `rect` in `color` -- its back parts fainter, as the artwork has
@@ -213,6 +219,7 @@ private:
     Texture stylus_hand_;
     Texture swap_screens_;
     PadGlyphStyle style_ = PadGlyphStyle::Nintendo;
+    bool by_letter_ = false;
     int cell_width_ = 0;
     int cell_height_ = 0;
     int sheet_width_ = 0;

@@ -928,29 +928,24 @@ void InputManager::handle_event(const SDL_Event& event) {
             if (!reads_pad(event.cbutton.which)) break;
             SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(event.cbutton.button);
             last_pad_pressed_ = event.cbutton.which;
-            // Every button is what SDL says it is -- for a Steam Input pad,
-            // what the player mapped it to in Steam, with a Nintendo pad's
-            // letters as Steam gives them -- and Confirm/Cancel alone says
-            // which of the two lower face buttons answers yes.
+            // A Steam Input pad's buttons are the letters Steam assigns them,
+            // whatever the controller -- see face_button_as_read() -- and
+            // Confirm/Cancel alone says which of A and B answers yes.
             const auto pressed_on = controllers_.find(event.cbutton.which);
             if (pressed_on != controllers_.end() && pressed_on->second != nullptr) {
                 SDL_GameController* pad = pressed_on->second;
                 const char* pad_name = SDL_GameControllerName(pad);
-                const SDL_GameControllerType pad_type = SDL_GameControllerGetType(pad);
-                const bool steam = presented_by_steam(pad);
-                const bool letters = steam_pad_has_nintendo_letters(steam, pad_type, pad_name);
-                button = face_button_as_read(button, steam, pad_type, pad_name);
-                // Said once per pad, and again if Steam changes its mind about
-                // what the pad is: which pad a press came from, and how its
+                const bool letters = presented_by_steam(pad);
+                button = face_button_as_read(button, letters);
+                // Said once per pad: which pad a press came from, and how its
                 // face buttons are being taken, is the first thing a swapped
                 // A and B needs to know.
                 const auto said = said_face_reading_.find(event.cbutton.which);
                 if (said == said_face_reading_.end() || said->second != letters) {
                     said_face_reading_[event.cbutton.which] = letters;
-                    log_info(std::string(pad_name != nullptr ? pad_name : "a controller") + " (SDL type: " +
-                             to_string(pad_type) + (steam ? ", through Steam Input" : "") + ") is read " +
-                             (letters ? "by Steam's letters: its A is A, on the right"
-                                      : "by place: the button at the bottom is B"));
+                    log_info(std::string(pad_name != nullptr ? pad_name : "a controller") +
+                             (letters ? " is read by the letters Steam Input assigns: Steam's A is A"
+                                      : " is read by place, without Steam Input: the button on the right is A"));
                 }
             }
             const ConfirmButton confirm_choice = confirm_button_;
@@ -1436,9 +1431,16 @@ bool InputManager::direction_repeating(UiAction direction) const {
     }
 }
 
+bool InputManager::last_pad_reads_by_letter() const {
+    const auto it = controllers_.find(last_pad_pressed_);
+    return it != controllers_.end() && presented_by_steam(it->second);
+}
+
 MenuButtonLabels InputManager::menu_labels() const {
     for (const auto& entry : controllers_) {
         if (entry.second != nullptr) {
+            // Steam's letters: A says yes, wherever the controller has it.
+            if (presented_by_steam(entry.second)) return menu_button_labels(PadLetterLayout::Nintendo);
             return menu_button_labels(pad_letter_layout(SDL_GameControllerGetType(entry.second)));
         }
     }
@@ -1454,10 +1456,8 @@ RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
         raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
     }
-    if (steam_pad_has_nintendo_letters(presented_by_steam(controller), SDL_GameControllerGetType(controller),
-                                       SDL_GameControllerName(controller))) {
-        // A Nintendo pad Steam presents, read by its letters: see
-        // face_button_as_read().
+    if (presented_by_steam(controller)) {
+        // Steam's letters, into this app's places: see face_button_as_read().
         std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_A], raw.buttons[SDL_CONTROLLER_BUTTON_B]);
         std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_X], raw.buttons[SDL_CONTROLLER_BUTTON_Y]);
     }

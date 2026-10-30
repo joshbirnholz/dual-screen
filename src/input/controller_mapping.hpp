@@ -80,25 +80,15 @@ enum class PadLetterLayout {
 
 PadLetterLayout pad_letter_layout(SDL_GameControllerType type);
 
-// Whether a pad Steam Input presents arrives with a Nintendo pad's printed
-// letters: one whose type Steam reports as a Switch's, or -- since Steam
-// reports no type at all for some, such as a Switch 2 controller through an
-// SInput adapter -- one whose name says it is a Nintendo or Switch pad. The
-// name is Steam's too, so it is the controller underneath.
-bool steam_pad_has_nintendo_letters(bool presented_by_steam, SDL_GameControllerType type,
-                                    const char* name);
-
 // A face button as this app reads it, from what SDL reported.
 //
-// Every pad is read by place -- except a Nintendo controller that Steam Input
-// presents. Steam hands those over with the letters printed on them, the A
-// on the right reported as Steam's A, and a Nintendo pad's letters are the
-// places this app reads by anyway: so Steam's A is east, B south, X north and
-// Y west. Read by place instead, its A and B and its X and Y came out swapped
-// from what Steam was supplying. The Deck's own buttons and every other
-// Xbox-lettered pad Steam presents are read by place, as before.
-SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam,
-                                             SDL_GameControllerType type, const char* name = nullptr);
+// A pad Steam Input presents is read by the letters Steam assigns, whatever
+// the controller underneath: Steam's A is A, B is B, X is X and Y is Y. Steam
+// is the one word on what a button is, so the kind of controller never comes
+// into it. Inside this app A sits east, B south, X north and Y west, so Steam's
+// A -- the south button of Steam's own pad -- comes back as east, and so on.
+// A pad SDL reads itself, without Steam, is still read by place.
+SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam);
 
 // The letters printed on the menu confirm/cancel buttons for a given pad.
 struct MenuButtonLabels {

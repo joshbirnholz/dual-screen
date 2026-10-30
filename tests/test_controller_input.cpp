@@ -185,77 +185,51 @@ bool has_action(const std::vector<UiAction>& actions, UiAction wanted) {
     return false;
 }
 
-// A Steam Input pad is read exactly as Steam presents it, the same as any
-// other pad: its A is the button at the bottom, B the one on the right, as
-// SDL names them -- whatever the controller underneath prints, and whatever
-// the player mapped in Steam. Confirm/Cancel alone says which of those two
-// answers yes.
+// A Steam Input pad is read by the letters Steam assigns, whatever the
+// controller underneath: Steam's A is the game's A, B is B, X is X and Y is Y.
+// Confirm/Cancel says which of A and B answers yes.
 void test_steam_input_pads_are_read_as_steam_presents_them() {
     const struct {
         SDL_GameControllerButton pressed;
         DsButton gives;
-    } kPlaces[] = {
-        {SDL_CONTROLLER_BUTTON_A, DsButton::B},
-        {SDL_CONTROLLER_BUTTON_B, DsButton::A},
-        {SDL_CONTROLLER_BUTTON_X, DsButton::Y},
-        {SDL_CONTROLLER_BUTTON_Y, DsButton::X},
+    } kLetters[] = {
+        {SDL_CONTROLLER_BUTTON_A, DsButton::A},
+        {SDL_CONTROLLER_BUTTON_B, DsButton::B},
+        {SDL_CONTROLLER_BUTTON_X, DsButton::X},
+        {SDL_CONTROLLER_BUTTON_Y, DsButton::Y},
     };
-    for (const auto& place : kPlaces) {
-        const SteamPress press = press_on_steam_pad(place.pressed, ConfirmButton::East);
+    for (const auto& letter : kLetters) {
+        const SteamPress press = press_on_steam_pad(letter.pressed, ConfirmButton::East);
         if (!press.attached) {
             std::printf("# skipped: SDL here cannot present a Steam pad\n");
             return;
         }
-        CHECK_MSG(press.held.pressed(place.gives),
-                  std::string("Steam's ") + SDL_GameControllerGetStringForButton(place.pressed) +
-                      " did not reach the game in its place");
+        CHECK_MSG(press.held.pressed(letter.gives),
+                  std::string("Steam's ") + SDL_GameControllerGetStringForButton(letter.pressed) +
+                      " did not reach the game as that letter");
     }
-    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, ConfirmButton::East).actions,
-                     UiAction::Confirm));
     CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, ConfirmButton::East).actions,
-                     UiAction::Cancel));
-    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, ConfirmButton::South).actions,
                      UiAction::Confirm));
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, ConfirmButton::East).actions,
+                     UiAction::Cancel));
     CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, ConfirmButton::South).actions,
+                     UiAction::Confirm));
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, ConfirmButton::South).actions,
                      UiAction::Cancel));
 }
 
-// A Nintendo controller Steam presents arrives with its printed letters --
-// Steam's A is the one on the right -- and those are the places this app
-// reads by, so they are taken as given. Any other pad Steam presents, and a
-// Nintendo pad SDL reads itself, is read by place.
-void test_steam_nintendo_pads_keep_their_letters() {
-    const SDL_GameControllerType kPro = SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO;
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro) == SDL_CONTROLLER_BUTTON_B);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_B, true, kPro) == SDL_CONTROLLER_BUTTON_A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_X, true, kPro) == SDL_CONTROLLER_BUTTON_Y);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_Y, true, kPro) == SDL_CONTROLLER_BUTTON_X);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR) ==
-          SDL_CONTROLLER_BUTTON_B);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_START, true, kPro) == SDL_CONTROLLER_BUTTON_START);
-    // So Steam's A says yes and is DS A, with Confirm/Cancel on east.
+// The letters are Steam's alone: the same for every pad Steam presents, and a
+// pad SDL reads itself is still read by place.
+void test_steam_letters_ignore_the_controller() {
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true) == SDL_CONTROLLER_BUTTON_B);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_B, true) == SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_X, true) == SDL_CONTROLLER_BUTTON_Y);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_Y, true) == SDL_CONTROLLER_BUTTON_X);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_START, true) == SDL_CONTROLLER_BUTTON_START);
     DsButton gives = DsButton::B;
-    CHECK(ds_button_for_controller_button(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro), gives));
+    CHECK(ds_button_for_controller_button(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true), gives));
     CHECK(gives == DsButton::A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, kPro) == confirm_button_for(ConfirmButton::East));
-
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, false, kPro) == SDL_CONTROLLER_BUTTON_A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_XBOXONE) ==
-          SDL_CONTROLLER_BUTTON_A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN) ==
-          SDL_CONTROLLER_BUTTON_A);
-    // Steam gives no type for some Nintendo pads, a Switch 2 controller
-    // through an SInput adapter among them; its name says what it is.
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch2-Pico SInput") ==
-          SDL_CONTROLLER_BUTTON_B);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_X, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch 2 Controller") ==
-          SDL_CONTROLLER_BUTTON_Y);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Steam Virtual Gamepad") ==
-          SDL_CONTROLLER_BUTTON_A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, true, SDL_CONTROLLER_TYPE_UNKNOWN, "Steam Deck") ==
-          SDL_CONTROLLER_BUTTON_A);
-    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, false, SDL_CONTROLLER_TYPE_UNKNOWN, "Switch 2 Controller") ==
-          SDL_CONTROLLER_BUTTON_A);
+    CHECK(face_button_as_read(SDL_CONTROLLER_BUTTON_A, false) == SDL_CONTROLLER_BUTTON_A);
 }
 
 // Nintendo positional, end to end: south is DS B, east is DS A.
@@ -1578,7 +1552,7 @@ int main() {
     test_holding_a_direction_keeps_moving();
     test_a_pad_arriving_pushed_does_not_move_the_menu();
     test_steam_input_pads_are_read_as_steam_presents_them();
-    test_steam_nintendo_pads_keep_their_letters();
+    test_steam_letters_ignore_the_controller();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();

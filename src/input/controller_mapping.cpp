@@ -1,7 +1,5 @@
 #include "input/controller_mapping.hpp"
 
-#include <cctype>
-
 namespace ds {
 
 void apply_controller_hints() {
@@ -97,22 +95,8 @@ PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
     }
 }
 
-bool steam_pad_has_nintendo_letters(bool presented_by_steam, SDL_GameControllerType type,
-                                    const char* name) {
-    if (!presented_by_steam) return false;
-    if (pad_letter_layout(type) == PadLetterLayout::Nintendo) return true;
-    if (name == nullptr) return false;
-    std::string lowered(name);
-    for (char& c : lowered) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (const char* word : {"nintendo", "switch", "joy-con", "joycon"}) {
-        if (lowered.find(word) != std::string::npos) return true;
-    }
-    return false;
-}
-
-SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam,
-                                             SDL_GameControllerType type, const char* name) {
-    if (!steam_pad_has_nintendo_letters(presented_by_steam, type, name)) return button;
+SDL_GameControllerButton face_button_as_read(SDL_GameControllerButton button, bool presented_by_steam) {
+    if (!presented_by_steam) return button;
     switch (button) {
         case SDL_CONTROLLER_BUTTON_A: return SDL_CONTROLLER_BUTTON_B;  // A: east
         case SDL_CONTROLLER_BUTTON_B: return SDL_CONTROLLER_BUTTON_A;  // B: south

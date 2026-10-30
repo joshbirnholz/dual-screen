@@ -220,6 +220,16 @@ void ButtonGlyphSheet::draw(QuadRenderer& quads,
     if (!texture_.valid() || glyph == ButtonGlyph::Count) {
         return;
     }
+    if (by_letter_ && style_ != PadGlyphStyle::Nintendo) {
+        // Steam's letter, where Steam's pad has it -- see set_by_letter().
+        switch (glyph) {
+            case ButtonGlyph::A: glyph = ButtonGlyph::B; break;
+            case ButtonGlyph::B: glyph = ButtonGlyph::A; break;
+            case ButtonGlyph::X: glyph = ButtonGlyph::Y; break;
+            case ButtonGlyph::Y: glyph = ButtonGlyph::X; break;
+            default: break;
+        }
+    }
     const int cell = static_cast<int>(glyph_cell(style_, glyph));
     const float left = static_cast<float>((cell % kGlyphSheetColumns) * cell_width_);
     const float top = static_cast<float>((cell / kGlyphSheetColumns) * cell_height_);
