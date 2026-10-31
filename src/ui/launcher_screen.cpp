@@ -18,7 +18,7 @@ namespace {
 // the filtering that smooths it draws no dark fringe.
 std::vector<uint8_t> with_round_corners(const std::vector<uint8_t>& rgba, int width, int height) {
     std::vector<uint8_t> out = rgba;
-    const float radius = std::min(width, height) * 0.16f;
+    const float radius = std::min(width, height) * 0.07f;
     constexpr int kSamples = 4;
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
