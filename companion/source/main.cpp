@@ -582,6 +582,7 @@ private:
     // A host joined handing this device a token to start games there -- see
     // net::RemoteStartGrantMessage: kept, with how to wake that computer.
     void keep_remote_start_grant();
+    void retry_quick_start();
     // What this device calls itself to a host.
     std::string device_name_;
     // A game just started on a computer from here: the host picker joins it
@@ -909,6 +910,29 @@ void Client::open_launcher() {
     launcher_.open(/*runs_games=*/false);
 }
 
+// A game started from the first screen that could not be joined -- still
+// loading, say, and slow to answer -- is looked for and joined again, on its
+// own page, until its two minutes are up. Only then does that page say what
+// went wrong; the list of devices to connect to never comes into it.
+void Client::retry_quick_start() {
+    const std::optional<AwaitedLaunch> launch = awaited_launch_;
+    const std::string why = session_.status_detail();
+    if (launch && net::monotonic_millis() < launch->until_ms) {
+        log_info("couldn't join " + launch->title + " on " + launch->computer + " yet, so trying again");
+        begin_search(ScreenId::Bottom);
+        if (state_ == State::Browsing) {
+            awaited_launch_ = launch;
+            remote_start_.awaiting();
+            state_ = State::RemoteStart;
+            return;
+        }
+    }
+    log_warn("could not join the game started from the first screen: " + why);
+    awaited_launch_.reset();
+    state_ = State::RemoteStart;
+    remote_start_.fail(why);
+}
+
 #if DS_LOCAL_PLAY
 void Client::start_updater(const AppPaths& paths) {
     std::unique_ptr<update::Backend> backend;
@@ -1045,8 +1069,13 @@ void Client::join(const net::DiscoveredHost& host) {
     launcher_.set_recent({});
     // A game started from the first screen keeps its page up, saying it is
     // connecting, until the game is on screen.
-    if (remote_start_.is_open()) remote_start_.connecting();
-    awaited_launch_.reset();
+    // Its two minutes stand, too: a join that does not take is tried again
+    // until they are up -- see retry_quick_start().
+    if (remote_start_.is_open()) {
+        remote_start_.connecting();
+    } else {
+        awaited_launch_.reset();
+    }
     session_.connect_to(host);
     video_layers_.forget();
     menu_backdrop_.forget();
@@ -2024,6 +2053,7 @@ void Client::run() {
             case State::Connecting:
                 if (session_.status() == net::CompanionSession::Status::Connected) {
                     remote_start_.close();
+                    awaited_launch_.reset();
                     state_ = State::Playing;
                     close_menu();
                     input_.set_game_input_enabled(true);
@@ -2037,6 +2067,9 @@ void Client::run() {
                     compositor_.set_bezel_art(bezel_art_.texture(session_.system()));
                     log_info("connected to " + session_.game_title() + " as the " +
                              to_string(session_.granted_screen()) + " screen");
+                } else if (session_.status() == net::CompanionSession::Status::Failed &&
+                           remote_start_.is_open()) {
+                    retry_quick_start();
                 } else if (session_.status() == net::CompanionSession::Status::Failed) {
                     state_ = State::Failed;
                     failure_ = session_.status_detail();

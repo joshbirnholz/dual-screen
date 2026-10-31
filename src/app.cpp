@@ -6940,8 +6940,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 for (const net::DiscoveredHost& host : companion_session->hosts()) {
                     if (host.address != awaited_launch->address || !host.offers(ScreenId::Bottom)) continue;
                     // Joined under this same page, which says so until the
-                    // game is on screen.
-                    awaited_launch.reset();
+                    // game is on screen. Its two minutes stand: a join that
+                    // does not take is tried again until they are up.
                     joining_host = host;
                     companion_session->connect_to(host);
                     menu_backdrop.forget();
@@ -6972,8 +6972,34 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            // A game started from the first screen that could not be joined
+            // -- still loading, say, and slow to answer -- is looked for and
+            // joined again, on its own page, until its two minutes are up.
+            // Only then does that page say what went wrong.
+            if (remote_start.is_open() &&
+                companion_session->status() == net::CompanionSession::Status::Failed) {
+                const std::optional<AwaitedLaunch> launch = awaited_launch;
+                const std::string why = companion_session->status_detail();
+                if (launch && std::chrono::steady_clock::now() < launch->until) {
+                    log_info("couldn't join " + launch->title + " on " + launch->computer +
+                             " yet, so trying again");
+                    start_companion(ScreenId::Bottom);
+                    if (state == State::HostPicker) {
+                        awaited_launch = launch;
+                        remote_start.awaiting();
+                        state = State::RemoteStart;
+                        break;
+                    }
+                }
+                log_warn("could not join the game started from the first screen: " + why);
+                awaited_launch.reset();
+                state = State::RemoteStart;
+                remote_start.fail(why);
+                break;
+            }
             // Joined: the quick start page that led here is done.
             if (remote_start.is_open()) remote_start.close();
+            awaited_launch.reset();
             // The host's settings are up. This device is not drawing them --
             // see MenuAction::Settings -- but the player is still holding a pad
             // and it is still their session, so the presses go over.

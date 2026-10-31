@@ -56,6 +56,9 @@ public:
                         int icon_width = 0, int icon_height = 0, std::vector<uint8_t> icon_rgba = {});
     // Started, and now being joined: said under the title until close().
     void connecting();
+    // Back to waiting for the game, after a join that did not take -- one
+    // still loading, say.
+    void awaiting();
     // It never came up, or the joining failed: an alert says so, and OK
     // leaves.
     void fail(std::string message);

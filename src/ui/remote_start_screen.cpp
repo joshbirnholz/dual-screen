@@ -68,6 +68,8 @@ void RemoteStartScreen::close() {
 
 void RemoteStartScreen::connecting() { step_ = Step::Connecting; }
 
+void RemoteStartScreen::awaiting() { step_ = Step::Awaiting; }
+
 void RemoteStartScreen::fail(std::string message) {
     drop_job();
     alert(std::move(message));
