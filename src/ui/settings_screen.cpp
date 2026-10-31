@@ -305,8 +305,8 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             if (offers_updates_) {
                 // Everything Dualscreen keeps up to date, in one place: the
                 // one check for all of it, then each and what it is at, then
-                // a row for each emulator not here yet.
-                items.push_back(Item{Item::Kind::Heading, Row::Count, "Updates"});
+                // a row for each emulator not here yet. No heading: Check
+                // for Updates says what these are.
                 items.push_back(Item{Item::Kind::CheckUpdates, Row::Count, "Check for Updates"});
                 items.push_back(Item{Item::Kind::Status, Row::Count, "Dualscreen", updates_value_});
                 for (const UpdateLine& line : update_lines_) {
