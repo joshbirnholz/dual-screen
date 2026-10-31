@@ -371,8 +371,10 @@ void LauncherScreen::render(QuadRenderer& quads,
         } else if (confirming_ < 0 && cursor_drawn(focus_ == static_cast<int>(rows_.size() + index))) {
             const float ring = std::max(3.0f, std::round(scale * 1.6f));
             const float out = std::round(ring * 1.2f);
-            quads.draw_rounded_ring(PixelRect{tile.x - out, tile.y - out, tile.w + out * 2.0f, tile.h + out * 2.0f},
-                                    radius + out, ring, menu_ring_left(), menu_ring_right());
+            quads.draw_rounded_ring(
+                bumped_cursor_ring(PixelRect{tile.x - out, tile.y - out, tile.w + out * 2.0f, tile.h + out * 2.0f},
+                                   scale),
+                radius + out, ring, menu_ring_left(), menu_ring_right());
         }
     }
 

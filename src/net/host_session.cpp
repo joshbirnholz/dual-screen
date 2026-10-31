@@ -1797,12 +1797,13 @@ void HostSession::clear_companion_screens() {
     companion_.send(out);
 }
 
-void HostSession::publish_menu_sound(MenuSound sound) {
+void HostSession::publish_menu_sound(MenuSound sound, uint8_t bump_direction) {
     if (!has_companion() || !handshake_done_) {
         return;
     }
     MenuSoundMessage message;
     message.sound = sound;
+    message.bump_direction = bump_direction;
     std::vector<uint8_t> out;
     encode_menu_sound(message, out);
     companion_.send(out);

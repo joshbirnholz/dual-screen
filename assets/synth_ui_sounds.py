@@ -2,7 +2,7 @@
 """Synthesises the menus' sounds: assets/ui_sounds/click/*.wav.
 
 The sounds the shell plays -- move_cursor, confirm, cancel, error,
-open_quick_menu, save_state, toggle_on, toggle_off -- made here from sine waves and noise, so they are this
+open_quick_menu, save_state, toggle_on, toggle_off, bump -- made here from sine waves and noise, so they are this
 project's own and carry nobody else's licence. They aim at the feel of a
 console's system menus -- dry plastic ticks and pops, short, quiet, tactile,
 pitched a little up for yes and down for no -- without copying any.
@@ -176,6 +176,13 @@ def click_style():
 
     s["toggle_on"] = (latch(((0.0, 1180, 0.6), (0.032, 1770, 1.0)), 7), -9)
     s["toggle_off"] = (latch(((0.0, 1480, 0.75), (0.032, 990, 0.85)), 8), -10)
+
+    # The cursor bumping against the end of a list: a soft, dull knock --
+    # low, short and muffled, quieter than a move, so that it reads as the
+    # cursor stopped rather than anything done.
+    bump = soften(tone(420, 300, 0.05, 0.011, glide=0.012, partials=((1, 1), (2.7, 0.22))), 1800)
+    mix_into(bump, soften(noise(0.008, 0.0012, 250, 2500, 9), 2500), 0, 0.35)
+    s["bump"] = (bump, -15)
     return s
 
 

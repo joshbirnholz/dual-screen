@@ -1860,6 +1860,7 @@ uint64_t steady_micros() {
 UiSoundView Client::sound_view() const {
     UiSoundView view;
     view.screen = static_cast<int>(state_);
+    view.ring = cursor_ring_up();
     if (state_ == State::Playing) {
         // The host's Settings, opened from its quick menu, count as the menu
         // too: they are drawn there, not here, but they are over the game.
@@ -2241,7 +2242,11 @@ void Client::run() {
         const bool tapped = std::any_of(pointers.begin(), pointers.end(),
                                         [](const PointerEvent& pointer) { return pointer.released; });
         const double now_seconds = static_cast<double>(net::monotonic_millis() - started_ms) / 1000.0;
-        ui_sound_judge_.note_input(actions, tapped, now_seconds);
+        {
+            bool repeating = false;
+            for (const UiAction action : actions) repeating = repeating || input_.direction_repeating(action);
+            ui_sound_judge_.note_input(actions, tapped, now_seconds, repeating);
+        }
         handle_actions(actions, pointers);
         sync_scroll();
         // In a session the host decides, for both devices: its menu is the
@@ -2250,12 +2255,21 @@ void Client::run() {
         if (const std::optional<UiSound> sound = ui_sound_judge_.observe(sound_view(), now_seconds)) {
             // Nothing for a press that closes the app -- Quit, or Load a game,
             // which starts it again: the sound would be cut off as it goes.
-            if (!host_decides && running_) ui_sounds_.play(*sound);
+            if (!host_decides && running_) {
+                ui_sounds_.play(*sound);
+                // A bump is seen as well as heard: the ring jiggles the way
+                // it was pushed.
+                if (*sound == UiSound::Bump) start_menu_bump(ui_sound_judge_.bump_direction());
+            }
         }
-        net::MenuSound from_host;
+        net::MenuSoundMessage from_host;
         while (session_.take_menu_sound(from_host)) {
-            const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host));
-            if (sound && host_decides) ui_sounds_.play(*sound);
+            const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host.sound));
+            if (!sound || !host_decides) continue;
+            ui_sounds_.play(*sound);
+            if (const std::optional<UiAction> way = bump_direction_from_wire(from_host.bump_direction)) {
+                start_menu_bump(*way);
+            }
         }
 
         // And while the host's Change Order waits for a press on each of

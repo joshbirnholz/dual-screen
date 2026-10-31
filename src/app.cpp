@@ -6679,6 +6679,7 @@ UiSoundView App::Impl::sound_view() const {
     UiSoundView view;
     view.screen = static_cast<int>(state);
     view.saves = save_states_made;
+    view.ring = cursor_ring_up();
     // A companion's game is the host's, and on screen here once connected.
     const bool game_here = local_game() != nullptr || is_companion();
     view.in_game = state == State::Playing || (state == State::Companion && is_companion());
@@ -6726,10 +6727,17 @@ UiSoundView App::Impl::sound_view() const {
 void App::Impl::play_ui_sound(UiSound sound, const UiSoundView& view) {
     if (host_decides_sounds()) return;
     ui_sounds.play(sound);
+    // A bump is seen as well as heard: the ring jiggles the way it was
+    // pushed -- on the other device's drawing of the menu too.
+    uint8_t bump_direction = 0;
+    if (sound == UiSound::Bump) {
+        start_menu_bump(ui_sound_judge.bump_direction());
+        bump_direction = bump_direction_to_wire(ui_sound_judge.bump_direction());
+    }
     // Anything over the game is the session's, whichever device is showing
     // it: the menu is drawn on both, and its sounds are heard on both.
     if (host_session && host_session->has_companion() && (view.menu || view.in_game)) {
-        host_session->publish_menu_sound(static_cast<net::MenuSound>(ui_sound_to_wire(sound)));
+        host_session->publish_menu_sound(static_cast<net::MenuSound>(ui_sound_to_wire(sound)), bump_direction);
     }
 }
 
@@ -9231,7 +9239,11 @@ int App::run(const AppOptions& options) {
             // in a menu only brings it back -- see menu_cursor_input().
             ui_actions = menu_cursor_input(ui_actions, pointers, impl.state != Impl::State::Playing);
             begin_menu_frame();
-            impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
+            {
+                bool repeating = false;
+                for (const UiAction action : ui_actions) repeating = repeating || impl.input.direction_repeating(action);
+                impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds, repeating);
+            }
             impl.handle_ui(ui_actions, pointers);
             // The host's page drawn here, scrolled where the host has it --
             // or, scrolled here, the host told.
@@ -9269,10 +9281,14 @@ int App::run(const AppOptions& options) {
                 impl.play_ui_sound(*sound, view);
             }
             if (impl.companion_session) {
-                net::MenuSound from_host;
+                net::MenuSoundMessage from_host;
                 while (impl.companion_session->take_menu_sound(from_host)) {
-                    const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host));
-                    if (sound && impl.host_decides_sounds()) impl.ui_sounds.play(*sound);
+                    const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host.sound));
+                    if (!sound || !impl.host_decides_sounds()) continue;
+                    impl.ui_sounds.play(*sound);
+                    if (const std::optional<UiAction> way = bump_direction_from_wire(from_host.bump_direction)) {
+                        start_menu_bump(*way);
+                    }
                 }
             }
         }

@@ -21,6 +21,9 @@ struct UiSoundView {
     int toggle = -1;         // the switch the cursor is on: 1 on, 0 off, -1
                              // not on one -- a press flipping it sounds
                              // which way it went
+    bool ring = false;       // the cursor drawn as a rounded ring -- not the
+                             // quick menu's sections -- so a direction that
+                             // moves nothing bumps it
 };
 
 // Hashes a screen's state into a view's focus or rest.

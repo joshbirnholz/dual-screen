@@ -750,7 +750,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             // Only the latest few: a backlog played all at once is noise.
             if (decode_menu_sound(payload.data(), payload.size(), sound)) {
                 if (menu_sounds_.size() >= 4) menu_sounds_.pop_front();
-                menu_sounds_.push_back(sound.sound);
+                menu_sounds_.push_back(sound);
             }
             break;
         }
@@ -3701,7 +3701,7 @@ void CompanionSession::answer_update(const UpdateAnswerMessage& answer) {
     stream_.send(out);
 }
 
-bool CompanionSession::take_menu_sound(MenuSound& out) {
+bool CompanionSession::take_menu_sound(MenuSoundMessage& out) {
     if (menu_sounds_.empty()) return false;
     out = menu_sounds_.front();
     menu_sounds_.pop_front();

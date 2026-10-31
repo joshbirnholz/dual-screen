@@ -1457,7 +1457,7 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     if (pointer_holding(ok)) {
         quads.draw_rounded_rect(ok, ok_radius, menu_highlight_fill());
     } else if (menu_cursor_shown()) {
-        draw_menu_cursor(quads, ok, ok_radius, scale);
+        draw_menu_cursor(quads, ok, ok_radius, scale, false);
     }
     text.draw(quads, "OK", ok.x + ok.w * 0.5f, std::round(ok.y + (ok.h - TextRenderer::line_height(scale)) * 0.5f),
               scale, theme.text, TextAlign::Center);

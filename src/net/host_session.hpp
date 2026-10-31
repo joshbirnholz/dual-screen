@@ -319,8 +319,9 @@ public:
     // the restarted game sends one -- see MessageType::ScreensCleared.
     void clear_companion_screens();
     // A menu sound this device just played, sent for the companion to play
-    // as well -- see MessageType::MenuSound. Nothing without one.
-    void publish_menu_sound(MenuSound sound);
+    // as well -- see MessageType::MenuSound -- with a Bump's way, so its ring
+    // jiggles there too. Nothing without one.
+    void publish_menu_sound(MenuSound sound, uint8_t bump_direction = 0);
 
     // Ends the session from this end. The companion is told, so it returns to
     // its launcher rather than waiting for a timeout.
