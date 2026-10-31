@@ -11,6 +11,35 @@
 namespace ds {
 namespace {
 
+// A game's icon with its corners rounded off, as the Switch's are: each pixel
+// out past a corner's curve made as see-through as the curve leaves it,
+// measured over a grid of points inside it so the edge comes out smooth even
+// on a 32-pixel icon drawn many times its size. Only the alpha changes, so
+// the filtering that smooths it draws no dark fringe.
+std::vector<uint8_t> with_round_corners(const std::vector<uint8_t>& rgba, int width, int height) {
+    std::vector<uint8_t> out = rgba;
+    const float radius = std::min(width, height) * 0.16f;
+    constexpr int kSamples = 4;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int inside = 0;
+            for (int sy = 0; sy < kSamples; ++sy) {
+                for (int sx = 0; sx < kSamples; ++sx) {
+                    const float px = x + (sx + 0.5f) / kSamples;
+                    const float py = y + (sy + 0.5f) / kSamples;
+                    const float dx = std::max({radius - px, 0.0f, px - (width - radius)});
+                    const float dy = std::max({radius - py, 0.0f, py - (height - radius)});
+                    if (dx * dx + dy * dy <= radius * radius) ++inside;
+                }
+            }
+            if (inside == kSamples * kSamples) continue;
+            uint8_t& alpha = out[(static_cast<std::size_t>(y) * width + x) * 4 + 3];
+            alpha = static_cast<uint8_t>(alpha * inside / (kSamples * kSamples));
+        }
+    }
+    return out;
+}
+
 const LauncherScreen* unused_tag = nullptr;
 
 const char* title_for(LauncherChoice choice) {
@@ -323,7 +352,8 @@ void LauncherScreen::render(QuadRenderer& quads,
         if (!texture.valid() && game.icon_width > 0 && game.icon_height > 0 &&
             game.icon_rgba.size() ==
                 static_cast<std::size_t>(game.icon_width) * static_cast<std::size_t>(game.icon_height) * 4u) {
-            texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(game.icon_rgba.data()), game.icon_width,
+            const std::vector<uint8_t> rounded = with_round_corners(game.icon_rgba, game.icon_width, game.icon_height);
+            texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(rounded.data()), game.icon_width,
                                     game.icon_height, game.icon_width);
             texture.set_linear_filtering(true);
         }
