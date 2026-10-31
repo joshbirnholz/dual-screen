@@ -140,8 +140,9 @@ and sounds like it, however it was closed. A switch -- an On/Off setting --
 has a sound of its own for each way it is flipped, on and off. A direction
 that cannot go any further -- up past the top row, down past the bottom, or
 sideways with nothing there -- bumps, as a Switch's cursor does: the cursor's
-rounded ring jiggles the way it was pushed and makes a small knock, once per
-press rather than on and on while the direction is held. Where the cursor is
+rounded ring jiggles the way it was pushed and makes a small knock. Held down
+a list, it bumps once as it reaches the end, rather than on and on while the
+direction is held there. Where the cursor is
 not a rounded ring, such as the quick menu's sections down its left, it does
 not bump. Any other press that changes nothing makes no sound, and nor do a
 game's own buttons while it is playing. A popup's Cancel sounds the

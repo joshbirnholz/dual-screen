@@ -301,7 +301,7 @@ std::chrono::steady_clock::time_point g_ring_drawn{};
 UiAction g_bump_direction = UiAction::Up;
 std::chrono::steady_clock::time_point g_bump_started{};
 bool g_bumping = false;
-constexpr double kBumpSeconds = 0.22;
+constexpr double kBumpSeconds = 0.26;
 }  // namespace
 
 void begin_menu_frame() {
@@ -333,7 +333,7 @@ void menu_bump_offset(float line, float& dx, float& dy) {
     // crosses back once and a half, dying away as it goes.
     const double u = t / kBumpSeconds;
     const double along = std::sin(2.5 * 3.14159265358979 * u) * (1.0 - u) * (1.0 - u);
-    const float distance = static_cast<float>(along) * std::max(2.0f, line * 0.25f);
+    const float distance = static_cast<float>(along) * std::max(4.0f, line * 0.55f);
     switch (g_bump_direction) {
         case UiAction::Up: dy = -distance; break;
         case UiAction::Down: dy = distance; break;

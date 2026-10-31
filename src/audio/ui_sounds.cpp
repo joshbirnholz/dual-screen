@@ -247,8 +247,11 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
         } else if (pending_ == Pending::Move && pressed && !moved && !changed && !view.in_game &&
                    view.ring) {
             // Against the end: nothing moved, the ring still there.
-            const bool held = pressed_repeating_ || (blocked_direction_ == pressed &&
-                                                     now_seconds - blocked_at_ < kHeldRepeatWithin);
+            // Bumped already, this way, and held there since: once is
+            // enough. A held direction that scrolled down to the end bumps
+            // as it gets there -- a move in between clears the last bump.
+            const bool held = blocked_direction_ == pressed &&
+                              (pressed_repeating_ || now_seconds - blocked_at_ < kHeldRepeatWithin);
             blocked_direction_ = pressed;
             blocked_at_ = now_seconds;
             if (!held) {
