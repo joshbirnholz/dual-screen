@@ -801,6 +801,7 @@ enum class MenuSound : uint8_t {
     SaveState = 6,
     ToggleOn = 7,
     ToggleOff = 8,
+    Bump = 9,
 };
 
 // The stylus cursor, as the host has it -- see StylusCursor. `u` and `v` are
@@ -910,6 +911,10 @@ struct WiiUPlayerViewMessage {
 
 struct MenuSoundMessage {
     MenuSound sound = MenuSound::MoveCursor;
+    // A Bump's way, for the ring to jiggle that way on the other device's
+    // drawing of the menu too: 1 up, 2 down, 3 left, 4 right; 0 for any
+    // other sound. Sent only for a Bump.
+    uint8_t bump_direction = 0;
 };
 
 struct RumbleMessage {

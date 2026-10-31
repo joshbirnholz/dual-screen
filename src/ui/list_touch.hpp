@@ -78,6 +78,21 @@ bool menu_cursor_shown();
 void set_menu_cursor_shown(bool shown);
 // Once a frame, before it is drawn.
 void begin_menu_frame();
+// Said by whatever draws the cursor as a rounded ring -- a row's, a popup's
+// button's, a dropdown's choice's, a tile's -- each time it does. The quick
+// menu's sections, filled rather than ringed, do not say it.
+void note_cursor_ring_drawn();
+// Whether the frames just drawn had the cursor as a rounded ring: then a
+// direction that moves nothing bumps it -- see UiSoundJudge.
+bool cursor_ring_up();
+// The cursor bumping against the end of where it can go, as a Switch's
+// does: the ring jiggles a little towards `direction` -- Up, Down, Left or
+// Right -- and settles back, over a fifth of a second.
+void start_menu_bump(UiAction direction);
+// Where the jiggle has the ring right now, in pixels from where it belongs,
+// for a page drawn with text at `line` pixels a line: 0, 0 but while one
+// is under way.
+void menu_bump_offset(float line, float& dx, float& dy);
 // Whether something on a page is drawn as under the cursor: `focused`,
 // while the cursor is drawn at all and no popup is up over the page.
 inline bool cursor_drawn(bool focused) { return focused && menu_cursor_shown() && !popup_up(); }

@@ -168,8 +168,8 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
             // Ringed, the ring standing a little proud of the button.
             const float ring = std::max(3.0f, std::round(scale * 1.4f));
             const float out = std::round(ring * 0.6f);
-            const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
-                                  button.h + out * 2.0f};
+            const PixelRect outer = bumped_cursor_ring(
+                PixelRect{button.x - out, button.y - out, button.w + out * 2.0f, button.h + out * 2.0f}, scale);
             // Barely rounded, but for a corner it shares with the box, which
             // it follows from just outside -- as a Switch's popups draw it.
             const float small = std::max(3.0f, std::round(scale * 2.0f));

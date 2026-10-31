@@ -608,6 +608,7 @@ void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
 void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_u8(out, static_cast<uint8_t>(message.sound));
+    if (message.sound == MenuSound::Bump) put_u8(out, message.bump_direction);
     finish_message(out, start, MessageType::MenuSound);
 }
 
@@ -1312,10 +1313,15 @@ bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& 
     uint8_t sound = 0;
     reader.u8(sound);
     if (!reader.ok() || sound < static_cast<uint8_t>(MenuSound::MoveCursor) ||
-        sound > static_cast<uint8_t>(MenuSound::ToggleOff)) {
+        sound > static_cast<uint8_t>(MenuSound::Bump)) {
         return false;
     }
     out.sound = static_cast<MenuSound>(sound);
+    out.bump_direction = 0;
+    if (out.sound == MenuSound::Bump) {
+        reader.u8(out.bump_direction);
+        if (!reader.ok() || out.bump_direction > 4) return false;
+    }
     return true;
 }
 

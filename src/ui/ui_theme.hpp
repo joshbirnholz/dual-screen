@@ -103,8 +103,23 @@ inline float menu_row_pad(float line) { return std::round(line * 1.4f); }
 inline Color menu_ring_left() { return accent_ring().left; }
 inline Color menu_ring_right() { return accent_ring().right; }
 
-// The cursor's ring and the faint fill inside it, round `rect`.
-inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float radius, float scale) {
+// Where the cursor's ring round `rect` is drawn this frame: there, but
+// while it is bumping -- see start_menu_bump(). Whatever draws a rounded
+// ring for the cursor draws it here, and so says one is up.
+inline PixelRect bumped_cursor_ring(const PixelRect& rect, float scale) {
+    note_cursor_ring_drawn();
+    float dx = 0.0f;
+    float dy = 0.0f;
+    menu_bump_offset(TextRenderer::line_height(scale), dx, dy);
+    return PixelRect{rect.x + dx, rect.y + dy, rect.w, rect.h};
+}
+
+// The cursor's ring and the faint fill inside it, round `rect`. Not
+// `bumps` where a direction moves something other than the cursor -- a
+// Touch Point being placed -- so that one moving nothing is not a bump.
+inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& at, float radius, float scale,
+                             bool bumps = true) {
+    const PixelRect rect = bumps ? bumped_cursor_ring(at, scale) : at;
     const float ring = std::max(2.0f, std::round(scale * 1.5f));
     quads.draw_rounded_ring(rect, radius, rect.w + rect.h, Color{1.0f, 1.0f, 1.0f, 0.07f},
                             Color{1.0f, 1.0f, 1.0f, 0.07f});

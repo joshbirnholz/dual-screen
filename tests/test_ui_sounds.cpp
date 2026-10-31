@@ -37,7 +37,8 @@ std::vector<uint8_t> make_pack(const std::vector<std::string>& names, uint32_t f
 }
 
 const std::vector<std::string> kAll = {"move_cursor",     "confirm",    "cancel",    "error",
-                                       "open_quick_menu", "save_state", "toggle_on", "toggle_off"};
+                                       "open_quick_menu", "save_state", "toggle_on", "toggle_off",
+                                       "bump"};
 
 void test_the_carried_pack_has_every_sound_at_48k() {
     UiSoundPack pack;
@@ -79,7 +80,7 @@ void test_a_pack_cut_short_or_missing_a_sound_is_refused() {
     std::vector<std::string> all_but_one(kAll.begin(), kAll.end() - 1);
     std::vector<uint8_t> missing = make_pack(all_but_one, 10, 100);
     CHECK(!decode_ui_sound_pack(missing.data(), missing.size(), pack, &error));
-    CHECK_MSG(error.find("toggle_off") != std::string::npos, error);
+    CHECK_MSG(error.find("bump") != std::string::npos, error);
 
     std::vector<uint8_t> other = whole;
     other[4] = 3;
@@ -152,7 +153,8 @@ void test_a_press_sounds_only_when_it_changed_something() {
     auto sound = judge.observe(view_at(1, 1), 0.1);
     CHECK(sound && *sound == UiSound::MoveCursor);
 
-    // At the end of the list it does not: nothing.
+    // At the end of the list it does not: nothing, the cursor not being a
+    // ring here to bump -- see test_a_ring_against_the_end_bumps().
     judge.note_input({UiAction::Down}, false, 0.2);
     CHECK(!judge.observe(view_at(1, 1), 0.2));
 
@@ -307,6 +309,72 @@ void test_a_switch_flipped_sounds_on_or_off() {
     CHECK(sound && *sound == UiSound::Confirm);
 }
 
+UiSoundView ringed(int screen, uint64_t focus, uint64_t rest = 0) {
+    UiSoundView view = view_at(screen, focus, rest);
+    view.ring = true;
+    return view;
+}
+
+// A direction that moves nothing while the cursor is a ring bumps, that way;
+// once for a press, not on and on for one held there.
+void test_a_ring_against_the_end_bumps() {
+    UiSoundJudge judge;
+    judge.observe(ringed(1, 0), 0.0);
+    judge.note_input({UiAction::Up}, false, 0.1);
+    auto sound = judge.observe(ringed(1, 0), 0.1);
+    CHECK_MSG(sound && *sound == UiSound::Bump, "a ring pushed past the top did not bump");
+    CHECK(judge.bump_direction() == UiAction::Up);
+    // Only on the view just after: nothing changing later is no second bump.
+    CHECK(!judge.observe(ringed(1, 0), 0.15));
+
+    // Held there, repeating: no more bumps, said so or not.
+    judge.note_input({UiAction::Right}, false, 1.0);
+    sound = judge.observe(ringed(1, 0), 1.0);
+    CHECK(sound && *sound == UiSound::Bump && judge.bump_direction() == UiAction::Right);
+    judge.note_input({UiAction::Right}, false, 1.4, true);
+    CHECK_MSG(!judge.observe(ringed(1, 0), 1.4), "a held direction went on bumping");
+    judge.note_input({UiAction::Right}, false, 1.475);
+    CHECK_MSG(!judge.observe(ringed(1, 0), 1.475), "the other device's held direction went on bumping");
+    // Pressed again, after letting go: a bump again.
+    judge.note_input({UiAction::Right}, false, 2.0);
+    sound = judge.observe(ringed(1, 0), 2.0);
+    CHECK(sound && *sound == UiSound::Bump);
+
+    // A direction that moves the cursor is a move; one that changes
+    // anything else is not a bump.
+    judge.note_input({UiAction::Down}, false, 2.5);
+    sound = judge.observe(ringed(1, 1), 2.5);
+    CHECK(sound && *sound == UiSound::MoveCursor);
+    judge.note_input({UiAction::Down}, false, 3.0);
+    sound = judge.observe(ringed(1, 1, 7), 3.0);
+    CHECK(!sound || *sound != UiSound::Bump);
+
+    // The cursor not a ring -- the quick menu's sections -- never bumps.
+    judge.observe(view_at(1, 1), 3.5);
+    judge.note_input({UiAction::Up}, false, 4.0);
+    CHECK_MSG(!judge.observe(view_at(1, 1), 4.0), "a cursor that is not a ring bumped");
+    // Nor does A that does nothing.
+    judge.observe(ringed(1, 1), 4.5);
+    judge.note_input({UiAction::Confirm}, false, 5.0);
+    CHECK(!judge.observe(ringed(1, 1), 5.0));
+}
+
+void test_a_bumps_way_crosses_the_wire() {
+    for (const UiAction way : {UiAction::Up, UiAction::Down, UiAction::Left, UiAction::Right}) {
+        net::MenuSoundMessage sent;
+        sent.sound = net::MenuSound::Bump;
+        sent.bump_direction = bump_direction_to_wire(way);
+        std::vector<uint8_t> buffer;
+        net::encode_menu_sound(sent, buffer);
+        // Past the length and the type.
+        net::MenuSoundMessage back;
+        CHECK(net::decode_menu_sound(buffer.data() + 6, buffer.size() - 6, back));
+        CHECK(back.sound == net::MenuSound::Bump);
+        CHECK(bump_direction_from_wire(back.bump_direction) == way);
+    }
+    CHECK(!bump_direction_from_wire(0) && !bump_direction_from_wire(5));
+}
+
 void test_the_launcher_describes_its_cursor() {
     LauncherScreen launcher;
     launcher.open(false);
@@ -338,13 +406,14 @@ void test_a_sound_crosses_the_wire_as_itself() {
         {UiSound::SaveState, net::MenuSound::SaveState},
         {UiSound::ToggleOn, net::MenuSound::ToggleOn},
         {UiSound::ToggleOff, net::MenuSound::ToggleOff},
+        {UiSound::Bump, net::MenuSound::Bump},
     };
     for (const auto& [sound, wire] : pairs) {
         CHECK(ui_sound_to_wire(sound) == static_cast<uint8_t>(wire));
         CHECK(ui_sound_from_wire(static_cast<uint8_t>(wire)) == sound);
     }
-    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(9));
-    const uint8_t unknown = 9;
+    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(10));
+    const uint8_t unknown = 10;
     net::MenuSoundMessage back;
     CHECK(!net::decode_menu_sound(&unknown, 1, back));
 }
@@ -365,6 +434,8 @@ int main() {
     test_a_popups_cancel_sounds_like_backing_out();
     test_a_save_state_made_chimes();
     test_a_switch_flipped_sounds_on_or_off();
+    test_a_ring_against_the_end_bumps();
+    test_a_bumps_way_crosses_the_wire();
     test_the_launcher_describes_its_cursor();
     test_a_sound_crosses_the_wire_as_itself();
     return test::finish("ui_sounds");

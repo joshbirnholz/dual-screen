@@ -22,7 +22,7 @@ namespace ds {
 namespace {
 
 constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu",
-                                                 "save_state", "toggle_on", "toggle_off"};
+                                                 "save_state", "toggle_on", "toggle_off", "bump"};
 
 uint32_t le32(const uint8_t* at) {
     return uint32_t(at[0]) | uint32_t(at[1]) << 8 | uint32_t(at[2]) << 16 | uint32_t(at[3]) << 24;
@@ -30,6 +30,9 @@ uint32_t le32(const uint8_t* at) {
 
 // How long a press may wait for what it changed to show -- see UiSoundJudge.
 constexpr double kPressCountsFor = 0.5;
+// A direction that moved nothing coming in again sooner than this after the
+// last is one held down, repeating.
+constexpr double kHeldRepeatWithin = 0.15;
 
 }  // namespace
 
@@ -155,11 +158,13 @@ std::size_t UiSoundMixer::playing() const {
         std::count_if(voices_.begin(), voices_.end(), [](const Voice& voice) { return voice.sound >= 0; }));
 }
 
-void UiSoundJudge::note_input(const std::vector<UiAction>& actions, bool tapped, double now_seconds) {
+void UiSoundJudge::note_input(const std::vector<UiAction>& actions, bool tapped, double now_seconds,
+                              bool repeating) {
     // A game's own buttons: A and B mean nothing to the shell while it is
     // playing, and opening the menu has a sound of its own.
     if (have_view_ && last_.in_game) return;
     Pending wanted = Pending::None;
+    std::optional<UiAction> direction;
     const auto rank = [](Pending pending) {
         switch (pending) {
             case Pending::Confirm: return 4;
@@ -179,6 +184,9 @@ void UiSoundJudge::note_input(const std::vector<UiAction>& actions, bool tapped,
             case UiAction::Down:
             case UiAction::Left:
             case UiAction::Right:
+                direction = action;
+                offer(Pending::Move);
+                break;
             case UiAction::PageUp:
             case UiAction::PageDown: offer(Pending::Move); break;
             case UiAction::Confirm:
@@ -196,6 +204,8 @@ void UiSoundJudge::note_input(const std::vector<UiAction>& actions, bool tapped,
     if (wanted != Pending::None) {
         pending_ = wanted;
         pending_at_ = now_seconds;
+        pressed_direction_ = wanted == Pending::Move ? direction : std::nullopt;
+        pressed_repeating_ = repeating;
     }
 }
 
@@ -208,6 +218,10 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
     const UiSoundView before = last_;
     last_ = view;
     if (pending_ != Pending::None && now_seconds - pending_at_ > kPressCountsFor) pending_ = Pending::None;
+
+    // Looked at once, on the view just after the press.
+    const std::optional<UiAction> pressed = pressed_direction_;
+    pressed_direction_.reset();
 
     std::optional<UiSound> sound;
     if (view.error && !before.error) {
@@ -230,6 +244,18 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
                              before.toggle >= 0 && view.toggle >= 0 && before.toggle != view.toggle;
         if (flipped) {
             sound = view.toggle != 0 ? UiSound::ToggleOn : UiSound::ToggleOff;
+        } else if (pending_ == Pending::Move && pressed && !moved && !changed && !view.in_game &&
+                   view.ring) {
+            // Against the end: nothing moved, the ring still there.
+            const bool held = pressed_repeating_ || (blocked_direction_ == pressed &&
+                                                     now_seconds - blocked_at_ < kHeldRepeatWithin);
+            blocked_direction_ = pressed;
+            blocked_at_ = now_seconds;
+            if (!held) {
+                sound = UiSound::Bump;
+                bump_direction_ = *pressed;
+            }
+            pending_ = Pending::None;
         } else if (moved || changed) {
             switch (pending_) {
                 case Pending::Move: sound = UiSound::MoveCursor; break;
@@ -246,6 +272,7 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
         }
     }
     if (sound) pending_ = Pending::None;
+    if (sound && *sound != UiSound::Bump) blocked_direction_.reset();
     return sound;
 }
 

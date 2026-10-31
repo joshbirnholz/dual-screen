@@ -296,9 +296,51 @@ RemoteHeld g_remote_held;
 const RemoteHeld& remote_held() { return g_remote_held; }
 void set_remote_held(bool held, float x, float y) { g_remote_held = RemoteHeld{held, x, y}; }
 
+namespace {
+std::chrono::steady_clock::time_point g_ring_drawn{};
+UiAction g_bump_direction = UiAction::Up;
+std::chrono::steady_clock::time_point g_bump_started{};
+bool g_bumping = false;
+constexpr double kBumpSeconds = 0.22;
+}  // namespace
+
 void begin_menu_frame() {
     g_popup_up = g_popup_drawn_this_frame;
     g_popup_drawn_this_frame = false;
+}
+
+// By the clock rather than the frame, as with a popup: over Cemu's window
+// the menu is drawn at the game's rate, and not on every pass.
+void note_cursor_ring_drawn() { g_ring_drawn = std::chrono::steady_clock::now(); }
+bool cursor_ring_up() { return std::chrono::steady_clock::now() - g_ring_drawn < std::chrono::milliseconds(100); }
+
+void start_menu_bump(UiAction direction) {
+    g_bump_direction = direction;
+    g_bump_started = std::chrono::steady_clock::now();
+    g_bumping = true;
+}
+
+void menu_bump_offset(float line, float& dx, float& dy) {
+    dx = 0.0f;
+    dy = 0.0f;
+    if (!g_bumping) return;
+    const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_bump_started).count();
+    if (t >= kBumpSeconds) {
+        g_bumping = false;
+        return;
+    }
+    // Out quickly, back, a little past and home: a sine at a rate that
+    // crosses back once and a half, dying away as it goes.
+    const double u = t / kBumpSeconds;
+    const double along = std::sin(2.5 * 3.14159265358979 * u) * (1.0 - u) * (1.0 - u);
+    const float distance = static_cast<float>(along) * std::max(2.0f, line * 0.25f);
+    switch (g_bump_direction) {
+        case UiAction::Up: dy = -distance; break;
+        case UiAction::Down: dy = distance; break;
+        case UiAction::Left: dx = -distance; break;
+        case UiAction::Right: dx = distance; break;
+        default: break;
+    }
 }
 
 void set_live_pointer(bool down, float x, float y) {

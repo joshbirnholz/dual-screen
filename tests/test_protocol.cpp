@@ -873,9 +873,10 @@ void test_input_round_trip() {
 
 void test_menu_sound_round_trip() {
     for (const MenuSound sound : {MenuSound::MoveCursor, MenuSound::Cancel, MenuSound::OpenQuickMenu, MenuSound::SaveState,
-                                  MenuSound::ToggleOn, MenuSound::ToggleOff}) {
+                                  MenuSound::ToggleOn, MenuSound::ToggleOff, MenuSound::Bump}) {
         MenuSoundMessage sent;
         sent.sound = sound;
+        if (sound == MenuSound::Bump) sent.bump_direction = 3;
         std::vector<uint8_t> buffer;
         encode_menu_sound(sent, buffer);
         MessageType type = MessageType::Ping;
@@ -885,6 +886,7 @@ void test_menu_sound_round_trip() {
         MenuSoundMessage received;
         CHECK(decode_menu_sound(payload.data(), payload.size(), received));
         CHECK(received.sound == sound);
+        CHECK_EQ(received.bump_direction, sound == MenuSound::Bump ? 3 : 0);
     }
 }
 
