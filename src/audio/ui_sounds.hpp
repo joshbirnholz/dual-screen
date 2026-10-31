@@ -102,9 +102,9 @@ private:
 //
 // A direction that moves nothing while the cursor is a rounded ring bumps,
 // as a Switch's cursor does: the ring jiggles that way and makes a small
-// sound -- see bump_direction(). Only the press itself, and only on the view
-// just after it, the menus moving their cursors as they hear a press; a
-// direction held against the end does not go on bumping. A cursor that is
+// sound -- see bump_direction(). Only on the view just after the press, the
+// menus moving their cursors as they hear one. A direction held down a list
+// bumps once as it reaches the end, and does not go on bumping there. A cursor that is
 // not a ring -- the quick menu's sections -- stays silent, as before.
 class UiSoundJudge {
 public:

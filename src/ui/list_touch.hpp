@@ -87,7 +87,7 @@ void note_cursor_ring_drawn();
 bool cursor_ring_up();
 // The cursor bumping against the end of where it can go, as a Switch's
 // does: the ring jiggles a little towards `direction` -- Up, Down, Left or
-// Right -- and settles back, over a fifth of a second.
+// Right -- and settles back, over a quarter of a second.
 void start_menu_bump(UiAction direction);
 // Where the jiggle has the ring right now, in pixels from where it belongs,
 // for a page drawn with text at `line` pixels a line: 0, 0 but while one

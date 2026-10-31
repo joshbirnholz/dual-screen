@@ -359,6 +359,36 @@ void test_a_ring_against_the_end_bumps() {
     CHECK(!judge.observe(ringed(1, 1), 5.0));
 }
 
+// A direction held down a list bumps once as it reaches the end, then
+// rests there; back up and down to the end again, once more.
+void test_a_held_direction_bumps_once_at_the_end() {
+    UiSoundJudge down;
+    std::optional<UiSound> sound;
+    down.observe(ringed(1, 0), 1.0);
+    // Held down a list, the cursor moving, then reaching the end: one bump
+    // as it gets there, and none after.
+    down.note_input({UiAction::Down}, false, 1.6);
+    sound = down.observe(ringed(1, 1), 1.6);
+    CHECK(sound && *sound == UiSound::MoveCursor);
+    down.note_input({UiAction::Down}, false, 2.0, true);
+    sound = down.observe(ringed(1, 2), 2.0);
+    CHECK(sound && *sound == UiSound::MoveCursor);
+    down.note_input({UiAction::Down}, false, 2.075, true);
+    sound = down.observe(ringed(1, 2), 2.075);
+    CHECK_MSG(sound && *sound == UiSound::Bump, "a held direction reaching the end did not bump");
+    down.note_input({UiAction::Down}, false, 2.15, true);
+    CHECK_MSG(!down.observe(ringed(1, 2), 2.15), "a held direction at the end bumped twice");
+    // Held up from there and back down to the end: once more.
+    down.note_input({UiAction::Up}, false, 2.6);
+    down.observe(ringed(1, 1), 2.6);
+    down.note_input({UiAction::Down}, false, 3.0);
+    down.observe(ringed(1, 2), 3.0);
+    down.note_input({UiAction::Down}, false, 3.4, true);
+    sound = down.observe(ringed(1, 2), 3.4);
+    CHECK(sound && *sound == UiSound::Bump);
+
+}
+
 void test_a_bumps_way_crosses_the_wire() {
     for (const UiAction way : {UiAction::Up, UiAction::Down, UiAction::Left, UiAction::Right}) {
         net::MenuSoundMessage sent;
@@ -435,6 +465,7 @@ int main() {
     test_a_save_state_made_chimes();
     test_a_switch_flipped_sounds_on_or_off();
     test_a_ring_against_the_end_bumps();
+    test_a_held_direction_bumps_once_at_the_end();
     test_a_bumps_way_crosses_the_wire();
     test_the_launcher_describes_its_cursor();
     test_a_sound_crosses_the_wire_as_itself();
