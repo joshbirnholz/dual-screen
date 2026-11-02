@@ -871,9 +871,21 @@ void Client::open_launcher() {
     remote_start_.close();
     awaited_launch_.reset();
     // Looking for computers to start a game on from here too, for the
-    // recently played games along the foot.
-    if (!launch_finder_.running()) launch_finder_.start();
-    if (!recent_games_.running()) recent_games_.start(tokens_path(), 16);
+    // recently played games along the foot -- unless Quick Start is off, when
+    // there are none.
+#if DS_LOCAL_PLAY
+    const bool quick_start = settings_.quick_start;
+#else
+    const bool quick_start = true;
+#endif
+    if (quick_start) {
+        if (!launch_finder_.running()) launch_finder_.start();
+        if (!recent_games_.running()) recent_games_.start(tokens_path(), 16);
+    } else {
+        launch_finder_.stop();
+        recent_games_.stop();
+        launcher_.set_recent({});
+    }
     recent_shown_ = ~uint64_t{0};
     close_menu();
     session_.disconnect();

@@ -5879,7 +5879,12 @@ void App::Impl::open_launcher() {
     remote_start.close();
     awaited_launch.reset();
     // Looking for computers to start a game on from here, for the recently
-    // played games along the foot.
+    // played games along the foot -- unless Quick Start is off, when there
+    // are none.
+    if (!settings.quick_start) {
+        stop_recent_games();
+        return;
+    }
     if (!launch_finder.running()) launch_finder.start();
     if (!recent_games.running()) recent_games.start(remote_start_tokens(), 16);
     recent_shown = ~uint64_t{0};

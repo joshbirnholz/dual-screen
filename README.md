@@ -781,6 +781,8 @@ or the desktop app's on a Steam Deck -- shows the games last played on that
 computer, newest first, as one row of icons along the bottom. While the
 computer is on and found, the row has only the games it can start now; while
 it is off or asleep, the row keeps the ones last seen, icons and all.
+This is Quick Start, on unless **Settings > System > Quick Start** is
+turned off, which leaves the home screen without the row.
 
 Choosing one asks first -- "Start <game> on <computer>?" -- then starts it
 there -- through its Steam shortcut, so its Steam Input layout applies, or

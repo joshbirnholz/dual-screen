@@ -226,6 +226,8 @@ private:
         // Desktops only, where Discord runs: see util/discord_presence.hpp.
         DiscordStatus,
 #endif
+        // The recently played games along the foot of the first screen.
+        QuickStart,
 #if DS_REMOTE_START_HOST
         // Enable or Disable Remote Start: installing the background service
         // that lets devices start games here, or removing it, each asked

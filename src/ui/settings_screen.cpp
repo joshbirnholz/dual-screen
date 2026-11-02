@@ -32,6 +32,9 @@ std::string rumble_label(int percent) {
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
+constexpr const char* kQuickStartDescription =
+    "Recently played games will be shown on the home page. Select a game to start it remotely on another "
+    "device. Remote Start must be enabled on the other device.";
 
 }  // namespace
 
@@ -172,6 +175,7 @@ std::string SettingsScreen::row_label(Row row) const {
         case Row::WiiRemoteRumble: return "Wii Remote Rumble Strength";
         case Row::DiscordStatus: return "Discord Rich Presence";
 #endif
+        case Row::QuickStart: return "Quick Start";
 #if DS_REMOTE_START_HOST
         case Row::RemoteStart: return remote_start_on_ ? "Disable Remote Start" : "Enable Remote Start";
 #endif
@@ -212,6 +216,7 @@ std::string SettingsScreen::row_value(Row row) const {
         case Row::WiiRemoteRumble: return rumble_label(settings_.wii_remote_rumble);
         case Row::DiscordStatus: return settings_.discord_status ? "On" : "Off";
 #endif
+        case Row::QuickStart: return settings_.quick_start ? "On" : "Off";
 #if DS_REMOTE_START_HOST
         case Row::RemoteStart: return std::string();
 #endif
@@ -298,6 +303,7 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
 #if DS_PLAYS_WII_U
             add(Row::DiscordStatus);
 #endif
+            add(Row::QuickStart);
 #if DS_REMOTE_START_HOST
             add(Row::RemoteStart);
 #endif
@@ -720,6 +726,7 @@ const char* SettingsScreen::row_description(int index) const {
         if (at++ != index) continue;
         if (item.kind != Item::Kind::Setting) return nullptr;
         if (item.row == Row::Vsync) return kVsyncDescription;
+        if (item.row == Row::QuickStart) return kQuickStartDescription;
 #if DS_REMOTE_START_HOST
         if (item.row == Row::RemoteStart) {
             return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
@@ -860,6 +867,10 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
 #endif
+        case Row::QuickStart:
+            settings_.quick_start = !settings_.quick_start;
+            result.settings_changed = true;
+            break;
 #if DS_REMOTE_START_HOST
         case Row::RemoteStart:
             // Asked first: it installs or removes a service.
@@ -1147,8 +1158,8 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, item.text, row.x + pad, baseline, scale, menu_row_text(focused));
         if (const char* description = row_description(index)) {
-            text.draw(quads, description, row.x + pad, row.y + row.h + menu_row_reach(scale) + line * 0.4f,
-                      scale * 0.8f, theme.text_dim);
+            text.draw_wrapped(quads, description, row.x + pad, row.y + row.h + menu_row_reach(scale) + line * 0.4f,
+                              row.w - pad * 2.0f, scale * 0.8f, theme.text_dim);
         }
         const Row setting = item.kind == Item::Kind::Setting ? item.row : Row::Count;
 #ifndef __SWITCH__
@@ -1305,6 +1316,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
             case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
             case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
 #endif
+            case Row::QuickStart: view.toggle = settings_.quick_start ? 1 : 0; break;
             case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
             default: break;
         }

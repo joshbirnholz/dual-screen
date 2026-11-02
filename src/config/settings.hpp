@@ -278,6 +278,11 @@ struct Settings {
     // util/discord_presence.hpp. Offered on a desktop only.
     bool discord_status = true;
 
+    // Quick Start: the games recently played on another device along the foot
+    // of the first screen, each started there when chosen. Off, the first
+    // screen shows none and looks for no computers.
+    bool quick_start = true;
+
     // The DS's owner, as its own settings have them: the name games greet
     // the player by, the favorite color -- an index into kDsFavoriteColors
     // (config/ds_profile.hpp), Gray unless another is chosen -- and the
