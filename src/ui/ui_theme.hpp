@@ -243,20 +243,20 @@ inline void draw_side_tab(QuadRenderer& quads, const PixelRect& rect, bool chose
 
 
 // How wide a scroll bar is, and the one every list that runs past its bottom
-// draws at its right-hand edge: a dark track, and the part of the list in view
-// in the accent colour. `first` and `shown` are fractions of the whole list.
+// draws at its right-hand edge. Like a Switch 2's menus it is only a rounded
+// pill for the part of the list in view, with no track behind it, in
+// translucent white so it sits as well on a blurred game as on the plain
+// background. `first` and `shown` are fractions of the whole list.
 inline float scroll_bar_width(float scale) { return std::max(3.0f, std::round(scale * 2.0f)); }
 inline void draw_scroll_bar(QuadRenderer& quads, const PixelRect& list, float first, float shown,
                             float line, float scale) {
     if (shown >= 1.0f) return;
     const float width = scroll_bar_width(scale);
-    const PixelRect track{list.x + list.w - width, list.y, width, list.h};
-    quads.draw_solid(track, Color{0.10f, 0.12f, 0.16f, 1.0f});
     const float thumb = std::max(line, list.h * shown);
     const float travel = list.h - thumb;
-    const float offset = shown < 1.0f ? std::clamp(first / (1.0f - shown), 0.0f, 1.0f) : 0.0f;
-    quads.draw_solid(PixelRect{track.x, track.y + travel * offset, track.w, thumb},
-                     ui_theme().accent);
+    const float offset = std::clamp(first / (1.0f - shown), 0.0f, 1.0f);
+    quads.draw_rounded_rect(PixelRect{list.x + list.w - width, list.y + travel * offset, width, thumb},
+                            width * 0.5f, Color{1.0f, 1.0f, 1.0f, 0.3f});
 }
 
 // A tile in the quick menu's grid, which is a different job: the tiles are the
