@@ -50,6 +50,19 @@ public:
     bool clipped() const { return clipped_; }
     const PixelRect& clip() const { return clip_; }
 
+    // Everything drawn from here on fading out towards `left` and `right`
+    // (output pixels, across), over `left_width` and `right_width` pixels
+    // inside them: text scrolling through a box, softened at its edges
+    // rather than cut off. Until clear_fade(), and never past a frame.
+    void set_fade(float left, float right, float left_width, float right_width) {
+        fading_ = true;
+        fade_[0] = left;
+        fade_[1] = right;
+        fade_[2] = left_width;
+        fade_[3] = right_width;
+    }
+    void clear_fade() { fading_ = false; }
+
     // Everything drawn from here on, this much as opaque as it says -- a
     // whole page faded in at once. 1 until changed, and again each frame.
     void set_opacity(float opacity) { opacity_ = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity); }
@@ -172,6 +185,9 @@ private:
     GLint uniform_shape_ = -1;
     GLint uniform_color2_ = -1;
     GLint uniform_radii_ = -1;
+    GLint uniform_fade_ = -1;
+    bool fading_ = false;
+    float fade_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float ring_radii_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     // The next rounded ring's shape and right-hand colour -- see
     // draw_rounded_ring() -- or the next distance field's scale.

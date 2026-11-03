@@ -4,7 +4,8 @@
 // drawn -- stair-stepped shrunk to a handheld's size, blurred into steps
 // grown to a 4K window's. Now the round parts are worked out per pixel and
 // the artwork is a distance field, and both edges are about one of the
-// target's pixels wide at any size.
+// target's pixels wide at any size. Text scrolling through a row fades out
+// towards its edges.
 
 #include "test_support.hpp"
 
@@ -187,6 +188,24 @@ void test_the_edges_are_one_pixel_wide_at_any_size() {
     CHECK_MSG(edges > 20, "the button's artwork did not draw");
     CHECK_MSG(soft <= edges * 2, "a large button's edges are " + std::to_string(soft) + " soft pixels over " +
                                      std::to_string(edges) + " edges");
+
+    // Text scrolling through its room fades out towards its edges rather
+    // than being cut off: dark at each edge, rising evenly to full inside.
+    begin(quads);
+    quads.set_fade(50.0f, 250.0f, 20.0f, 40.0f);
+    quads.draw_solid(PixelRect{0.0f, 0.0f, 300.0f, 200.0f}, white);
+    quads.clear_fade();
+    red = read_back();
+    const auto at = [&red](int x) { return red[static_cast<std::size_t>(100) * kWidth + x]; };
+    CHECK_MSG(at(45) == 0 && at(50) <= 13, "the fade's left edge is not dark");
+    CHECK_MSG(std::abs(at(60) - 128) <= 12, "halfway into the left fade is " + std::to_string(at(60)));
+    CHECK_MSG(at(75) == 255 && at(200) == 255, "inside the fade is not full");
+    CHECK_MSG(std::abs(at(230) - 128) <= 8, "halfway into the right fade is " + std::to_string(at(230)));
+    CHECK_MSG(at(251) == 0, "past the fade's right edge is not dark");
+    // And gone once cleared.
+    quads.draw_solid(PixelRect{0.0f, 0.0f, 300.0f, 200.0f}, white);
+    red = read_back();
+    CHECK(at(10) == 255 && at(290) == 255);
 
     glyphs.shutdown();
     quads.shutdown();

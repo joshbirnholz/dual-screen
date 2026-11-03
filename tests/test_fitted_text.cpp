@@ -37,8 +37,9 @@ void test_it_scrolls_round_as_a_switch_does() {
     CHECK_NEAR(fitted_text_distance(300.0f, 300.0f, line), 0.0f);
     CHECK_NEAR(fitted_text_offset(0.0f, 5.0f, speed), 0.0f);
     // Too long: a round is its whole width and the gap before its copy.
-    const float distance = fitted_text_distance(384.0f, 300.0f, line);
-    CHECK_NEAR(distance, 384.0f + line * kFittedTextGapLines);  // 400
+    const float width = 400.0f - line * kFittedTextGapLines;
+    const float distance = fitted_text_distance(width, 300.0f, line);
+    CHECK_NEAR(distance, 400.0f);
     // Still at first...
     CHECK_NEAR(fitted_text_offset(distance, 0.5f, speed), 0.0f);
     // ...then moving at its pace, past where its end is in view...

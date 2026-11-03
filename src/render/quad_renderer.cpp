@@ -20,7 +20,9 @@ attribute vec2 a_position;   // in output pixels, origin top-left
 attribute vec2 a_texcoord;
 uniform vec2 u_viewport;     // output size in pixels
 varying vec2 v_texcoord;
+varying vec2 v_position;
 void main() {
+    v_position = a_position;
     vec2 normalized = a_position / u_viewport;          // [0,1]
     vec2 clip = vec2(normalized.x * 2.0 - 1.0,
                      1.0 - normalized.y * 2.0);         // flip Y: top-left origin
@@ -50,7 +52,11 @@ uniform int u_mode;
 // Set from nv12_chroma_v_in_alpha() -- see texture.cpp, where the choice is
 // made once by asking the driver whether it still has the LUMINANCE formats.
 uniform int u_chroma_v_in_alpha;
+// Text fading out towards a box's edges: its left and right, in output
+// pixels, and how wide the fade is at each; 0 wide for none.
+uniform vec4 u_fade;
 varying vec2 v_texcoord;
+varying vec2 v_position;
 
 // Full-range BT.601, matching what the encoder signals and what the CPU
 // conversion this replaces was set up for (see sws_setColorspaceDetails in
@@ -150,6 +156,12 @@ void main() {
         // swizzling it the way core output needs would turn it inside out.
         vec4 texel = texture2D(u_texture, v_texcoord);
         gl_FragColor = vec4(texel.rgb * u_color.rgb, u_color.a);
+    }
+    if (u_fade.z > 0.0) {
+        gl_FragColor.a *= clamp((v_position.x - u_fade.x) / u_fade.z, 0.0, 1.0);
+    }
+    if (u_fade.w > 0.0) {
+        gl_FragColor.a *= clamp((u_fade.y - v_position.x) / u_fade.w, 0.0, 1.0);
     }
 }
 )";
@@ -257,6 +269,7 @@ bool QuadRenderer::initialize(std::string* error) {
     uniform_shape_ = gl::GetUniformLocation(program_, "u_shape");
     uniform_color2_ = gl::GetUniformLocation(program_, "u_color2");
     uniform_radii_ = gl::GetUniformLocation(program_, "u_radii");
+    uniform_fade_ = gl::GetUniformLocation(program_, "u_fade");
     uniform_sampler_ = gl::GetUniformLocation(program_, "u_texture");
     uniform_chroma_ = gl::GetUniformLocation(program_, "u_chroma");
     uniform_chroma_v_ = gl::GetUniformLocation(program_, "u_chroma_v");
@@ -331,6 +344,7 @@ void QuadRenderer::begin_frame(int output_width, int output_height, float target
     target_scale_ = target_scale > 0.0f ? target_scale : 1.0f;
     opacity_ = 1.0f;
     zoom_ = 1.0f;
+    fading_ = false;
     // reset_render_state() below turns the scissor off.
     clipped_ = false;
     if (gl::Viewport == nullptr) {
@@ -463,6 +477,13 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     }
     gl::Uniform2f(uniform_viewport_, static_cast<float>(output_width_),
                   static_cast<float>(output_height_));
+    if (fading_) {
+        // Zoomed, as the quad's corners are.
+        gl::Uniform4f(uniform_fade_, zoom_x_ + (fade_[0] - zoom_x_) * zoom_,
+                      zoom_x_ + (fade_[1] - zoom_x_) * zoom_, fade_[2] * zoom_, fade_[3] * zoom_);
+    } else {
+        gl::Uniform4f(uniform_fade_, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
 
     if (mode != Mode::Solid && texture != nullptr && texture->valid()) {
         gl::ActiveTexture(GL_TEXTURE0);

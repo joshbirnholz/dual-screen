@@ -19,7 +19,10 @@ namespace ds {
 // text a second, and the gap between it and the copy that follows, in lines.
 constexpr float kFittedTextHoldSeconds = 1.2f;
 constexpr float kFittedTextLinesPerSecond = 2.5f;
-constexpr float kFittedTextGapLines = 1.6f;
+constexpr float kFittedTextGapLines = 3.6f;
+// How far in from each edge of its room it fades out while it moves, in
+// lines, rather than being cut off sharp.
+constexpr float kFittedTextFadeLines = 0.8f;
 
 // How far one round moves it, in pixels: its whole width and the gap after
 // it; 0 for text that fits its room.
@@ -120,11 +123,17 @@ inline void draw_fitted_text(QuadRenderer& quads, TextRenderer& text, const std:
         box = PixelRect{x0, y0, std::max(0.0f, x1 - x0), std::max(0.0f, y1 - y0)};
     }
     quads.set_clip(box);
+    // Soft at the edges: at its right all the while, at its left only as it
+    // moves off -- the fade there grows as its first letters go and shrinks
+    // as the copy comes back, so it is never dimmed where it rests.
+    const float fade = line * kFittedTextFadeLines;
+    quads.set_fade(left, left + room, std::min({fade, offset, distance - offset}), fade);
     text.draw(quads, value, left - offset, y, scale, color, TextAlign::Left);
     // The copy that follows it round, a gap behind.
     if (offset > distance - room) {
         text.draw(quads, value, left - offset + distance, y, scale, color, TextAlign::Left);
     }
+    quads.clear_fade();
     if (was_clipped) {
         quads.set_clip(was);
     } else {
