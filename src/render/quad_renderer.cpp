@@ -128,6 +128,19 @@ void main() {
         float texels = (texture2D(u_texture, v_texcoord).a - 0.5) * (2.0 * DS_SPREAD);
         float coverage = clamp(texels * u_shape.x + 0.5, 0.0, 1.0);
         gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
+    } else if (u_mode == 10) {
+        // A picture of its own, as mode 6, cut to a rounded rectangle:
+        // v_texcoord samples it, and is that far across the rect's
+        // u_shape.xy pixels. u_shape.z is the target's pixels to one of the
+        // rect's, u_radii.x the corners' radius.
+        vec4 texel = texture2D(u_texture, v_texcoord);
+        vec2 half_size = u_shape.xy * 0.5;
+        vec2 p = v_texcoord * u_shape.xy - half_size;
+        float r = u_radii.x;
+        vec2 q = abs(p) - (half_size - vec2(r));
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        float coverage = clamp(0.5 - d * u_shape.z, 0.0, 1.0);
+        gl_FragColor = vec4(texel.rgb * u_color.rgb, texel.a * u_color.a * coverage);
     } else if (u_mode == 6) {
         // A picture with see-through parts of its own: a game's icon.
         vec4 texel = texture2D(u_texture, v_texcoord);
@@ -442,7 +455,7 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     gl::UseProgram(program_);
     gl::Uniform1i(uniform_mode_, static_cast<GLint>(mode));
     gl::Uniform4f(uniform_color_, color.r, color.g, color.b, color.a * opacity_);
-    if (mode == Mode::RoundedRing || mode == Mode::DistanceField) {
+    if (mode == Mode::RoundedRing || mode == Mode::DistanceField || mode == Mode::RoundedImage) {
         gl::Uniform4f(uniform_shape_, ring_shape_[0], ring_shape_[1], ring_shape_[2], ring_shape_[3]);
         gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b,
                       ring_color2_.a * opacity_);
@@ -561,6 +574,19 @@ void QuadRenderer::draw_lcd_grid(const PixelRect& rect, int cells_across, int ce
 
 void QuadRenderer::draw_image(const PixelRect& rect, const Texture& texture, const Color& tint) {
     draw(rect, &texture, tint, Mode::Image, 0.0f, 0.0f, 1.0f, 1.0f);
+}
+
+void QuadRenderer::draw_rounded_image(const PixelRect& rect, const Texture& texture, float radius,
+                                      const Color& tint) {
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    ring_shape_[0] = rect.w;
+    ring_shape_[1] = rect.h;
+    ring_shape_[2] = target_scale_ * zoom_;
+    ring_shape_[3] = 0.0f;
+    const float r = std::max(0.0f, std::min(radius, std::min(rect.w, rect.h) * 0.5f));
+    for (float& corner : ring_radii_) corner = r;
+    ring_color2_ = tint;
+    draw(rect, &texture, tint, Mode::RoundedImage, 0.0f, 0.0f, 1.0f, 1.0f);
 }
 
 void QuadRenderer::draw_outline(const PixelRect& rect, const Color& color, float thickness) {

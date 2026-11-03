@@ -81,8 +81,8 @@ const char* settings_group_name(SettingsGroup group);
 // The settings that can be changed without a keyboard, changed with a pad,
 // laid out as Graphics Packs and a Switch's System Settings are: the groups
 // listed on the left, and on the right the rows of the one highlighted there.
-// Each console's group also says which emulator plays it and where it was
-// found, with that emulator's own settings under it -- melonDS's on a Switch.
+// A console's group has its emulator's own settings under a heading naming
+// it -- melonDS's, where it is built in.
 // Everything Dualscreen keeps up to date -- itself, and on a PC or a Steam
 // Deck the emulators it downloads -- is under Updates in System, with one
 // Check for Updates for all of them. Paths are edited in settings.json.
@@ -247,21 +247,20 @@ private:
     std::vector<MelonRow> melon_rows() const;
 
     // What a group's side holds, top to bottom. Only the rows take the
-    // cursor -- a console's heading and where its emulator is do not -- and
+    // cursor -- a console's heading does not -- and
     // focus_ counts those alone.
     struct Item {
         // Status: a name and what it says, under Updates, that the cursor
         // passes over.
-        enum class Kind { Setting, Heading, Location, Status, Melon, Download, DataManagement, CheckUpdates };
+        enum class Kind { Setting, Heading, Status, Melon, Download, DataManagement, CheckUpdates };
         Kind kind = Kind::Setting;
         Row row = Row::Count;
         std::string text;
         std::string value;
-        bool found = false;
         MelonRow melon = MelonRow::CpuClock;
         SystemId system = SystemId::Ds;
         bool focusable() const {
-            return kind != Kind::Heading && kind != Kind::Location && kind != Kind::Status;
+            return kind != Kind::Heading && kind != Kind::Status;
         }
     };
     std::vector<Item> group_items(SettingsGroup group) const;

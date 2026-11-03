@@ -121,8 +121,8 @@ void DataManagementScreen::open(const std::string& game_in_play, bool whole_list
         open_game(game_in_play_);
     }
     log_info(in_game() && !whole_list_
-                 ? "Data Management is up, on the page for the game being played"
-                 : "Data Management is up");
+                 ? "Save Data Management is up, on the page for the game being played"
+                 : "Save Data Management is up");
 }
 
 void DataManagementScreen::close() { open_ = false; }
@@ -1329,7 +1329,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
     };
     const auto draw_game_icon = [&](const SaveInfo& info, const PixelRect& rect) {
         if (const Texture* icon = game_icon(info)) {
-            quads.draw_image(rect, *icon);
+            quads.draw_rounded_image(rect, *icon, rect.w * 0.12f);
         } else {
             quads.draw_rounded_rect(rect, rect.w * 0.12f, with_alpha(theme.text_dim, 0.35f));
         }
@@ -1343,7 +1343,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
     const float title_scale = frame.title_scale();
     const float title_y = std::round(frame.panel.y + (frame.header_bottom - frame.panel.y - TextRenderer::line_height(title_scale)) * 0.5f);
     float title_x = frame.panel.x;
-    std::string heading = "Data Management";
+    std::string heading = "Save Data Management";
     if (page_ != Page::List) {
         const float icon_size = line * 1.7f;
         draw_game_icon(game_, PixelRect{frame.panel.x, frame.panel.y + (frame.header_bottom - frame.panel.y - icon_size) * 0.5f,

@@ -90,6 +90,10 @@ public:
     // Draws an RGBA picture -- uploaded with upload_rgba8888() -- keeping its
     // own transparency, which a screen has none of: a game's icon.
     void draw_image(const PixelRect& rect, const Texture& texture, const Color& tint = Color{});
+    // The same with its corners rounded to `radius`, the curve worked out per
+    // pixel as a rounded rect's is: a game's icon drawn as a Switch draws one.
+    void draw_rounded_image(const PixelRect& rect, const Texture& texture, float radius,
+                            const Color& tint = Color{});
     // A 1px-per-side outline drawn as four solid quads.
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
@@ -131,6 +135,7 @@ private:
         LcdGrid = 7,
         RoundedRing = 8,
         DistanceField = 9,
+        RoundedImage = 10,
     };
 
     void draw(const PixelRect& rect,

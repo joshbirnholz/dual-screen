@@ -246,20 +246,14 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             items.push_back(item);
         }
     };
-    // A console's emulator: its heading, where it was found, and its own
-    // settings. Keeping it up to date is Updates', in System.
+    // A console's emulator's own settings, under its heading -- melonDS's,
+    // where it is built in. Where each emulator is lives in settings.json,
+    // and keeping it up to date is Updates', in System, so an emulator with
+    // no settings of its own here gets no heading either.
     const auto add_core = [&](const CoreStatus& core) {
+        if (core.system != SystemId::Ds || !melonds_available_) return;
         items.push_back(Item{Item::Kind::Heading, Row::Count, core.system_name, core.emulator});
-        const bool built_in = core.resolved_path == kBuiltInCorePath;
-        const bool found = built_in || (!core.resolved_path.empty() && file_exists(core.resolved_path));
-        Item where{Item::Kind::Location};
-        where.found = found;
-        where.text = built_in                     ? std::string("Built into Dualscreen")
-                     : found                      ? core.resolved_path
-                     : core.resolved_path.empty() ? std::string("Not found")
-                                                  : "Not found at " + core.resolved_path;
-        items.push_back(where);
-        if (core.system == SystemId::Ds && melonds_available_) add_melon_rows();
+        add_melon_rows();
     };
     switch (group) {
         case SettingsGroup::General:
@@ -307,7 +301,7 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
 #if DS_REMOTE_START_HOST
             add(Row::RemoteStart);
 #endif
-            if (offers_data_management_) items.push_back(Item{Item::Kind::DataManagement, Row::Count, "Data Management"});
+            if (offers_data_management_) items.push_back(Item{Item::Kind::DataManagement, Row::Count, "Save Data Management"});
             if (offers_updates_) {
                 // Everything Dualscreen keeps up to date, in one place: the
                 // one check for all of it, then each and what it is at, then
@@ -796,10 +790,6 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                 // Clear of the cursor's ring, on a row straight under it.
                 if (index + 1 < items_.size() && items_[index + 1].focusable()) row_y += line * 0.6f;
                 break;
-            case Item::Kind::Location:
-                geometry.texts.push_back(Geometry::Text{index, row_y});
-                row_y += line * 1.8f;
-                break;
             case Item::Kind::Status:
                 // Under a row, a little room first; before one, a little
                 // after.
@@ -846,7 +836,6 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
         case Item::Kind::DataManagement: result.open_data_management = true; return;
         case Item::Kind::CheckUpdates: result.open_updates = true; return;
         case Item::Kind::Heading:
-        case Item::Kind::Location:
         case Item::Kind::Status: return;
         case Item::Kind::Setting: break;
     }
@@ -1212,8 +1201,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
-    // Each console's heading -- its name, then its emulator's, dimmer -- and
-    // on the line under it where that emulator was found.
+    // Each console's heading -- its name, then its emulator's, dimmer.
     // In line with the rows' own words.
     const float text_x = geometry.detail.x + menu_row_pad(line);
     const float detail_width = geometry.detail.w - scroll_bar_width(scale) - line * 0.5f - menu_row_pad(line) * 2.0f;
@@ -1233,9 +1221,6 @@ void SettingsScreen::render(QuadRenderer& quads,
             text.draw(quads,
                       TextRenderer::elide_left(item.value, detail_width - name_width - line * 2.0f, status_scale),
                       text_x + detail_width, placed.y, status_scale, theme.text_dim, TextAlign::Right);
-        } else {
-            text.draw(quads, TextRenderer::elide_left(item.text, detail_width, scale * 0.85f), text_x, placed.y,
-                      scale * 0.85f, theme.text_dim);
         }
     }
     const std::string note = footnote();
