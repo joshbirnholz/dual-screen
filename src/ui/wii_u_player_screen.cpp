@@ -425,16 +425,7 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
 
     std::vector<GuidePrompt> guide;
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-    const Row focused = focused_row();
-    guide.push_back({ButtonGlyph::A,
-                     focused == Row::Remove    ? "Remove"
-                     : focused == Row::Connection
-                         ? (gamepad_state_ == GamePadState::Disconnected ? "Connect" : "Disconnect")
-                     : focused == Row::Add     ? "Add"
-                     : focused == Row::Mapping ? "Open"
-                     : focused == Row::Profile ? "OK"
-                                               : "Change",
-                     PromptRole::ActsOnSelection});
+    guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 

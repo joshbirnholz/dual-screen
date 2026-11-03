@@ -2001,7 +2001,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                                  on_content_ && !state_.wii_u_controllers.empty();
         if (ordering_controllers()) {
             guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-            if (ordering_assigned_) guide.push_back({ButtonGlyph::A, "Done", PromptRole::ActsOnSelection});
+            if (ordering_assigned_) guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         } else {
             // Always, and always first: it is the one prompt here that is
             // about the machine rather than about the game. Everything else
@@ -2016,17 +2016,11 @@ void LayoutPicker::render(QuadRenderer& quads,
             if (!state_.embedded || on_content_) {
                 guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             }
-            // A tile is tapped directly, so this names a button nobody has.
-            // A Wii U's player or GamePad opens its page, and Add Controller
-            // a new one's.
-            const char* confirm = "OK";
-            if (controller != nullptr) {
-                confirm = controller->slot.kind != PadSlot::Kind::NotUsed ? "Edit" : nullptr;
-            } else if (on_controls && item_ >= 0 && item_ < static_cast<int>(rows().size()) &&
-                       rows()[static_cast<std::size_t>(item_)].option == Option::AddController) {
-                confirm = "Add";
+            // OK, as everywhere -- but on a controller not used, which has
+            // no page to open.
+            if (controller == nullptr || controller->slot.kind != PadSlot::Kind::NotUsed) {
+                guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
             }
-            if (confirm != nullptr) guide.push_back({ButtonGlyph::A, confirm, PromptRole::ActsOnSelection});
         }
     }
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);

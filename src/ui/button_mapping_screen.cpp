@@ -1308,8 +1308,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     guide.push_back({ButtonGlyph::X, "Reset to Default"});
     if (button_focus_ < 0 && can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-    guide.push_back({ButtonGlyph::A, button_focus_ >= 0 || on_sideways() ? "OK" : "Change",
-                     PromptRole::ActsOnSelection});
+    guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 
@@ -1373,10 +1372,7 @@ void ButtonMappingScreen::render_page(QuadRenderer& quads, TextRenderer& text, c
     std::vector<GuidePrompt> guide;
     if (load && count > 0) guide.push_back({ButtonGlyph::X, "Delete"});
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-    if (count > 0) {
-        guide.push_back({ButtonGlyph::A, load ? "Load" : page_focus_ == 0 ? "OK" : "Save",
-                         PromptRole::ActsOnSelection});
-    }
+    if (count > 0) guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 
