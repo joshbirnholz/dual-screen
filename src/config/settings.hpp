@@ -57,6 +57,9 @@ inline bool display_is_a_steam_decks_own(int width, int height) {
 // and that option's id over the link.
 inline constexpr const char* kWiiUTvAudioChoices[3] = {"Mono", "Stereo", "Surround"};
 inline constexpr const char* kWiiUTvAudioOption = "tv_channels";
+// Cemu's GamePad, 0 Connected and 1 Disconnected: kept per game as
+// GameConfig::wii_u_gamepad_disconnected, and out of the game's Options.
+inline constexpr const char* kWiiUGamePadOption = "gamepad_connected";
 // Settings::wii_remote_rumble's choices, in percent.
 inline constexpr int kWiiRemoteRumbleChoices[5] = {0, 25, 50, 75, 100};
 // Cemu's option for a player's controller type -- "player1_type" and on --

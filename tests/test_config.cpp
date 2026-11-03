@@ -304,6 +304,7 @@ void test_game_config_round_trip() {
     switching.button = PadControl::Minus;
     switching.profiles = {"Kart", "Motion Steering"};
     fresh.wii_u_profile_switching[wii_u_mapping_key(0, WiiUController::Remote)] = switching;
+    fresh.wii_u_gamepad_disconnected = true;
     fresh.lcd_filter = true;
     fresh.custom_textures = true;
     CHECK(fresh.button_mapping == ButtonMapping());
@@ -333,6 +334,7 @@ void test_game_config_round_trip() {
     CHECK(reloaded.wii_u_options == kept);
     CHECK(reloaded.wii_u_mappings == fresh.wii_u_mappings);
     CHECK(reloaded.wii_u_profile_switching == fresh.wii_u_profile_switching);
+    CHECK(reloaded.wii_u_gamepad_disconnected);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.

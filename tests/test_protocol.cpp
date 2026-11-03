@@ -2170,6 +2170,7 @@ void test_wii_u_player_view_round_trip() {
     sent.profile_names = {"Kart", "Motion", "Menus"};
     sent.switch_profiles = {"Kart", "Menus"};
     sent.mapping_profile = "Motion";
+    sent.gamepad = 2;
     std::vector<uint8_t> buffer;
     encode_wii_u_player_view(sent, buffer);
     MessageType type = MessageType::Ping;

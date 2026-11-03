@@ -64,7 +64,7 @@ struct ControllerRowView {
     // The controller's name; empty for a GamePad with none.
     std::string name;
     // What the game has there: "Wii U GamePad", "Wii Remote + Nunchuk".
-    // Empty for Not Used.
+    // Empty for Not Used, and for a GamePad disconnected.
     std::string type;
     // Which device it is on, and which player that device has it as:
     // "Steam Deck  P2"; and the device alone, "Steam Deck".
@@ -213,6 +213,10 @@ struct PadOrder {
     // Not used instead. Empty for any. Kept whether or not anything has
     // been chosen, and not by order_of().
     std::vector<bool> joinable;
+    // A Wii U game with its GamePad disconnected: no controller is the
+    // GamePad, the one that was taking the first empty player's place. Kept
+    // as `joinable` is.
+    bool no_gamepad = false;
 };
 
 // Where each pad stands.

@@ -35,6 +35,8 @@ struct WiiUPlayerScreenResult {
     bool edit_mapping = false;
     // Profile Switching changed: its button, or a profile in or out.
     std::optional<ProfileSwitching> switching_changed;
+    // The GamePad's page: Connect GamePad (true) or Disconnect GamePad.
+    std::optional<bool> gamepad_connected;
 };
 
 // One of a Wii U game's players, or its GamePad, from Controls in its quick
@@ -47,6 +49,10 @@ struct WiiUPlayerScreenResult {
 // Profile Switching, after Edit Button Mapping, is Off, Hold - or Hold + --
 // see ProfileSwitching -- and while it is on, under Switch Between, each
 // profile there is for the controller with a switch: which it moves through.
+//
+// The GamePad's page ends with Disconnect GamePad, where it can be -- a game
+// played with a controller as Player 1 instead -- and, disconnected, has only
+// Connect GamePad.
 //
 // Add Controller opens the page of the player after the last, yet to be: its
 // type is chosen first, and Add makes it one -- so a player is never there
@@ -90,6 +96,11 @@ public:
     const ProfileSwitching& switching() const { return switching_; }
     const std::vector<std::string>& profile_names() const { return profile_names_; }
     const std::string& mapping_profile() const { return mapping_profile_; }
+    // The GamePad's page: whether Disconnect GamePad is there, or the GamePad
+    // is disconnected. Every frame.
+    enum class GamePadState : uint8_t { Fixed, Connected, Disconnected };
+    void set_gamepad_state(GamePadState state);
+    GamePadState gamepad_state() const { return gamepad_state_; }
 
     WiiUPlayerScreenResult update(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
                                   float output_width, float output_height);
@@ -99,9 +110,10 @@ public:
 
     // The rows: Controller Type, for a player Cemu has a type for, then
     // Edit Button Mapping, Profile Switching and while it is on a row for
-    // each profile, then for a player Remove Controller. A new player's has
-    // Add instead of all after the first.
-    enum class Row { Type, Remove, Add, Mapping, Switching, Profile };
+    // each profile, then for a player Remove Controller -- for the GamePad,
+    // Disconnect GamePad. A new player's has Add instead of all after the
+    // first; a disconnected GamePad's only Connect GamePad.
+    enum class Row { Type, Remove, Add, Mapping, Switching, Profile, Connection };
     int focus() const { return focus_; }
     std::vector<Row> rows() const;
     bool choosing() const { return choice_.is_open(); }
@@ -163,6 +175,7 @@ private:
     ProfileSwitching switching_;
     std::vector<std::string> profile_names_;
     std::string mapping_profile_;
+    GamePadState gamepad_state_ = GamePadState::Fixed;
     float scroll_ = 0.0f;
     ListDrag drag_;
     ScrollEase scroll_ease_;

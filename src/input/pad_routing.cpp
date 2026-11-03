@@ -120,7 +120,7 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
         const bool screen_moved = order.gamepad_here != gamepad_here;
         for (const int index : natural) {
             const KnownPad& pad = pads[static_cast<std::size_t>(index)];
-            if (!order.gamepad.empty() && pad_identity(pad) == order.gamepad &&
+            if (!order.no_gamepad && !order.gamepad.empty() && pad_identity(pad) == order.gamepad &&
                 (!screen_moved || pad.on_this_device == gamepad_here)) {
                 lineup.gamepad = find(order.gamepad);
             }
@@ -141,7 +141,8 @@ PadLineup line_up_pads(const std::vector<KnownPad>& pads, const PadOrder& order,
     for (const int index : natural) {
         if (placed[static_cast<std::size_t>(index)]) continue;
         placed[static_cast<std::size_t>(index)] = true;
-        if (lineup.gamepad < 0 && pads[static_cast<std::size_t>(index)].on_this_device == gamepad_here) {
+        if (lineup.gamepad < 0 && !order.no_gamepad &&
+            pads[static_cast<std::size_t>(index)].on_this_device == gamepad_here) {
             lineup.gamepad = index;
             continue;
         }

@@ -42,6 +42,11 @@ void WiiUPlayerScreen::set_controllers(const std::vector<ControllerRowView>& con
     focus_ = std::clamp(focus_, 0, static_cast<int>(rows().size()) - 1);
 }
 
+void WiiUPlayerScreen::set_gamepad_state(GamePadState state) {
+    gamepad_state_ = state;
+    focus_ = std::clamp(focus_, 0, static_cast<int>(rows().size()) - 1);
+}
+
 void WiiUPlayerScreen::set_profile_switching(ProfileSwitching switching, std::vector<std::string> profiles,
                                              std::string mapping_profile) {
     switching_ = std::move(switching);
@@ -57,12 +62,18 @@ std::vector<WiiUPlayerScreen::Row> WiiUPlayerScreen::rows() const {
         rows.push_back(Row::Add);
         return rows;
     }
+    const bool gamepad = slot_.kind == PadSlot::Kind::GamePad;
+    if (gamepad && gamepad_state_ == GamePadState::Disconnected) {
+        rows.push_back(Row::Connection);
+        return rows;
+    }
     rows.push_back(Row::Mapping);
     rows.push_back(Row::Switching);
     if (switching_.on()) {
         for (std::size_t index = 0; index < profile_names_.size(); ++index) rows.push_back(Row::Profile);
     }
     if (removable()) rows.push_back(Row::Remove);
+    if (gamepad && gamepad_state_ == GamePadState::Connected) rows.push_back(Row::Connection);
     return rows;
 }
 
@@ -193,6 +204,12 @@ void WiiUPlayerScreen::act(WiiUPlayerScreenResult& result, float output_width, f
         // A player there is no more has no page.
         result.removed = true;
         result.close_requested = true;
+    } else if (focused_row() == Row::Connection) {
+        // Shown as it will be at once; the host says so again next frame.
+        const bool connect = gamepad_state_ == GamePadState::Disconnected;
+        result.gamepad_connected = connect;
+        set_gamepad_state(connect ? GamePadState::Connected : GamePadState::Disconnected);
+        focus_ = static_cast<int>(rows().size()) - 1;
     } else if (focused_row() == Row::Mapping) {
         result.edit_mapping = true;
     } else if (focused_row() == Row::Profile) {
@@ -344,6 +361,11 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
             text.draw(quads, "Remove Controller", row.x + pad, baseline, row_scale, menu_row_text(focused));
             continue;
         }
+        if (all[index] == Row::Connection) {
+            text.draw(quads, gamepad_state_ == GamePadState::Disconnected ? "Connect GamePad" : "Disconnect GamePad",
+                      row.x + pad, baseline, row_scale, menu_row_text(focused));
+            continue;
+        }
         if (all[index] == Row::Mapping) {
             // And the profile its mapping is, if it is one.
             text.draw(quads, "Edit Button Mapping", row.x + pad, baseline, row_scale, menu_row_text(focused));
@@ -406,6 +428,8 @@ void WiiUPlayerScreen::render(QuadRenderer& quads, TextRenderer& text, const But
     const Row focused = focused_row();
     guide.push_back({ButtonGlyph::A,
                      focused == Row::Remove    ? "Remove"
+                     : focused == Row::Connection
+                         ? (gamepad_state_ == GamePadState::Disconnected ? "Connect" : "Disconnect")
                      : focused == Row::Add     ? "Add"
                      : focused == Row::Mapping ? "Open"
                      : focused == Row::Profile ? "OK"
@@ -436,6 +460,7 @@ void WiiUPlayerScreen::show_mirrored(const net::WiiUPlayerViewMessage& view, flo
                                                  : PadControl::Count;
     switching.profiles = view.switch_profiles;
     set_profile_switching(switching, view.profile_names, view.mapping_profile);
+    set_gamepad_state(static_cast<GamePadState>(std::min<uint8_t>(view.gamepad, 2)));
     const int was = focus_;
     focus_ = std::clamp(static_cast<int>(view.focus), 0, static_cast<int>(rows().size()) - 1);
     // The other device's cursor brings the list with it when it moves.
@@ -497,6 +522,7 @@ void WiiUPlayerScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(pending_type_ + 1));
     if (const ControllerRowView* own = own_row()) mix_sound_state(view.rest, own->pad);
     mix_sound_state(view.rest, static_cast<uint64_t>(switching_.button));
+    mix_sound_state(view.rest, static_cast<uint64_t>(gamepad_state_));
     mix_sound_state(view.rest, static_cast<uint64_t>(switching_.profiles.size()));
     for (const std::string& name : switching_.profiles) {
         for (const char c : name) mix_sound_state(view.rest, static_cast<uint64_t>(static_cast<unsigned char>(c)));
@@ -523,6 +549,7 @@ net::WiiUPlayerViewMessage wii_u_player_view_of(const WiiUPlayerScreen& screen) 
     view.switch_profiles = switching.profiles;
     view.profile_names = screen.profile_names();
     view.mapping_profile = screen.mapping_profile();
+    view.gamepad = static_cast<uint8_t>(screen.gamepad_state());
     if (view.adding) {
         view.pending_type = static_cast<uint8_t>(std::clamp(screen.pending_type() + 1, 0, 255));
     }

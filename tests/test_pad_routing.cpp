@@ -515,6 +515,43 @@ void test_a_players_page_sets_up_profile_switching() {
     CHECK(mirrored.switching() == page.switching() && mirrored.mapping_profile() == "Kart");
 }
 
+// The GamePad's page ends with Disconnect GamePad where it can be; once it
+// is, Connect GamePad is all there is.
+void test_the_gamepads_page_disconnects_it() {
+    using ds::UiAction;
+    using ds::WiiUPlayerScreen;
+    using State = WiiUPlayerScreen::GamePadState;
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    WiiUPlayerScreen page;
+    page.open(PadSlot::gamepad());
+    page.set_controllers(controller_rows(), {}, -1);
+    page.set_profile_switching(ds::ProfileSwitching(), {}, "");
+    CHECK(page.rows().size() == 2);
+    page.set_gamepad_state(State::Connected);
+    CHECK(page.rows().size() == 3 && page.rows()[2] == WiiUPlayerScreen::Row::Connection);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    page.update({UiAction::Down}, {}, kWidth, kHeight);
+    ds::WiiUPlayerScreenResult result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.gamepad_connected && !*result.gamepad_connected && !result.close_requested);
+    CHECK(page.rows() == std::vector<WiiUPlayerScreen::Row>{WiiUPlayerScreen::Row::Connection});
+
+    WiiUPlayerScreen mirrored;
+    mirrored.set_controllers(controller_rows(), {}, -1);
+    mirrored.show_mirrored(ds::wii_u_player_view_of(page), kWidth, kHeight);
+    CHECK(mirrored.gamepad_state() == State::Disconnected && mirrored.rows() == page.rows());
+
+    result = page.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.gamepad_connected && *result.gamepad_connected);
+    CHECK(page.rows().size() == 3 && page.focus() == 2);
+    // A player's page has none of it.
+    WiiUPlayerScreen player;
+    player.open(PadSlot::player_number(0));
+    player.set_controllers(controller_rows(), {}, -1);
+    player.set_gamepad_state(State::Connected);
+    CHECK(player.rows().back() == WiiUPlayerScreen::Row::Remove);
+}
+
 // Held, Profile Switching moves on to the next profile it includes after the
 // one the mapping is, in the order they were saved, round from the last to
 // the first -- or from the first, the mapping no profile.
@@ -634,6 +671,30 @@ void test_change_order_lets_go_and_takes_each_in_turn() {
     ds::unassign_all(held, true);
     CHECK_EQ(held.gamepad, gamepad);
     CHECK_EQ(held.unused.size(), static_cast<std::size_t>(3));
+}
+
+// The GamePad disconnected: the controller that was it is Player 1 -- or the
+// first empty player -- whether the line was chosen or not, and the GamePad's
+// again once it is connected.
+void test_a_disconnected_gamepad_has_no_controller() {
+    const std::vector<KnownPad> one{pad(true, 0)};
+    PadOrder order;
+    order.no_gamepad = true;
+    PadLineup lineup = ds::line_up_pads(one, order, true);
+    CHECK_EQ(lineup.gamepad, -1);
+    CHECK(lineup.players == (std::vector<int>{0}));
+
+    const std::vector<KnownPad> pads{pad(true, 0), pad(true, 1), pad(false, 0)};
+    PadOrder chosen = ds::order_of(pads, ds::line_up_pads(pads, PadOrder(), true), true);
+    CHECK(!chosen.gamepad.empty());
+    chosen.no_gamepad = true;
+    lineup = ds::line_up_pads(pads, chosen, true);
+    CHECK_EQ(lineup.gamepad, -1);
+    CHECK(lineup.players == (std::vector<int>{1, 2, 0}));
+    chosen.no_gamepad = false;
+    lineup = ds::line_up_pads(pads, chosen, true);
+    CHECK_EQ(lineup.gamepad, 0);
+    CHECK(lineup.players == (std::vector<int>{1, 2}));
 }
 
 // Remove Controller: the player gone, its controller with nothing to be, and
@@ -809,10 +870,12 @@ int main() {
     test_a_players_page_chooses_a_type_and_removes_it();
     test_a_new_players_page_says_what_it_will_be_first();
     test_change_order_lets_go_and_takes_each_in_turn();
+    test_a_disconnected_gamepad_has_no_controller();
     test_removing_a_player_moves_the_rest_up();
     test_a_held_button_switches_and_a_tap_still_presses();
     test_a_players_page_sets_up_profile_switching();
     test_profile_switching_goes_round_the_profiles_it_includes();
+    test_the_gamepads_page_disconnects_it();
     test_a_wii_u_controller_is_mapped_as_itself();
     return test::finish("pad-routing");
 }

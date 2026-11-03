@@ -1802,9 +1802,11 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const float name_scale = scale * 1.1f;
     const float room =
         std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
-    const std::string name = waiting ? std::string("Press a button")
-                             : connected ? view.name
-                                         : std::string("Not Connected");
+    const bool disconnected = view.slot.kind == PadSlot::Kind::GamePad && view.type.empty();
+    const std::string name = waiting        ? std::string("Press a button")
+                             : connected    ? view.name
+                             : disconnected ? std::string("Disconnected")
+                                            : std::string("Not Connected");
     const Color& name_ink = waiting ? theme.text : ink;
     text.draw(quads, TextRenderer::elide_right(name, room, name_scale), name_x,
               std::round(centre_y - TextRenderer::line_height(name_scale) * 0.5f), name_scale, name_ink);

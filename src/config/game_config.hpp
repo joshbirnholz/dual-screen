@@ -72,6 +72,9 @@ struct GameConfig {
     // And Profile Switching for each, by the same key -- see ProfileSwitching.
     // One Off with nothing chosen is not kept.
     std::map<std::string, ProfileSwitching> wii_u_profile_switching;
+    // A Wii U game played with its GamePad disconnected -- Disconnect on the
+    // GamePad's page -- so a controller is a player instead.
+    bool wii_u_gamepad_disconnected = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

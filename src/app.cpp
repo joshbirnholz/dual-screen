@@ -610,6 +610,11 @@ struct App::Impl {
     std::vector<ExternalOption> cemu_options;
     bool cemu_options_asked = false;
     bool cemu_options_applied = false;
+    // Whether this Cemu can disconnect the GamePad -- see kWiiUGamePadOption.
+    bool cemu_gamepad_offered = false;
+    // The controller that was the GamePad when it was disconnected, to be it
+    // again when it is connected; empty for none.
+    std::string gamepad_pad_before;
     // The amiibo in the amiibo folder, listed in the menu's Scan amiibo.
     std::vector<std::string> amiibo_paths;
     GameBrowser amiibo_browser;
@@ -1342,8 +1347,15 @@ struct App::Impl {
     // from the old -- see PadOrder::joinable.
     PadOrder keeping_joinable(PadOrder order) const {
         order.joinable = pad_order.joinable;
+        order.no_gamepad = pad_order.no_gamepad;
         return order;
     }
+    // A Wii U game's GamePad disconnected -- see WiiUPlayerScreen -- which
+    // only a Cemu that can do it does.
+    bool gamepad_disconnected() const {
+        return cemu_gamepad_offered && have_game_config && game_config.wii_u_gamepad_disconnected;
+    }
+    void set_gamepad_connected(bool connected);
     // Whether the Wii U list is shown in place of "Playing on Cemu" -- see
     // LayoutPickerState::embedded.
     bool shows_embedded_menu() const;
@@ -2816,6 +2828,13 @@ void App::Impl::show_wii_u_player(WiiUPlayerScreen& screen) const {
         }
         screen.set_profile_switching(profile_switching_of(player), std::move(names), wii_u_profile_name(player));
     }
+    // Disconnect GamePad, but not while the other device is holding it: that
+    // is the GamePad wanted.
+    using GamePadState = WiiUPlayerScreen::GamePadState;
+    screen.set_gamepad_state(!cemu_gamepad_offered || screen.slot().kind != PadSlot::Kind::GamePad ? GamePadState::Fixed
+                             : gamepad_disconnected()                                             ? GamePadState::Disconnected
+                             : holds_gamepad()                                                    ? GamePadState::Connected
+                                                                                                  : GamePadState::Fixed);
 }
 
 void App::Impl::open_wii_u_player(PadSlot slot, bool adding) {
@@ -2859,6 +2878,7 @@ void App::Impl::update_wii_u_player_screen(const std::vector<UiAction>& actions,
                                        (switching.button == PadControl::Minus ? "Minus" : "Plus") + ", through " +
                                        std::to_string(switching.profiles.size()) + " profiles");
     }
+    if (result.gamepad_connected) set_gamepad_connected(*result.gamepad_connected);
     if (slot.kind == PadSlot::Kind::Player) {
         if (result.added) {
             configure_player(slot.player, result.type_chosen);
@@ -2888,6 +2908,7 @@ void App::Impl::update_cemu_options() {
         cemu_options.clear();
         cemu_options_asked = false;
         cemu_options_applied = false;
+        cemu_gamepad_offered = false;
         return;
     }
     if (!cemu_options_asked) {
@@ -2899,6 +2920,16 @@ void App::Impl::update_cemu_options() {
     // Settings' own, the same for every game: made what Settings says, and
     // kept out of this game's Options.
     for (auto it = options.begin(); it != options.end();) {
+        if (it->id == kWiiUGamePadOption) {
+            // This game's, kept out of its Options: it is the GamePad's page's.
+            cemu_gamepad_offered = true;
+            const int wanted = gamepad_disconnected() ? 1 : 0;
+            if (it->active != wanted && wanted < static_cast<int>(it->choices.size())) {
+                external_source->change_option(it->id, wanted);
+            }
+            it = options.erase(it);
+            continue;
+        }
         if (it->id != kWiiUTvAudioOption) {
             ++it;
             continue;
@@ -2997,7 +3028,8 @@ std::vector<ControllerRowView> App::Impl::wii_u_controller_rows() const {
         // What the game has there: the GamePad, or the type Cemu has the
         // player as.
         if (line.slot.kind == PadSlot::Kind::GamePad) {
-            row.type = "Wii U GamePad";
+            // None for one disconnected -- see ControllerRowView.
+            if (!gamepad_disconnected()) row.type = "Wii U GamePad";
         } else if (line.slot.kind == PadSlot::Kind::Player) {
             const int option = cemu_player_type_option(line.slot.player);
             if (option >= 0) {
@@ -3076,7 +3108,8 @@ void App::Impl::start_change_order() {
     change_order.players_before = wii_u_player_count(lineup);
     // A GamePad the other device is holding stays with it: the order starts
     // at Player 1.
-    change_order.next = holds_gamepad() ? 0 : 1;
+    // So does a disconnected one.
+    change_order.next = holds_gamepad() && !gamepad_disconnected() ? 0 : 1;
     unassign_all(lineup, !holds_gamepad());
     pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     for (const KnownPad& pad : pads) change_order.pressing[pad_identity(pad)] = pad.pressing;
@@ -3365,6 +3398,12 @@ void App::Impl::keep_pad_order() {
     }
     if (told && !any_type) joinable.clear();
     pad_order.joinable = joinable;
+    // A companion that came to be the GamePad wants one.
+    if (gamepad_disconnected() && companion_joined() && !gamepad_is_here()) {
+        log_info("controllers: " + host_session->companion_name() + " is the GamePad, so it is connected again");
+        set_gamepad_connected(true);
+    }
+    pad_order.no_gamepad = gamepad_disconnected();
     if (!told) return;
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
     const PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
@@ -3385,6 +3424,52 @@ void App::Impl::keep_pad_order() {
                  " joined as " + pad_slot_name(PadSlot::player_number(player)) + ", a " +
                  wii_u_type_name(cemu_options[static_cast<std::size_t>(option)].choices[static_cast<std::size_t>(choice)]));
     }
+}
+
+void App::Impl::set_gamepad_connected(bool connected) {
+    if (!cemu_gamepad_offered || !have_game_config || !external_source || connected != gamepad_disconnected()) return;
+    game_config.wii_u_gamepad_disconnected = !connected;
+    persist_game_config();
+    external_source->change_option(kWiiUGamePadOption, connected ? 0 : 1);
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    if (!connected) {
+        // Its controller the first empty player, as a controller arriving is.
+        const PadLineup before = line_up_pads(pads, pad_order, holds_gamepad());
+        gamepad_pad_before = before.gamepad >= 0 ? pad_identity(pads[static_cast<std::size_t>(before.gamepad)]) : "";
+        pad_order.no_gamepad = true;
+        const PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+        pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
+        log_info("controllers: the GamePad was disconnected");
+        return;
+    }
+    pad_order.no_gamepad = false;
+    PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    if (lineup.gamepad < 0 && holds_gamepad()) {
+        // The controller that was it, or the first player's here, the
+        // GamePad's again -- and a last player it leaves with none gone, as
+        // it came.
+        int pad = pad_index(pads, gamepad_pad_before);
+        if (pad < 0 || std::find(lineup.players.begin(), lineup.players.end(), pad) == lineup.players.end()) {
+            pad = -1;
+            for (const int each : lineup.players) {
+                if (each >= 0 && pads[static_cast<std::size_t>(each)].on_this_device) {
+                    pad = each;
+                    break;
+                }
+            }
+        }
+        if (pad >= 0) {
+            const int player =
+                static_cast<int>(std::find(lineup.players.begin(), lineup.players.end(), pad) - lineup.players.begin());
+            put_in_slot(lineup, pad, PadSlot::gamepad());
+            if (player >= static_cast<int>(lineup.players.size()) && wii_u_player_count(lineup) == player + 1) {
+                forget_player(player);
+            }
+        }
+    }
+    gamepad_pad_before.clear();
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
+    log_info("controllers: the GamePad was connected");
 }
 
 void App::Impl::apply_wii_u_tv_audio(int previous) {

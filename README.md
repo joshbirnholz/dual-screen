@@ -573,7 +573,11 @@ can be mapped as well, though few games want them.
 **A** (Edit) opens the GamePad's or a player's page: **Controller Type**,
 above, **Edit Button Mapping** and, for a player, **Remove Controller**,
 which takes the player away and moves every player after it up a place,
-types and mappings with them.
+types and mappings with them. The GamePad's ends with **Disconnect
+GamePad**: the game is played without one, its controller becoming the
+first free player -- a single controller on the television as a Pro
+Controller. The game remembers it; **Connect GamePad** brings it back, and a
+companion that joins as the bottom screen connects it again on its own.
 
 **Edit Button Mapping** is the same page as a DS game's Change Controls,
 for the controller the game has the player as: each of the pad's buttons,

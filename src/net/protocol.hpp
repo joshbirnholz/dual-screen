@@ -898,6 +898,10 @@ struct WiiUPlayerViewMessage {
     std::vector<std::string> switch_profiles;
     std::vector<std::string> profile_names;
     std::string mapping_profile;
+    // The GamePad's page: 0 nothing to connect or disconnect, 1 connected,
+    // 2 disconnected -- see WiiUPlayerScreen::GamePadState. After those,
+    // and optional.
+    uint8_t gamepad = 0;
 
     bool operator==(const WiiUPlayerViewMessage& other) const {
         return open == other.open && slot == other.slot && focus == other.focus &&
@@ -905,7 +909,8 @@ struct WiiUPlayerViewMessage {
                detect_seconds == other.detect_seconds && adding == other.adding &&
                pending_type == other.pending_type && pending_pad == other.pending_pad &&
                switch_button == other.switch_button && switch_profiles == other.switch_profiles &&
-               profile_names == other.profile_names && mapping_profile == other.mapping_profile;
+               profile_names == other.profile_names && mapping_profile == other.mapping_profile &&
+               gamepad == other.gamepad;
     }
 };
 

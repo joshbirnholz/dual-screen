@@ -899,6 +899,7 @@ void encode_wii_u_player_view(const WiiUPlayerViewMessage& message, std::vector<
         put_u8(out, static_cast<uint8_t>(count));
         for (std::size_t index = 0; index < count; ++index) put_string(out, (*names)[index].substr(0, 255));
     }
+    put_u8(out, message.gamepad);
     finish_message(out, start, MessageType::WiiUPlayerView);
 }
 
@@ -935,6 +936,9 @@ bool decode_wii_u_player_view(const uint8_t* data, std::size_t size, WiiUPlayerV
             }
         }
         if (!reader.ok() || view.switch_button > 2) return false;
+        // And from one that can disconnect the GamePad.
+        if (reader.remaining() > 0) reader.u8(view.gamepad);
+        if (!reader.ok() || view.gamepad > 2) return false;
     }
     view.adding = adding != 0;
     view.open = open != 0;
