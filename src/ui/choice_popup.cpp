@@ -387,7 +387,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         return;
     }
 
-    quads.set_clip(shape.list);
+    quads.set_clip(with_bump_room(shape.list, scale));
     const auto now = std::chrono::steady_clock::now();
     if (focus_ != drawn_focus_) {
         drawn_focus_ = focus_;

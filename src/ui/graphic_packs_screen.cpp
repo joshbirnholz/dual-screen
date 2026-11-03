@@ -724,7 +724,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
         // The pack highlighted: its name, its rows, then what it says.
         if (const ExternalGraphicPack* pack = focused_pack()) {
             const PixelRect& area = geometry.detail;
-            quads.set_clip(area);
+            quads.set_clip(with_bump_room(area, scale));
             const float title_scale = scale * 1.25f;
             const int line_index = line_of_focus(focus_);
             draw_fitted_text(quads, text, lines_[static_cast<std::size_t>(line_index)].text, area.x,

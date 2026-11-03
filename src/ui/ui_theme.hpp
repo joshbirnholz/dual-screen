@@ -154,12 +154,37 @@ inline float menu_row_reach(float scale) {
     const float half_gap = std::floor(menu_row_gap(TextRenderer::line_height(scale)) * 0.5f);
     return half_gap + std::ceil(std::max(1.0f, std::round(scale * 0.4f)) * 0.5f);
 }
+// `clip`, let out on the side the cursor's ring is bumping towards by as far
+// as it has gone, so a ring pushed past the first or last row -- or a
+// choice's past the side of its popup -- is not cut off part way: only ever
+// at the end the list cannot go past, so nothing more of it shows there.
+inline PixelRect with_bump_room(PixelRect clip, float scale) {
+    float dx = 0.0f;
+    float dy = 0.0f;
+    menu_bump_offset(TextRenderer::line_height(scale), dx, dy);
+    // The ring's own width too: it stands a little proud of what it rings.
+    const float proud = std::max(3.0f, std::round(scale * 1.6f)) * 1.2f;
+    if (dx < 0.0f) {
+        clip.x += dx - proud;
+        clip.w -= dx - proud;
+    } else if (dx > 0.0f) {
+        clip.w += dx + proud;
+    }
+    if (dy < 0.0f) {
+        clip.y += dy - proud;
+        clip.h -= dy - proud;
+    } else if (dy > 0.0f) {
+        clip.h += dy + proud;
+    }
+    return clip;
+}
+
 // A list's rows drawn clipped to `area` -- but for the cursor's ring and the
 // rules, which lie a little past the first and last rows' edges, so would be
-// cut thinner there than everywhere else.
+// cut thinner there than everywhere else, and a ring bumping past them.
 inline PixelRect menu_list_clip(const PixelRect& area, float scale) {
     const float reach = menu_row_reach(scale);
-    return PixelRect{area.x, area.y - reach, area.w, area.h + reach * 2.0f};
+    return with_bump_room(PixelRect{area.x, area.y - reach, area.w, area.h + reach * 2.0f}, scale);
 }
 // A row's ring, or its fill while held: out to the rules above and below,
 // its edges lying over them, on whole pixels so its top is drawn as thick as
