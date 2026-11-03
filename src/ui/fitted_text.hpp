@@ -10,32 +10,39 @@
 namespace ds {
 
 // Text longer than the room it has. At rest it ends in "..."; on the row
-// under the cursor it slides along to show the rest, as a Switch's menus do:
-// still for a moment, then moving at a reading pace until its end is in view,
-// still again, and back to its start.
+// under the cursor it scrolls round as a Switch's menus do: still for a
+// moment, then moving left at a reading pace all the way off, with a copy of
+// it following a gap behind, until that copy is where the text started;
+// still there for a moment, and round again.
 
-// How long it stays still at each end, and how fast it moves, in lines of its
-// text a second.
+// How long it stays still at its start, how fast it moves, in lines of its
+// text a second, and the gap between it and the copy that follows, in lines.
 constexpr float kFittedTextHoldSeconds = 1.2f;
 constexpr float kFittedTextLinesPerSecond = 2.5f;
+constexpr float kFittedTextGapLines = 1.6f;
 
-// How far along it has slid, in pixels, `seconds` after the cursor came to
-// it: 0 to `overflow`, the width that does not fit.
-inline float fitted_text_offset(float overflow, float seconds, float speed) {
-    if (overflow <= 0.0f || speed <= 0.0f || seconds <= 0.0f) return 0.0f;
-    const float slide = overflow / speed;
-    const float cycle = kFittedTextHoldSeconds * 2.0f + slide;
-    float t = std::fmod(seconds, cycle);
-    if (t < kFittedTextHoldSeconds) return 0.0f;
-    t -= kFittedTextHoldSeconds;
-    return t < slide ? t * speed : overflow;
+// How far one round moves it, in pixels: its whole width and the gap after
+// it; 0 for text that fits its room.
+inline float fitted_text_distance(float width, float room, float line) {
+    if (width <= room || room <= 0.0f) return 0.0f;
+    return width + line * kFittedTextGapLines;
 }
 
-// How long one round of sliding takes, still times and all; 0 for text that
-// fits. A row with two that do not fit slides them in turn, one round each.
-inline float fitted_text_cycle(float overflow, float speed) {
-    if (overflow <= 0.0f || speed <= 0.0f) return 0.0f;
-    return kFittedTextHoldSeconds * 2.0f + overflow / speed;
+// How far along it has moved, in pixels, `seconds` after the cursor came to
+// it: 0 to `distance`, where the copy has taken its place and it starts over.
+inline float fitted_text_offset(float distance, float seconds, float speed) {
+    if (distance <= 0.0f || speed <= 0.0f || seconds <= 0.0f) return 0.0f;
+    const float cycle = kFittedTextHoldSeconds + distance / speed;
+    const float t = std::fmod(seconds, cycle);
+    if (t < kFittedTextHoldSeconds) return 0.0f;
+    return std::min(distance, (t - kFittedTextHoldSeconds) * speed);
+}
+
+// How long one round takes, its still time and all; 0 for text that fits. A
+// row with two that do not fit scrolls them in turn, one round each.
+inline float fitted_text_cycle(float distance, float speed) {
+    if (distance <= 0.0f || speed <= 0.0f) return 0.0f;
+    return kFittedTextHoldSeconds + distance / speed;
 }
 
 // When two texts on one row are too long, which slides, and how far into
@@ -80,7 +87,7 @@ inline void split_row_room(float room, float label_width, float value_width, flo
 
 // Draws `text` in `room` pixels from `x` (its left edge, or its right with
 // TextAlign::Right): whole if it fits, else shortened -- or, when `moving`,
-// sliding, `seconds` since the cursor came to it.
+// scrolling round, `seconds` since the cursor came to it.
 inline void draw_fitted_text(QuadRenderer& quads, TextRenderer& text, const std::string& value, float x, float y,
                              float room, float scale, const Color& color, TextAlign align = TextAlign::Left,
                              bool moving = false, float seconds = 0.0f) {
@@ -90,10 +97,13 @@ inline void draw_fitted_text(QuadRenderer& quads, TextRenderer& text, const std:
         return;
     }
     const float line = TextRenderer::line_height(scale);
+    const float distance = fitted_text_distance(width, room, line);
     const float offset =
-        moving ? fitted_text_offset(width - room, seconds, line * kFittedTextLinesPerSecond) : 0.0f;
-    // Still at its start, it reads as any shortened text does.
-    if (offset <= 0.0f) {
+        moving ? fitted_text_offset(distance, seconds, line * kFittedTextLinesPerSecond) : 0.0f;
+    // Before it first moves, it reads as any shortened text does; once it has
+    // been round, it rests whole, cut off at its room's edge, where its copy
+    // stopped.
+    if (offset <= 0.0f && (!moving || seconds < kFittedTextHoldSeconds)) {
         text.draw(quads, TextRenderer::elide_right(value, room, scale), x, y, scale, color, align);
         return;
     }
@@ -111,6 +121,10 @@ inline void draw_fitted_text(QuadRenderer& quads, TextRenderer& text, const std:
     }
     quads.set_clip(box);
     text.draw(quads, value, left - offset, y, scale, color, TextAlign::Left);
+    // The copy that follows it round, a gap behind.
+    if (offset > distance - room) {
+        text.draw(quads, value, left - offset + distance, y, scale, color, TextAlign::Left);
+    }
     if (was_clipped) {
         quads.set_clip(was);
     } else {

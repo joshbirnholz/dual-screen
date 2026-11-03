@@ -753,12 +753,15 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                                value_room);
                 if (toggle) label_room = room - line * 2.2f;
                 // Both too long: the setting slides, then its value.
-                const float speed = TextRenderer::line_height(row_scale) * kFittedTextLinesPerSecond;
-                const float label_cycle =
-                    fitted_text_cycle(TextRenderer::measure_width(label, row_scale) - label_room, speed);
+                const float row_line = TextRenderer::line_height(row_scale);
+                const float speed = row_line * kFittedTextLinesPerSecond;
+                const float label_cycle = fitted_text_cycle(
+                    fitted_text_distance(TextRenderer::measure_width(label, row_scale), label_room, row_line), speed);
                 const float value_cycle =
                     toggle ? 0.0f
-                           : fitted_text_cycle(TextRenderer::measure_width(value, row_scale) - value_room, speed);
+                           : fitted_text_cycle(fitted_text_distance(TextRenderer::measure_width(value, row_scale),
+                                                                    value_room, row_line),
+                                               speed);
                 float label_seconds = 0.0f;
                 float value_seconds = 0.0f;
                 const bool label_turn =
