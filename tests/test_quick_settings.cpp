@@ -2074,6 +2074,57 @@ void test_wii_u_options_slider_and_greyed_out() {
     CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 0));
 }
 
+// A finger held on the slider moves the knob with it -- a percent at a
+// time, and never the list under it -- and sets it where it lifts.
+void test_wii_u_slider_follows_a_held_finger() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.cursor_choosable = false;
+    state.producer_options = {{"Upscaling", "AMD FSR"}, {"FSR Sharpness", "30%"}};
+    std::vector<std::string> percents;
+    for (int percent = 0; percent <= 100; ++percent) percents.push_back(std::to_string(percent) + "%");
+    state.producer_choices = {{"Bicubic", "AMD FSR"}, percents};
+    state.producer_flags = {0, kProducerOptionSlider};
+    LayoutPicker picker(registry);
+    open_wii_u(picker, state);
+    open_on(picker, state, MenuSection::Options);
+    press(picker, UiAction::Right);
+    press(picker, UiAction::Down);
+    // A percent a step.
+    const LayoutPickerResult up = press(picker, UiAction::Right);
+    CHECK_EQ(up.producer_option, 1);
+    CHECK_EQ(up.option_steps, 1);
+
+    float row_y = -1.0f;
+    float least_x = -1.0f;
+    float most_x = -1.0f;
+    for (float y = 0.0f; y < kHeight && row_y < 0.0f; y += 2.0f) {
+        for (float x = 0.0f; x < kWidth; x += 1.0f) {
+            if (picker.entry_at(x, y, kWidth, kHeight) < LayoutPicker::kSliderEntryBase) continue;
+            row_y = y;
+            if (least_x < 0.0f) least_x = x;
+            most_x = x;
+        }
+    }
+    CHECK_MSG(row_y >= 0.0f, "no slider on the FSR Sharpness row");
+    const float middle = (least_x + most_x) * 0.5f;
+    // Held, then moved to the middle: nothing set yet.
+    set_live_pointer(true, least_x, row_y);
+    set_live_pointer(true, middle, row_y);
+    PointerEvent down = tap(least_x, row_y);
+    down.released = false;
+    down.pressed = true;
+    CHECK_EQ(picker.update({}, {down}, kWidth, kHeight).producer_option, -1);
+    CHECK_EQ(picker.update({}, {}, kWidth, kHeight).producer_option, -1);
+    // Lifted there: set to the middle, or within a percent of it.
+    set_live_pointer(false, middle, row_y);
+    const LayoutPickerResult lifted = picker.update({}, {slide_onto(least_x, row_y, middle, row_y)}, kWidth, kHeight);
+    CHECK_EQ(lifted.producer_option, 1);
+    const int landed = (30 + lifted.option_steps) % 101;
+    CHECK_MSG(landed >= 49 && landed <= 51, "the slider was not set where the finger lifted");
+}
+
 void test_wii_u_amiibo_are_listed_to_choose_from() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -2252,6 +2303,7 @@ int main() {
     test_a_dropdown_scrolled_from_the_other_device_stays_scrolled();
     test_wii_u_options_are_this_games();
     test_wii_u_options_slider_and_greyed_out();
+    test_wii_u_slider_follows_a_held_finger();
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_wii_u_menu_opens_on_amiibo_when_the_game_wants_one();
     test_the_resume_popup_is_put_away_with_ok();

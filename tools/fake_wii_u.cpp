@@ -268,12 +268,12 @@ int main(int argc, char** argv) {
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
     std::vector<ds::ExternalOption> options(6);
-    options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor", "AMD FSR 1"},
+    options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor", "AMD FSR"},
                   1, false, 1};
     // FSR's sharpness, a slider, greyed out unless FSR is chosen.
     std::vector<std::string> sharpness;
-    for (int tenths = 0; tenths <= 10; ++tenths) sharpness.push_back(std::to_string(tenths * 10) + "%");
-    options[1] = {"fsr_sharpness", "FSR Sharpness", sharpness, 8, false, 8, false, true};
+    for (int percent = 0; percent <= 100; ++percent) sharpness.push_back(std::to_string(percent) + "%");
+    options[1] = {"fsr_sharpness_percent", "FSR Sharpness", sharpness, 30, false, 30, false, true};
     options[2] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false, 0};
     options[3] = {"performance_overlay", "Performance overlay",
                   {"Off", "Frame rate", "Frame rate and CPU", "Everything"}, 0, false, 0};

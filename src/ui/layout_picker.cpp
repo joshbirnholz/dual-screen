@@ -313,6 +313,34 @@ void LayoutPicker::set_slider(int choice, LayoutPickerResult& result) {
     result.producer_option = row.index;
 }
 
+int LayoutPicker::slider_item_at(float x, float y, float output_width, float output_height) const {
+    const int entry = entry_at(x, y, output_width, output_height);
+    return entry >= kSliderEntryBase ? (entry - kSliderEntryBase) / kSliderSteps : -1;
+}
+
+float LayoutPicker::slider_shown(int item, float at) {
+    const auto now = std::chrono::steady_clock::now();
+    const OptionRow& row = rows()[static_cast<std::size_t>(item)];
+    if (row.index < 0) return at;
+    if (slider_shown_.size() < state_.producer_options.size()) slider_shown_.resize(state_.producer_options.size(), -1.0f);
+    if (row.index >= static_cast<int>(slider_shown_.size())) return at;
+    float& shown = slider_shown_[static_cast<std::size_t>(row.index)];
+    if (item == slider_drag_item_) {
+        shown = slider_drag_at_;
+        return shown;
+    }
+    // Eased towards its value, about 60 ms to most of the way: a held
+    // direction's steps run together into one glide.
+    const float dt = std::clamp(std::chrono::duration<float>(now - slider_shown_at_).count(), 0.0f, 0.1f);
+    if (shown < 0.0f) {
+        shown = at;
+    } else {
+        shown += (at - shown) * (1.0f - std::exp(-dt / 0.06f));
+        if (std::fabs(at - shown) < 0.001f) shown = at;
+    }
+    return shown;
+}
+
 void LayoutPicker::set_wii_u_controllers(const std::vector<ControllerRowView>& rows) {
     if (rows == state_.wii_u_controllers) return;
     const bool count_changed = rows.size() != state_.wii_u_controllers.size();
@@ -926,6 +954,32 @@ bool LayoutPicker::scroll(const std::vector<PointerEvent>& pointers, float outpu
                           float output_height) {
     if (confirm_ == MenuConfirm::Choice) return choice_.scroll(pointers, output_width, output_height);
     if (confirming() || !content_is_list()) return false;
+    // A finger that went down on a slider's track moves its knob, not the
+    // list, until it lifts -- which taps it there, setting it.
+    const LivePointer& live = live_pointer();
+    const int held = live.down ? slider_item_at(live.press_x, live.press_y, output_width, output_height) : -1;
+    if (held >= 0) {
+        const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
+        const PixelRect track = slider_track(geometry.items[static_cast<std::size_t>(held)], geometry.scale);
+        int current = -1;
+        const int steps =
+            static_cast<int>(option_choices(rows()[static_cast<std::size_t>(held)], current).size());
+        const float along = track.w > 0.0f ? std::clamp((live.x - track.x) / track.w, 0.0f, 1.0f) : 0.0f;
+        slider_drag_item_ = held;
+        slider_drag_at_ =
+            steps >= 2 ? std::round(along * static_cast<float>(steps - 1)) / static_cast<float>(steps - 1) : along;
+        return false;
+    }
+    if (slider_drag_item_ >= 0) {
+        // Lifted: the knob goes on from where the finger left it.
+        if (slider_drag_item_ < static_cast<int>(rows().size())) {
+            const int option = rows()[static_cast<std::size_t>(slider_drag_item_)].index;
+            if (option >= 0 && option < static_cast<int>(slider_shown_.size())) {
+                slider_shown_[static_cast<std::size_t>(option)] = slider_drag_at_;
+            }
+        }
+        slider_drag_item_ = -1;
+    }
     // A list on the right, dragged by a finger or turned by the wheel.
     const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
     const float step = content_row_step(geometry);
@@ -1869,10 +1923,18 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
             const float at = steps >= 2 && current >= 0 ? static_cast<float>(current) / static_cast<float>(steps - 1)
                                                         : 0.0f;
             const PixelRect track = slider_track(row, scale);
-            draw_menu_slider(quads, track, at, !unavailable, line);
+            draw_menu_slider(quads, track, slider_shown(static_cast<int>(index), at), !unavailable, line);
             Color value_color = theme.text_dim;
             if (unavailable) value_color.a *= 0.55f;
-            text.draw(quads, value, std::round(track.x - menu_slider_knob(line) * 0.5f - line * 0.6f), baseline,
+            // Under a finger, what it will be set to as it lifts.
+            std::string shown_value = value;
+            if (static_cast<int>(index) == slider_drag_item_ && steps >= 2) {
+                int choice_now = -1;
+                const std::vector<std::string> choices = option_choices(rows()[index], choice_now);
+                const int under = static_cast<int>(std::lround(slider_drag_at_ * static_cast<float>(steps - 1)));
+                if (under >= 0 && under < static_cast<int>(choices.size())) shown_value = choices[static_cast<std::size_t>(under)];
+            }
+            text.draw(quads, shown_value, std::round(track.x - menu_slider_knob(line) * 0.5f - line * 0.6f), baseline,
                       row_scale, value_color, TextAlign::Right);
         } else if (is_switch(rows()[index])) {
             draw_toggle(quads, row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, value == "On", line);
@@ -1881,6 +1943,7 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
                       theme.text_dim, TextAlign::Right);
         }
     }
+    slider_shown_at_ = std::chrono::steady_clock::now();
     // What Change Order wants, under the list.
     if (ordering_controllers() && !geometry.items.empty() && !rows().empty()) {
         const PixelRect& last = geometry.items[std::min(geometry.items.size(), rows().size()) - 1];

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <string>
@@ -413,7 +414,7 @@ public:
     // of the row of the section the cursor is in -- a tap there sets it. Past
     // every focus, and never one.
     static constexpr int kSliderEntryBase = 0x8000;
-    static constexpr int kSliderSteps = 64;
+    static constexpr int kSliderSteps = 128;
     static constexpr int kOrderingAssigned = 0x80;
 
     // Everything the menu shows, applied in one go, for the device that is not
@@ -821,6 +822,19 @@ private:
     // A slider set to `choice`, as a change of its option by however many
     // steps that is -- as a popup's choice is.
     void set_slider(int choice, LayoutPickerResult& result);
+    // Which slider row of the list a finger pressed on the track of, or -1.
+    int slider_item_at(float x, float y, float output_width, float output_height) const;
+    // How far along a slider's knob is drawn, 0 to 1: under a finger held on
+    // it, there; otherwise gliding to its value rather than jumping.
+    float slider_shown(int item, float at);
+    // Each of Cemu's sliders' knobs as last drawn, by its option's index,
+    // -1 for not yet; and when.
+    std::vector<float> slider_shown_;
+    std::chrono::steady_clock::time_point slider_shown_at_{};
+    // A finger held on a slider's track: its row, and how far along it is,
+    // snapped to the slider's steps. The value is only set as it lifts.
+    int slider_drag_item_ = -1;
+    float slider_drag_at_ = 0.0f;
     // The popup up for the option the cursor is on.
     void open_choice();
     // Where the control prompts landed when they were last drawn, so a tap can
