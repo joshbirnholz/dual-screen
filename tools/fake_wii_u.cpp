@@ -267,13 +267,18 @@ int main(int argc, char** argv) {
                     ds::kExternalFeatureAmiiboReading;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
-    std::vector<ds::ExternalOption> options(5);
-    options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor"}, 1, false, 1};
-    options[1] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false, 0};
-    options[2] = {"performance_overlay", "Performance overlay",
+    std::vector<ds::ExternalOption> options(6);
+    options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor", "AMD FSR 1"},
+                  1, false, 1};
+    // FSR's sharpness, a slider, greyed out unless FSR is chosen.
+    std::vector<std::string> sharpness;
+    for (int tenths = 0; tenths <= 10; ++tenths) sharpness.push_back(std::to_string(tenths * 10) + "%");
+    options[1] = {"fsr_sharpness", "FSR Sharpness", sharpness, 8, false, 8, false, true};
+    options[2] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false, 0};
+    options[3] = {"performance_overlay", "Performance overlay",
                   {"Off", "Frame rate", "Frame rate and CPU", "Everything"}, 0, false, 0};
-    options[3] = {"cpu_mode", "CPU mode", {"Auto", "Multi-core", "Single-core"}, 0, true, -1};
-    options[4] = {"tv_channels", "TV audio", {"Mono", "Stereo", "Surround"}, 1, false, 1};
+    options[4] = {"cpu_mode", "CPU mode", {"Auto", "Multi-core", "Single-core"}, 0, true, -1};
+    options[5] = {"tv_channels", "TV audio", {"Mono", "Stereo", "Surround"}, 1, false, 1};
 
     ds::ExternalFrameProducer producer;
     std::string error;
@@ -363,6 +368,7 @@ int main(int argc, char** argv) {
             }
             options_wanted = true;
         }
+        options[1].available = options[0].active == 4;
         if (options_wanted) producer.send_options(options);
         producer.send_amiibo_reading(amiibo_reading);
         // An amiibo is only measured, not read: a file the size of an

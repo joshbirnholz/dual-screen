@@ -530,6 +530,10 @@ struct SessionStateMessage {
     // it switched to -- shown under corner_notice, oldest first. A count,
     // then each; last, and optional.
     std::vector<ControllerNotice> controller_notices;
+    // Each of producer_options' flags -- see LayoutPickerState::producer_flags:
+    // one greyed out, one a slider. A count, then a byte each; last, and
+    // optional -- from an older host, none.
+    std::vector<uint8_t> producer_flags;
 };
 
 struct FrameMessage {

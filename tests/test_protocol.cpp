@@ -2218,6 +2218,42 @@ void test_controller_notices_travel_with_the_session_state() {
     CHECK(received.controller_notices.empty());
 }
 
+// Cemu's options' flags -- one greyed out, one a slider -- go last, with
+// or without controller notices before them.
+void test_producer_flags_travel_with_the_session_state() {
+    SessionStateMessage sent;
+    sent.producer_options = {{"Upscaling", "Bicubic"}, {"FSR Sharpness", "80%"}};
+    sent.producer_flags = {0, 3};
+    std::vector<uint8_t> buffer;
+    encode_session_state(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    SessionStateMessage received;
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.producer_flags == sent.producer_flags);
+    CHECK(received.controller_notices.empty());
+
+    ControllerNotice notice;
+    notice.slot = PadSlot::player_number(1);
+    notice.type = "Wii Remote";
+    notice.text = "Kart";
+    sent.controller_notices = {notice};
+    buffer.clear();
+    encode_session_state(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.producer_flags == sent.producer_flags);
+    CHECK(received.controller_notices == sent.controller_notices);
+
+    // None set, none sent.
+    buffer.clear();
+    encode_session_state(SessionStateMessage(), buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.producer_flags.empty());
+}
+
 void test_button_mapping_view_round_trip() {
     ButtonMappingViewMessage sent;
     sent.open = true;
@@ -2503,6 +2539,7 @@ void test_menu_scroll_and_amiibo_browser_round_trip() {
 
 int main() {
     test_controller_notices_travel_with_the_session_state();
+    test_producer_flags_travel_with_the_session_state();
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
     test_a_bye_can_say_quit_too();

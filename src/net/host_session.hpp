@@ -197,6 +197,7 @@ public:
         bool amiibo_available = false;
         std::vector<std::pair<std::string, std::string>> producer_options;
         std::vector<std::vector<std::string>> producer_choices;
+        std::vector<uint8_t> producer_flags;
         int producer_controls_from = -1;
         // See SessionStateMessage::wii_u_controllers.
         std::vector<ControllerRowView> wii_u_controllers;

@@ -704,6 +704,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.amiibo_available != shared_.amiibo_available ||
         state.producer_options != shared_.producer_options || state.amiibo != shared_.amiibo ||
         state.producer_choices != shared_.producer_choices ||
+        state.producer_flags != shared_.producer_flags ||
         state.producer_controls_from != shared_.producer_controls_from ||
         state.wii_u_controllers != shared_.wii_u_controllers ||
         state.button_mapping != shared_.button_mapping ||
@@ -1416,6 +1417,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.amiibo_available = shared_.amiibo_available;
         state.producer_options = shared_.producer_options;
         state.producer_choices = shared_.producer_choices;
+        state.producer_flags = shared_.producer_flags;
         state.producer_controls_from = shared_.producer_controls_from;
         state.wii_u_controllers = shared_.wii_u_controllers;
         state.button_mapping = shared_.button_mapping;

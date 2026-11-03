@@ -599,6 +599,8 @@ public:
     const std::vector<std::vector<std::string>>& host_producer_choices() const {
         return host_producer_choices_;
     }
+    // And each one's flags -- see LayoutPickerState::producer_flags.
+    const std::vector<uint8_t>& host_producer_flags() const { return host_producer_flags_; }
     int host_producer_controls_from() const { return host_producer_controls_from_; }
     // The game's Button Mapping, which this device's pad follows. See
     // SessionStateMessage::button_mapping.
@@ -1197,6 +1199,7 @@ private:
     bool host_amiibo_available_ = false;
     std::vector<std::pair<std::string, std::string>> host_producer_options_;
     std::vector<std::vector<std::string>> host_producer_choices_;
+    std::vector<uint8_t> host_producer_flags_;
     int host_producer_controls_from_ = -1;
     ButtonMapping host_button_mapping_;
     int host_favorite_color_ = -1;

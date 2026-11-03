@@ -251,6 +251,66 @@ void LayoutPicker::rebuild_footer() {
         item_ = std::max(0, content_count(section_) - 1);
         on_content_ = content_count(section_) > 0;
     }
+    // Or on one of Cemu's that has just been greyed out.
+    if (on_content_ && !item_selectable(item_)) {
+        const int near = selectable_item_near(item_, -1);
+        if (near >= 0) {
+            item_ = near;
+        } else {
+            on_content_ = false;
+        }
+    }
+}
+
+bool LayoutPicker::row_unavailable(const OptionRow& row) const {
+    return row.option == Option::Producer && row.index >= 0 &&
+           row.index < static_cast<int>(state_.producer_flags.size()) &&
+           (state_.producer_flags[static_cast<std::size_t>(row.index)] & kProducerOptionUnavailable) != 0;
+}
+
+bool LayoutPicker::is_slider(const OptionRow& row) const {
+    return row.option == Option::Producer && row.index >= 0 &&
+           row.index < static_cast<int>(state_.producer_flags.size()) &&
+           (state_.producer_flags[static_cast<std::size_t>(row.index)] & kProducerOptionSlider) != 0;
+}
+
+bool LayoutPicker::item_selectable(int item) const {
+    if (section_ != MenuSection::Options && section_ != MenuSection::ControllerOrder) return true;
+    if (item < 0 || item >= static_cast<int>(rows().size())) return true;
+    return !row_unavailable(rows()[static_cast<std::size_t>(item)]);
+}
+
+int LayoutPicker::selectable_item_near(int item, int direction) const {
+    const int count = content_count(section_);
+    const int step = direction < 0 ? -1 : 1;
+    for (int at = item; at >= 0 && at < count; at += step) {
+        if (item_selectable(at)) return at;
+    }
+    for (int at = item - step; at >= 0 && at < count; at -= step) {
+        if (item_selectable(at)) return at;
+    }
+    return -1;
+}
+
+PixelRect LayoutPicker::slider_track(const PixelRect& row, float scale) const {
+    const float line = TextRenderer::line_height(scale);
+    // The right part of the row, leaving its name the rest.
+    const float width = std::round(row.w * 0.42f);
+    return menu_slider_track(row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, width, line);
+}
+
+void LayoutPicker::set_slider(int choice, LayoutPickerResult& result) {
+    if (item_ < 0 || item_ >= static_cast<int>(rows().size())) return;
+    const OptionRow& row = rows()[static_cast<std::size_t>(item_)];
+    if (!is_slider(row) || row_unavailable(row)) return;
+    int current = -1;
+    const int count = static_cast<int>(option_choices(row, current).size());
+    if (count < 2) return;
+    choice = std::clamp(choice, 0, count - 1);
+    if (choice == current) return;
+    // As a popup's choice is: however many steps on from what it was.
+    result.option_steps = current < 0 ? choice + 1 : ((choice - current) % count + count) % count;
+    result.producer_option = row.index;
 }
 
 void LayoutPicker::set_wii_u_controllers(const std::vector<ControllerRowView>& rows) {
@@ -816,13 +876,39 @@ int LayoutPicker::entry_at(float x, float y, float output_width, float output_he
     for (std::size_t index = 0; index < geometry.sections.size(); ++index) {
         if (geometry.sections[index].contains(x, y)) return focus_of(sections_[index]);
     }
+    const bool list = section_ == MenuSection::Options || section_ == MenuSection::ControllerOrder;
     for (std::size_t index = 0; index < geometry.items.size(); ++index) {
         // A long list's rows past the area are not on screen to be tapped.
         if (geometry.items[index].contains(x, y) && geometry.content.contains(x, y)) {
+            if (list && index < rows().size()) {
+                const OptionRow& row = rows()[index];
+                // Greyed out, nothing to tap.
+                if (row_unavailable(row)) return -1;
+                // Along a slider, the step there.
+                if (is_slider(row)) {
+                    const PixelRect track = slider_track(geometry.items[index], geometry.scale);
+                    const float reach = menu_slider_knob(TextRenderer::line_height(geometry.scale));
+                    int current = -1;
+                    const int steps = static_cast<int>(option_choices(row, current).size());
+                    if (steps >= 2 && steps <= kSliderSteps && x >= track.x - reach &&
+                        x <= track.x + track.w + reach && track.w > 0.0f) {
+                        const float at = std::clamp((x - track.x) / track.w, 0.0f, 1.0f);
+                        const int step = static_cast<int>(std::lround(at * static_cast<float>(steps - 1)));
+                        return kSliderEntryBase + static_cast<int>(index) * kSliderSteps + step;
+                    }
+                }
+            }
             return focus_of(section_, static_cast<int>(index));
         }
     }
     return -1;
+}
+
+bool LayoutPicker::same_entry(int pressed_on, int released_on) const {
+    if (pressed_on >= kSliderEntryBase && released_on >= kSliderEntryBase) {
+        return (pressed_on - kSliderEntryBase) / kSliderSteps == (released_on - kSliderEntryBase) / kSliderSteps;
+    }
+    return pressed_on == released_on;
 }
 
 std::vector<float> LayoutPicker::scroll_state(float, float) const {
@@ -873,6 +959,15 @@ bool LayoutPicker::decode_focus(int focus, MenuSection& section, int& item) cons
 }
 
 void LayoutPicker::handle_tap(int entry, LayoutPickerResult& result) {
+    // Along a slider: the cursor onto its row, and the slider set there.
+    if (entry >= kSliderEntryBase) {
+        const int item = (entry - kSliderEntryBase) / kSliderSteps;
+        if (item >= static_cast<int>(rows().size())) return;
+        on_content_ = true;
+        item_ = item;
+        set_slider((entry - kSliderEntryBase) % kSliderSteps, result);
+        return;
+    }
     MenuSection section = MenuSection::Continue;
     int item = -1;
     if (!decode_focus(entry, section, item)) return;
@@ -889,6 +984,8 @@ void LayoutPicker::handle_tap(int entry, LayoutPickerResult& result) {
     }
     if (section != section_) content_scroll_ = 0.0f;
     section_ = section;
+    // Greyed out, not there to be chosen.
+    if (!item_selectable(item)) return;
     on_content_ = true;
     item_ = item;
     // Chosen by the tap, as a Switch's are: the finger held on it showed
@@ -1023,6 +1120,12 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
         case MenuSection::Options:
         case MenuSection::ControllerOrder: {
             if (item_ >= static_cast<int>(rows().size())) return;
+            // Greyed out, nothing; a slider is moved left and right, or
+            // tapped along, as a Switch's is -- A does nothing on it.
+            if (row_unavailable(rows()[static_cast<std::size_t>(item_)]) ||
+                is_slider(rows()[static_cast<std::size_t>(item_)])) {
+                return;
+            }
             // One with several values to choose between opens them beside
             // its row; a switch flips; a page opens.
             int current = -1;
@@ -1121,11 +1224,24 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
                     item_ = cells;
                 }
             } else if (count > 0) {
-                item_ = std::clamp(item_ + delta, 0, count - 1);
+                // Past any greyed out, and staying put with none beyond.
+                for (int next = item_ + delta; next >= 0 && next < count; next += delta) {
+                    if (!item_selectable(next)) continue;
+                    item_ = next;
+                    break;
+                }
             }
             break;
         }
         case UiAction::Left:
+            // A slider down a step, and no further than its least.
+            if (on_content_ && content_columns(section_) <= 1 && item_ < static_cast<int>(rows().size()) &&
+                is_slider(rows()[static_cast<std::size_t>(item_)])) {
+                int current = -1;
+                option_choices(rows()[static_cast<std::size_t>(item_)], current);
+                if (current > 0) set_slider(current - 1, result);
+                break;
+            }
             // Back to the list from the left-hand edge of whatever is shown.
             if (on_content_ && item_ < grid_count(section_) &&
                 item_ % content_columns(section_) != 0) {
@@ -1136,11 +1252,21 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
             break;
         case UiAction::Right:
             if (!on_content_) {
-                // Onto the first of them, top left, whichever is in use.
+                // Onto the first of them, top left, whichever is in use --
+                // the first not greyed out.
                 if (count > 0) {
-                    on_content_ = true;
-                    item_ = 0;
+                    const int first = content_columns(section_) > 1 ? 0 : selectable_item_near(0, 1);
+                    if (first >= 0) {
+                        on_content_ = true;
+                        item_ = first;
+                    }
                 }
+            } else if (content_columns(section_) <= 1 && item_ < static_cast<int>(rows().size()) &&
+                       is_slider(rows()[static_cast<std::size_t>(item_)])) {
+                // A slider up a step, and no further than its most.
+                int current = -1;
+                const int steps = static_cast<int>(option_choices(rows()[static_cast<std::size_t>(item_)], current).size());
+                if (current < steps - 1) set_slider(std::max(0, current + 1), result);
             } else if (item_ < grid_count(section_) &&
                        item_ % content_columns(section_) != content_columns(section_) - 1 &&
                        item_ + 1 < grid_count(section_)) {
@@ -1731,10 +1857,24 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         draw_menu_row(quads, row, focused, scale, index + 1 == std::min(geometry.items.size(), rows().size()),
                       on_content_ && static_cast<int>(index) == item_ + 1);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
-        text.draw(quads, option_name(rows()[index]), row.x + menu_row_pad(line), baseline, row_scale,
-                  menu_row_text(focused));
+        const bool unavailable = row_unavailable(rows()[index]);
+        Color name_color = unavailable ? theme.text_dim : menu_row_text(focused);
+        if (unavailable) name_color.a *= 0.55f;
+        text.draw(quads, option_name(rows()[index]), row.x + menu_row_pad(line), baseline, row_scale, name_color);
         const std::string value = option_value(rows()[index]);
-        if (is_switch(rows()[index])) {
+        if (is_slider(rows()[index])) {
+            // A Switch 2's slider, and its value beside it.
+            int current = -1;
+            const int steps = static_cast<int>(option_choices(rows()[index], current).size());
+            const float at = steps >= 2 && current >= 0 ? static_cast<float>(current) / static_cast<float>(steps - 1)
+                                                        : 0.0f;
+            const PixelRect track = slider_track(row, scale);
+            draw_menu_slider(quads, track, at, !unavailable, line);
+            Color value_color = theme.text_dim;
+            if (unavailable) value_color.a *= 0.55f;
+            text.draw(quads, value, std::round(track.x - menu_slider_knob(line) * 0.5f - line * 0.6f), baseline,
+                      row_scale, value_color, TextAlign::Right);
+        } else if (is_switch(rows()[index])) {
             draw_toggle(quads, row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, value == "On", line);
         } else {
             text.draw(quads, value, row.x + row.w - menu_row_pad(line), baseline, row_scale,

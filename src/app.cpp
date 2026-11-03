@@ -1224,6 +1224,7 @@ struct App::Impl {
     void forget_player(int player);
     void remove_wii_u_player(int player);
     std::vector<std::vector<std::string>> cemu_option_choices() const;
+    std::vector<uint8_t> cemu_option_flags() const;
     // Where among cemu_options the players' controllers begin, which the
     // menu lists under Controls rather than Game Options; -1 for none.
     int cemu_controls_from() const;
@@ -2966,7 +2967,8 @@ void App::Impl::update_cemu_options() {
         }
     }
     if (picker && picker->is_open() && system == SystemId::WiiU && !is_companion()) {
-        picker->set_producer_options(cemu_option_rows(), cemu_option_choices(), cemu_controls_from());
+        picker->set_producer_options(cemu_option_rows(), cemu_option_choices(), cemu_controls_from(),
+                                     cemu_option_flags());
     }
 }
 
@@ -3346,6 +3348,15 @@ std::vector<std::vector<std::string>> App::Impl::cemu_option_choices() const {
     return choices;
 }
 
+std::vector<uint8_t> App::Impl::cemu_option_flags() const {
+    std::vector<uint8_t> flags;
+    for (const ExternalOption& option : cemu_options) {
+        flags.push_back(static_cast<uint8_t>((option.available ? 0u : kProducerOptionUnavailable) |
+                                             (option.slider ? kProducerOptionSlider : 0u)));
+    }
+    return flags;
+}
+
 void App::Impl::step_cemu_option(int index, int steps) {
     if (index < 0 || index >= static_cast<int>(cemu_options.size()) || !external_source) return;
     ExternalOption& option = cemu_options[static_cast<std::size_t>(index)];
@@ -3365,7 +3376,8 @@ void App::Impl::step_cemu_option(int index, int steps) {
         persist_game_config();
     }
     if (option.restart_needed) show_corner_notice(option.label + " will change when the game is reset.");
-    if (picker) picker->set_producer_options(cemu_option_rows(), cemu_option_choices(), cemu_controls_from());
+    if (picker) picker->set_producer_options(cemu_option_rows(), cemu_option_choices(), cemu_controls_from(),
+                                     cemu_option_flags());
 }
 
 void App::Impl::set_cemu_option(int index, int choice) {
@@ -4753,6 +4765,7 @@ void App::Impl::open_picker(bool embedded, bool from_game) {
     if (is_companion()) {
         picker_state.producer_options = companion_session->host_producer_options();
         picker_state.producer_choices = companion_session->host_producer_choices();
+        picker_state.producer_flags = companion_session->host_producer_flags();
         picker_state.producer_controls_from = companion_session->host_producer_controls_from();
         picker_state.wii_u_controllers = companion_session->host_wii_u_controllers();
         picker_state.amiibo = companion_session->host_amiibo();
@@ -4760,6 +4773,7 @@ void App::Impl::open_picker(bool embedded, bool from_game) {
     } else if (system == SystemId::WiiU) {
         picker_state.producer_options = cemu_option_rows();
         picker_state.producer_choices = cemu_option_choices();
+        picker_state.producer_flags = cemu_option_flags();
         picker_state.producer_controls_from = cemu_controls_from();
         picker_state.wii_u_controllers = wii_u_controller_rows();
         // Looked for afresh each time the menu opens, so a file added since
@@ -8591,6 +8605,7 @@ int App::run(const AppOptions& options) {
             if (impl.picker && impl.system == SystemId::WiiU) {
                 shared.producer_options = impl.picker->state().producer_options;
                 shared.producer_choices = impl.picker->state().producer_choices;
+                shared.producer_flags = impl.picker->state().producer_flags;
                 shared.producer_controls_from = impl.picker->state().producer_controls_from;
                 shared.amiibo = impl.picker->state().amiibo;
                 shared.amiibo_folder = impl.picker->state().amiibo_folder;

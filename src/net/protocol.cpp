@@ -387,8 +387,11 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
         if (message.wii_u_controllers[index].sideways) sideways |= 1u << index;
     }
     const std::size_t notices = std::min<std::size_t>(message.controller_notices.size(), 8);
-    if (sideways != 0 || notices > 0) put_u32(out, sideways);
-    if (notices > 0) {
+    const std::size_t flags = std::min<std::size_t>(message.producer_flags.size(), 64);
+    const bool any_flag = std::any_of(message.producer_flags.begin(), message.producer_flags.begin() + flags,
+                                      [](uint8_t flag) { return flag != 0; });
+    if (sideways != 0 || notices > 0 || any_flag) put_u32(out, sideways);
+    if (notices > 0 || any_flag) {
         put_u8(out, static_cast<uint8_t>(notices));
         for (std::size_t index = 0; index < notices; ++index) {
             const ControllerNotice& notice = message.controller_notices[index];
@@ -398,6 +401,10 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
             put_u8(out, notice.sideways ? 1u : 0u);
             put_string(out, notice.text.substr(0, 255));
         }
+    }
+    if (any_flag) {
+        put_u8(out, static_cast<uint8_t>(flags));
+        for (std::size_t index = 0; index < flags; ++index) put_u8(out, message.producer_flags[index]);
     }
     finish_message(out, start, MessageType::SessionState);
 }
@@ -2019,6 +2026,7 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     }
     out.wii_u_controllers.clear();
     out.controller_notices.clear();
+    out.producer_flags.clear();
     if (reader.remaining() > 0) {
         uint8_t rows = 0;
         reader.u8(rows);
@@ -2068,6 +2076,17 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
                 notice.sideways = held_sideways != 0;
                 out.controller_notices.push_back(std::move(notice));
             }
+        }
+        // And Cemu's options' flags.
+        uint8_t flags = 0;
+        if (reader.remaining() > 0 && reader.u8(flags)) {
+            if (flags > 64) return false;
+            for (uint8_t index = 0; index < flags && reader.ok(); ++index) {
+                uint8_t flag = 0;
+                reader.u8(flag);
+                out.producer_flags.push_back(flag);
+            }
+            if (!reader.ok()) return false;
         }
     }
     out.motion_wanted = (motion_wanted != 0);

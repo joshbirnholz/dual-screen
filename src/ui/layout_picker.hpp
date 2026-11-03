@@ -120,6 +120,12 @@ struct LayoutPickerResult {
     int load_slot = -1;
 };
 
+// One of Cemu's options that means nothing with another's choice just now --
+// FSR's sharpness with another upscaler: greyed out and passed over -- and
+// one whose choices are steps along a slider. See ExternalOption.
+inline constexpr uint8_t kProducerOptionUnavailable = 1u;
+inline constexpr uint8_t kProducerOptionSlider = 2u;
+
 // Everything the menu needs to know about the state it is opening onto. A
 // struct rather than a row of positional flags, because there are now enough of
 // them that a call site would be unreadable.
@@ -164,6 +170,10 @@ struct LayoutPickerState {
     // Each of those's choices, in Cemu's order, for its popup. Told to the
     // other device with them.
     std::vector<std::vector<std::string>> producer_choices;
+    // Each of those's kProducerOption* flags, as Cemu says them -- see
+    // ExternalOption -- or none said, for neither. Told to the other device
+    // with them.
+    std::vector<uint8_t> producer_flags;
     // Where in producer_options the rows that belong in Controls -- each
     // player's controller type -- begin, or -1 for none: those are listed
     // there, under Controller Order, rather than in Game Options.
@@ -399,6 +409,11 @@ public:
     // anything in the menu: see entry_at(). In the part of Continue's range
     // no item of Continue's -- it has none -- will ever use.
     static constexpr int kPopupFocusBase = 240;
+    // A point along a slider's track: the step there, kSliderSteps to a row,
+    // of the row of the section the cursor is in -- a tap there sets it. Past
+    // every focus, and never one.
+    static constexpr int kSliderEntryBase = 0x8000;
+    static constexpr int kSliderSteps = 64;
     static constexpr int kOrderingAssigned = 0x80;
 
     // Everything the menu shows, applied in one go, for the device that is not
@@ -410,6 +425,9 @@ public:
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
     int entry_at(float x, float y, float output_width, float output_height) const override;
+    // A finger slid along a slider and lifted taps it where it lifted -- see
+    // kSliderEntryBase.
+    bool same_entry(int pressed_on, int released_on) const override;
     // MenuPage: a list on the right scrolls under a finger, the mouse and the
     // wheel, and an option's popup does while it is up; a tap off that popup
     // puts it away.
@@ -444,10 +462,12 @@ public:
     // LayoutPickerState. Either can change while the menu is up: an option
     // just stepped, Cemu's list arriving, a folder chosen.
     void set_producer_options(std::vector<std::pair<std::string, std::string>> options,
-                              std::vector<std::vector<std::string>> choices = {}, int controls_from = -1) {
+                              std::vector<std::vector<std::string>> choices = {}, int controls_from = -1,
+                              std::vector<uint8_t> flags = {}) {
         state_.producer_options = std::move(options);
         state_.producer_choices = std::move(choices);
         state_.producer_controls_from = controls_from;
+        state_.producer_flags = std::move(flags);
         rebuild_footer();
     }
     // A Wii U's Controls, as they are now -- see
@@ -787,6 +807,20 @@ private:
     std::vector<std::string> option_choices(const OptionRow& row, int& current) const;
     // Drawn as a switch: On or Off, and nothing else to choose.
     bool is_switch(const OptionRow& row) const;
+    // One of Cemu's with a choice that leaves it meaning nothing just now:
+    // greyed out, and passed over -- see kProducerOptionUnavailable.
+    bool row_unavailable(const OptionRow& row) const;
+    bool item_selectable(int item) const;
+    // Its choices along a slider rather than in a popup.
+    bool is_slider(const OptionRow& row) const;
+    // The nearest row from `item` the cursor can be on, going `direction`
+    // first, then the other way; -1 for none.
+    int selectable_item_near(int item, int direction) const;
+    // A slider's track on its row -- see draw_menu_slider().
+    PixelRect slider_track(const PixelRect& row, float scale) const;
+    // A slider set to `choice`, as a change of its option by however many
+    // steps that is -- as a popup's choice is.
+    void set_slider(int choice, LayoutPickerResult& result);
     // The popup up for the option the cursor is on.
     void open_choice();
     // Where the control prompts landed when they were last drawn, so a tap can

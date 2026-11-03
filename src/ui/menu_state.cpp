@@ -40,6 +40,7 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.amiibo_available = session.host_amiibo_available();
     state.producer_options = session.host_producer_options();
     state.producer_choices = session.host_producer_choices();
+    state.producer_flags = session.host_producer_flags();
     state.producer_controls_from = session.host_producer_controls_from();
     state.wii_u_controllers = session.host_wii_u_controllers();
     state.amiibo = session.host_amiibo();

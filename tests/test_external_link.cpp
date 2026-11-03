@@ -1248,6 +1248,8 @@ void test_options_and_amiibo_cross() {
     sent[1].choices = {"English", "Japanese"};
     sent[1].restart_needed = true;
     sent[0].default_choice = 1;
+    sent[1].available = false;
+    sent[1].slider = true;
     producer.send_options(sent);
     std::vector<ExternalOption> got;
     CHECK_MSG(wait_for([&]() { return link.take_options(got); }), "the options never arrived");
@@ -1259,6 +1261,8 @@ void test_options_and_amiibo_cross() {
         CHECK_EQ(got[1].active, -1);
         CHECK_EQ(got[0].default_choice, 1);
         CHECK_EQ(got[1].default_choice, -1);
+        CHECK(got[0].available && !got[0].slider);
+        CHECK(!got[1].available && got[1].slider);
     }
     CHECK(!link.take_options(got));
 

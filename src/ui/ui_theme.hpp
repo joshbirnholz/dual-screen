@@ -247,6 +247,37 @@ inline float draw_toggle(QuadRenderer& quads, float right, float centre_y, bool 
     return width;
 }
 
+// A value along a scale, as a Switch 2 draws one: a thin rounded track, the
+// accent up to a round white knob and grey past it -- in `track`, a row's
+// width of it, centred on its middle. `at` is how far along, 0 to 1.
+// Unavailable, all of it is grey and faint.
+inline float menu_slider_knob(float line) { return std::round(line * 1.2f); }
+inline PixelRect menu_slider_track(float right, float centre_y, float width, float line) {
+    const float height = std::max(3.0f, std::round(line * 0.24f));
+    const float knob = menu_slider_knob(line);
+    // The knob's half past each end, so it sits inside the width at 0 and 1.
+    return PixelRect{std::round(right - width + knob * 0.5f), std::round(centre_y - height * 0.5f),
+                     std::round(width - knob), height};
+}
+inline void draw_menu_slider(QuadRenderer& quads, const PixelRect& track, float at, bool available, float line) {
+    at = std::clamp(at, 0.0f, 1.0f);
+    const Color grey{0.36f, 0.38f, 0.43f, available ? 1.0f : 0.5f};
+    const float knob = menu_slider_knob(line);
+    const float knob_centre = std::round(track.x + track.w * at);
+    quads.draw_capsule(track, grey);
+    if (available && knob_centre > track.x) {
+        quads.draw_capsule(PixelRect{track.x, track.y, std::max(track.h, knob_centre - track.x), track.h},
+                           ui_theme().accent);
+    }
+    const PixelRect knob_rect{knob_centre - knob * 0.5f, std::round(track.y + track.h * 0.5f - knob * 0.5f), knob,
+                              knob};
+    // A faint edge under it, so the white knob stands off a light row.
+    const float edge = std::max(1.0f, std::round(line * 0.06f));
+    quads.draw_capsule(PixelRect{knob_rect.x - edge, knob_rect.y - edge, knob + edge * 2.0f, knob + edge * 2.0f},
+                       Color{0.0f, 0.0f, 0.0f, available ? 0.25f : 0.12f});
+    quads.draw_capsule(knob_rect, available ? Color{0.97f, 0.97f, 0.98f, 1.0f} : Color{0.55f, 0.57f, 0.62f, 1.0f});
+}
+
 // Whether a value is a switch's: what an on/off row says.
 inline bool is_toggle_value(const std::string& value) { return value == "On" || value == "Off"; }
 

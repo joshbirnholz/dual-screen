@@ -1980,6 +1980,100 @@ void test_wii_u_options_are_this_games() {
     CHECK(press(paired, UiAction::Confirm).screens_swap_toggled);
 }
 
+// FSR's sharpness: a slider, moved by Left and Right and set by a tap along
+// it -- and greyed out, passed over and untappable, unless FSR is chosen.
+void test_wii_u_options_slider_and_greyed_out() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.cursor_choosable = false;
+    state.producer_options = {{"Upscaling", "AMD FSR 1"}, {"FSR Sharpness", "80%"}, {"Aspect Ratio", "Original"}};
+    std::vector<std::string> steps;
+    for (int tenths = 0; tenths <= 10; ++tenths) steps.push_back(std::to_string(tenths * 10) + "%");
+    state.producer_choices = {{"Bilinear", "Bicubic", "AMD FSR 1"}, steps, {"Original", "Stretched"}};
+    state.producer_flags = {0, kProducerOptionSlider, 0};
+
+    LayoutPicker picker(registry);
+    open_wii_u(picker, state);
+    open_on(picker, state, MenuSection::Options);
+    press(picker, UiAction::Right);
+    press(picker, UiAction::Down);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 1));
+    // A does nothing on a slider: no popup, no change.
+    const LayoutPickerResult confirmed = press(picker, UiAction::Confirm);
+    CHECK_EQ(confirmed.producer_option, -1);
+    CHECK(picker.confirmation() == MenuConfirm::None);
+    // Right a step up, Left a step down, each as so many steps on.
+    LayoutPickerResult up = press(picker, UiAction::Right);
+    CHECK_EQ(up.producer_option, 1);
+    CHECK_EQ(up.option_steps, 1);
+    LayoutPickerResult down = press(picker, UiAction::Left);
+    CHECK_EQ(down.producer_option, 1);
+    CHECK_EQ(down.option_steps, 10);  // 80% to 70%: ten on, round from 100%
+    CHECK(picker.on_content());       // Left on a slider stays on it
+
+    // At either end, no further.
+    picker.set_producer_options(state.producer_options, state.producer_choices, -1, state.producer_flags);
+    {
+        LayoutPickerState top = state;
+        top.producer_options[1].second = "100%";
+        picker.set_producer_options(top.producer_options, top.producer_choices, -1, top.producer_flags);
+        CHECK_EQ(press(picker, UiAction::Right).producer_option, -1);
+        top.producer_options[1].second = "0%";
+        picker.set_producer_options(top.producer_options, top.producer_choices, -1, top.producer_flags);
+        CHECK_EQ(press(picker, UiAction::Left).producer_option, -1);
+        CHECK(picker.on_content());
+        picker.set_producer_options(state.producer_options, state.producer_choices, -1, state.producer_flags);
+    }
+
+    // A tap along it sets it there: find its track on the row.
+    float row_y = -1.0f;
+    for (float y = 0.0f; y < kHeight && row_y < 0.0f; y += 2.0f) {
+        for (float x = kWidth * 0.3f; x < kWidth; x += 8.0f) {
+            if (picker.entry_at(x, y, kWidth, kHeight) >= LayoutPicker::kSliderEntryBase) {
+                row_y = y;
+                break;
+            }
+        }
+    }
+    CHECK_MSG(row_y >= 0.0f, "no slider to tap on the FSR Sharpness row");
+    float least_x = -1.0f;
+    float most_x = -1.0f;
+    for (float x = 0.0f; x < kWidth; x += 1.0f) {
+        const int entry = picker.entry_at(x, row_y, kWidth, kHeight);
+        if (entry < LayoutPicker::kSliderEntryBase) continue;
+        if (least_x < 0.0f) least_x = x;
+        most_x = x;
+    }
+    const LayoutPickerResult at_least = picker.update({}, {tap(least_x, row_y)}, kWidth, kHeight);
+    CHECK_EQ(at_least.producer_option, 1);
+    CHECK_EQ(at_least.option_steps, 3);  // 80% to 0%, round from 100%
+    const LayoutPickerResult at_most = picker.update({}, {tap(most_x, row_y)}, kWidth, kHeight);
+    CHECK_EQ(at_most.producer_option, 1);
+    CHECK_EQ(at_most.option_steps, 2);  // 80% to 100%
+    // Slid along it and lifted, it is set where the finger lifted.
+    const LayoutPickerResult slid =
+        picker.update({}, {slide_onto(least_x, row_y, most_x, row_y)}, kWidth, kHeight);
+    CHECK_EQ(slid.producer_option, 1);
+    CHECK_EQ(slid.option_steps, 2);
+
+    // Another upscaler: greyed out. The cursor on it goes to the row above,
+    // Down passes over it, and a tap on it does nothing.
+    LayoutPickerState other = state;
+    other.producer_options[0].second = "Bicubic";
+    other.producer_flags = {0, kProducerOptionSlider | kProducerOptionUnavailable, 0};
+    picker.set_producer_options(other.producer_options, other.producer_choices, -1, other.producer_flags);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 0));
+    press(picker, UiAction::Down);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 2));
+    press(picker, UiAction::Up);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 0));
+    CHECK_EQ(picker.entry_at(most_x, row_y, kWidth, kHeight), -1);
+    const LayoutPickerResult tapped_grey = picker.update({}, choose_at(most_x, row_y), kWidth, kHeight);
+    CHECK_EQ(tapped_grey.producer_option, -1);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 0));
+}
+
 void test_wii_u_amiibo_are_listed_to_choose_from() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -2157,6 +2251,7 @@ int main() {
     test_a_long_dropdown_is_not_the_whole_screen_tall();
     test_a_dropdown_scrolled_from_the_other_device_stays_scrolled();
     test_wii_u_options_are_this_games();
+    test_wii_u_options_slider_and_greyed_out();
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_wii_u_menu_opens_on_amiibo_when_the_game_wants_one();
     test_the_resume_popup_is_put_away_with_ok();
