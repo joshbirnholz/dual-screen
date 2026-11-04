@@ -289,12 +289,12 @@ struct Settings {
     // The DS's owner, as its own settings have them: the name games greet
     // the player by, the favorite color -- an index into kDsFavoriteColors
     // (config/ds_profile.hpp), Gray unless another is chosen -- and the
-    // birthday, a month and a day, 0 for none chosen. Told to melonDS DS as a
-    // game starts. The color is the menus' accent too.
+    // birthday, a month and a day, January 1 unless another is chosen. Told
+    // to melonDS DS as a game starts. The color is the menus' accent too.
     std::string ds_nickname;
     int ds_favorite_color = kDsDefaultFavoriteColor;
-    int ds_birth_month = 0;
-    int ds_birth_day = 0;
+    int ds_birth_month = 1;
+    int ds_birth_day = 1;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

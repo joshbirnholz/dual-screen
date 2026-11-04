@@ -273,7 +273,7 @@ void test_the_ds_owner(const std::string& sandbox) {
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Down, 2);  // March
     CHECK(!press(screen, UiAction::Cancel).settings_changed);
-    CHECK_EQ(screen.settings().ds_birth_month, 0);
+    CHECK_EQ(screen.settings().ds_birth_month, 1);  // January 1 until chosen
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Down, 2);
     CHECK(press(screen, UiAction::Confirm).settings_changed);

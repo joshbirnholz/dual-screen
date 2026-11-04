@@ -101,7 +101,7 @@ comes up for it; on a Switch, the system keyboard -- and is ten characters at
 most, as on a DS. The color is picked from a grid of the DS's sixteen, in the
 DS's own order, and is Gray until another is chosen; it is the menus' accent
 too, exactly as the DS shows it -- the cursor's ring is drawn in it. The birthday is its month and its day, each chosen on
-its own; until one is chosen melonDS DS keeps its own. A 3DS has none of these to set:
+its own, and is January 1 until another is chosen. A 3DS has none of these to set:
 Azahar's libretro core takes no name, color or birthday.
 
 ### Dropdowns
