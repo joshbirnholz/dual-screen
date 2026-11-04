@@ -160,8 +160,8 @@ Settings Settings::load(const AppPaths& paths) {
     settings.ds_birth_day = get_or<int>(document, "ds_birth_day", settings.ds_birth_day);
     if (settings.ds_birth_month < 1 || settings.ds_birth_month > 12 || settings.ds_birth_day < 1 ||
         settings.ds_birth_day > ds_days_in_month(settings.ds_birth_month)) {
-        settings.ds_birth_month = 0;
-        settings.ds_birth_day = 0;
+        settings.ds_birth_month = 1;
+        settings.ds_birth_day = 1;
     }
     {
         const std::string tv = get_or<std::string>(document, "wii_u_tv_audio", "stereo");
@@ -255,10 +255,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["pause_wii_u_in_menu"] = pause_wii_u_in_menu;
     if (!ds_nickname.empty()) document["ds_nickname"] = ds_nickname;
     document["ds_favorite_color"] = ds_favorite_color;
-    if (ds_birth_month > 0) {
-        document["ds_birth_month"] = ds_birth_month;
-        document["ds_birth_day"] = ds_birth_day;
-    }
+    document["ds_birth_month"] = ds_birth_month;
+    document["ds_birth_day"] = ds_birth_day;
     document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
     document["wii_remote_rumble"] = wii_remote_rumble;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
