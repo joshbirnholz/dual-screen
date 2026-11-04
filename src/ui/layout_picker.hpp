@@ -835,6 +835,13 @@ private:
     // snapped to the slider's steps. The value is only set as it lifts.
     int slider_drag_item_ = -1;
     float slider_drag_at_ = 0.0f;
+    // A slider moved a step left (-1) or right (1) by a direction: held,
+    // it goes a step at a time, then faster -- see slider_step().
+    void slider_step(int direction, LayoutPickerResult& result);
+    int slider_step_item_ = -1;
+    int slider_step_direction_ = 0;
+    std::chrono::steady_clock::time_point slider_step_last_{};
+    std::chrono::steady_clock::time_point slider_held_since_{};
     // The popup up for the option the cursor is on.
     void open_choice();
     // Where the control prompts landed when they were last drawn, so a tap can

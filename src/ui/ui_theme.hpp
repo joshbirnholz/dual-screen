@@ -278,6 +278,20 @@ inline void draw_menu_slider(QuadRenderer& quads, const PixelRect& track, float 
     quads.draw_capsule(knob_rect, available ? Color{0.97f, 0.97f, 0.98f, 1.0f} : Color{0.55f, 0.57f, 0.62f, 1.0f});
 }
 
+// The cursor on a slider, as a Switch 2 draws it: a ring round the knob,
+// clear of it, rather than round the whole row. Hidden as the row's would
+// be while a finger is down.
+inline void draw_menu_slider_cursor(QuadRenderer& quads, const PixelRect& track, float at, float line, float scale) {
+    if (!cursor_drawn(true)) return;
+    at = std::clamp(at, 0.0f, 1.0f);
+    const float knob = menu_slider_knob(line);
+    const float ring = std::round(knob + std::max(10.0f, std::round(line * 0.9f)));
+    const float centre_x = std::round(track.x + track.w * at);
+    const float centre_y = track.y + track.h * 0.5f;
+    const PixelRect rect{std::round(centre_x - ring * 0.5f), std::round(centre_y - ring * 0.5f), ring, ring};
+    draw_menu_cursor(quads, rect, ring * 0.5f, scale);
+}
+
 // Whether a value is a switch's: what an on/off row says.
 inline bool is_toggle_value(const std::string& value) { return value == "On" || value == "Off"; }
 

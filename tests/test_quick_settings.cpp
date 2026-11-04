@@ -1,8 +1,10 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/system.hpp"
@@ -1982,6 +1984,54 @@ void test_wii_u_options_are_this_games() {
 
 // FSR's sharpness: a slider, moved by Left and Right and set by a tap along
 // it -- and greyed out, passed over and untappable, unless FSR is chosen.
+// Held, a slider goes a step at a time for its first second, then two, then
+// five, landing on round values; a turn the other way starts it slow again.
+void test_held_slider_speeds_up() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.cursor_choosable = false;
+    state.producer_options = {{"Upscaling", "AMD FSR"}, {"FSR Sharpness", "30%"}};
+    std::vector<std::string> steps;
+    for (int percent = 0; percent <= 100; ++percent) steps.push_back(std::to_string(percent) + "%");
+    state.producer_choices = {{"Bilinear", "Bicubic", "AMD FSR"}, steps};
+    state.producer_flags = {0, kProducerOptionSlider};
+
+    LayoutPicker picker(registry);
+    picker.set_repeat_source([](UiAction direction) { return direction == UiAction::Right; });
+    open_wii_u(picker, state);
+    open_on(picker, state, MenuSection::Options);
+    press(picker, UiAction::Right);
+    press(picker, UiAction::Down);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::Options, 1));
+    const auto set_to = [&](int percent) {
+        state.producer_options[1].second = std::to_string(percent) + "%";
+        picker.set_producer_options(state.producer_options, state.producer_choices, -1, state.producer_flags);
+    };
+    const auto right = [&]() { return press(picker, UiAction::Right).option_steps; };
+    CHECK_EQ(right(), 1);  // 30% to 31%
+    set_to(31);
+    CHECK_EQ(right(), 1);  // still the first second
+    set_to(32);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    CHECK_EQ(right(), 2);  // 32% to 34%
+    set_to(34);
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    CHECK_EQ(right(), 1);  // 34% to 35%, onto a fifth
+    set_to(35);
+    CHECK_EQ(right(), 5);  // 35% to 40%
+    set_to(40);
+    // Left, not held: a single step down, whatever came before.
+    CHECK_EQ(press(picker, UiAction::Left).option_steps, 100);  // 40% to 39%, round from 100%
+    // Near the top, held, it stops at 100%.
+    set_to(99);
+    picker.set_repeat_source([](UiAction) { return true; });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    right();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1800));
+    CHECK_EQ(right(), 1);  // 99% to 100%, not past it
+}
+
 void test_wii_u_options_slider_and_greyed_out() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -2303,6 +2353,7 @@ int main() {
     test_a_dropdown_scrolled_from_the_other_device_stays_scrolled();
     test_wii_u_options_are_this_games();
     test_wii_u_options_slider_and_greyed_out();
+    test_held_slider_speeds_up();
     test_wii_u_slider_follows_a_held_finger();
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_wii_u_menu_opens_on_amiibo_when_the_game_wants_one();

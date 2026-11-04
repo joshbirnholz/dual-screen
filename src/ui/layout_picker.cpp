@@ -313,6 +313,33 @@ void LayoutPicker::set_slider(int choice, LayoutPickerResult& result) {
     result.producer_option = row.index;
 }
 
+void LayoutPicker::slider_step(int direction, LayoutPickerResult& result) {
+    if (item_ < 0 || item_ >= static_cast<int>(rows().size())) return;
+    int current = -1;
+    const int steps = static_cast<int>(option_choices(rows()[static_cast<std::size_t>(item_)], current).size());
+    if (steps < 2) return;
+    // Held, as a direction repeats -- this device's, or the other's, whose
+    // repeats come over as presses about 75 ms apart, never as close as a
+    // run of them made at once -- it goes faster the longer it is: a step at
+    // a time for the first second, then two, then five, landing on round
+    // values on the way.
+    const auto now = std::chrono::steady_clock::now();
+    const float since_last = std::chrono::duration<float>(now - slider_step_last_).count();
+    const bool same = slider_step_item_ == item_ && slider_step_direction_ == direction;
+    const bool repeating = repeating_ && repeating_(direction < 0 ? UiAction::Left : UiAction::Right);
+    const bool held = same && (repeating || (since_last >= 0.04f && since_last <= 0.15f));
+    if (!held) slider_held_since_ = now;
+    slider_step_item_ = item_;
+    slider_step_direction_ = direction;
+    slider_step_last_ = now;
+    const float held_for = std::chrono::duration<float>(now - slider_held_since_).count();
+    const int by = held_for < 1.0f ? 1 : held_for < 1.75f ? 2 : 5;
+    if (current < 0) current = 0;
+    int next = direction > 0 ? (current / by + 1) * by : ((current + by - 1) / by - 1) * by;
+    next = std::clamp(next, 0, steps - 1);
+    if (next != current) set_slider(next, result);
+}
+
 int LayoutPicker::slider_item_at(float x, float y, float output_width, float output_height) const {
     const int entry = entry_at(x, y, output_width, output_height);
     return entry >= kSliderEntryBase ? (entry - kSliderEntryBase) / kSliderSteps : -1;
@@ -1291,9 +1318,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
             // A slider down a step, and no further than its least.
             if (on_content_ && content_columns(section_) <= 1 && item_ < static_cast<int>(rows().size()) &&
                 is_slider(rows()[static_cast<std::size_t>(item_)])) {
-                int current = -1;
-                option_choices(rows()[static_cast<std::size_t>(item_)], current);
-                if (current > 0) set_slider(current - 1, result);
+                slider_step(-1, result);
                 break;
             }
             // Back to the list from the left-hand edge of whatever is shown.
@@ -1318,9 +1343,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
             } else if (content_columns(section_) <= 1 && item_ < static_cast<int>(rows().size()) &&
                        is_slider(rows()[static_cast<std::size_t>(item_)])) {
                 // A slider up a step, and no further than its most.
-                int current = -1;
-                const int steps = static_cast<int>(option_choices(rows()[static_cast<std::size_t>(item_)], current).size());
-                if (current < steps - 1) set_slider(std::max(0, current + 1), result);
+                slider_step(1, result);
             } else if (item_ < grid_count(section_) &&
                        item_ % content_columns(section_) != content_columns(section_) - 1 &&
                        item_ + 1 < grid_count(section_)) {
@@ -1908,8 +1931,13 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
             render_add_controller_row(quads, text, row, static_cast<int>(index), focused, scale);
             continue;
         }
-        draw_menu_row(quads, row, focused, scale, index + 1 == std::min(geometry.items.size(), rows().size()),
-                      on_content_ && static_cast<int>(index) == item_ + 1);
+        // A slider's ring is round its knob -- see draw_menu_slider_cursor() --
+        // so its row is drawn as though the cursor were elsewhere.
+        const bool ring_row = focused && !is_slider(rows()[index]);
+        const bool after_ring = on_content_ && static_cast<int>(index) == item_ + 1 && item_ >= 0 &&
+                                !is_slider(rows()[static_cast<std::size_t>(item_)]);
+        draw_menu_row(quads, row, ring_row, scale, index + 1 == std::min(geometry.items.size(), rows().size()),
+                      after_ring);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         const bool unavailable = row_unavailable(rows()[index]);
         Color name_color = unavailable ? theme.text_dim : menu_row_text(focused);
@@ -1923,7 +1951,10 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
             const float at = steps >= 2 && current >= 0 ? static_cast<float>(current) / static_cast<float>(steps - 1)
                                                         : 0.0f;
             const PixelRect track = slider_track(row, scale);
-            draw_menu_slider(quads, track, slider_shown(static_cast<int>(index), at), !unavailable, line);
+            const float shown_at = slider_shown(static_cast<int>(index), at);
+            draw_menu_slider(quads, track, shown_at, !unavailable, line);
+            // The cursor on a slider rings its knob, not the row.
+            if (focused) draw_menu_slider_cursor(quads, track, shown_at, line, scale);
             Color value_color = theme.text_dim;
             if (unavailable) value_color.a *= 0.55f;
             // Under a finger, what it will be set to as it lifts.
