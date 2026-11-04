@@ -154,13 +154,11 @@ void UpdatePrompt::download(update::Component id) {
 
 std::string UpdatePrompt::component_value(update::Component id) const {
     if (updater_ == nullptr) return std::string();
-    std::string name;
     int installed = update::kNotInstalled;
     bool core = false;
     std::string built;
     for (const update::ComponentSpec& component : updater_->components()) {
         if (component.id == id) {
-            name = component.name;
             installed = component.installed;
             core = component.source == update::Source::Buildbot;
             // "<date> <hash>": the date, which is what tells builds apart to
@@ -168,19 +166,12 @@ std::string UpdatePrompt::component_value(update::Component id) const {
             built = component.installed_version.substr(0, component.installed_version.find(' '));
         }
     }
-    const bool this_one = status_.current == name;
     switch (status_.phase) {
         case Phase::Checking:
             if (waiting_only_ == id) return "Checking...";
             break;
-        case Phase::Downloading:
-            if (this_one) {
-                return status_.progress >= 0.0f ? "Downloading " + percent(status_.progress) : "Downloading...";
-            }
-            break;
-        case Phase::Installing:
-            if (this_one) return "Installing...";
-            break;
+        // A download or install in progress isn't shown here: its popup,
+        // over the row, shows it and can't be left without cancelling.
         case Phase::Checked:
             for (const update::Offer& offer : status_.offers) {
                 if (offer.component.id == id && installed != update::kNotInstalled) {
@@ -605,9 +596,8 @@ std::string UpdatePrompt::row_value() const {
     if (updater_ == nullptr) return std::string();
     switch (status_.phase) {
         case Phase::Checking: return "Checking...";
-        case Phase::Downloading:
-            return status_.progress >= 0.0f ? "Downloading " + percent(status_.progress) : "Downloading...";
-        case Phase::Installing: return "Installing...";
+        // Downloading and installing aren't shown here: the popup over the
+        // row shows them, and can't be left without cancelling.
         case Phase::Installed:
             if (status_.restart) return "Restarting...";
             break;
@@ -618,6 +608,8 @@ std::string UpdatePrompt::row_value() const {
                 }
             }
             break;
+        case Phase::Downloading:
+        case Phase::Installing:
         case Phase::Idle:
         case Phase::Failed: break;
     }
