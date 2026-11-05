@@ -70,6 +70,10 @@ struct SettingsScreenResult {
     // A Download row under Updates was chosen: the app downloads the emulator
     // it keeps for that console -- Cemu, or a core -- see UpdatePrompt.
     std::optional<SystemId> open_download;
+    // The Wii U group's graphics packs row was chosen: the app downloads
+    // Cemu's community graphics packs, or updates them -- see
+    // GraphicPacksPrompt.
+    bool open_graphic_packs = false;
 };
 
 // The groups Settings files its rows in, listed down its left-hand side in
@@ -130,6 +134,14 @@ public:
     // A Data Management row, in System, on a device that keeps saves of its
     // own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
+    // The row that downloads Cemu's community graphics packs, or updates
+    // them, last in Wii U, on a device that plays Wii U games: what it is
+    // called -- Download or Update -- and which are here.
+    void set_graphic_packs_row(bool offers, std::string label, std::string value) {
+        offers_graphic_packs_ = offers;
+        graphic_packs_label_ = std::move(label);
+        graphic_packs_value_ = std::move(value);
+    }
     // Updates, last in System, on a device that can update itself: Check for
     // Updates, then Dualscreen, saying what `value` does -- which build this
     // is, or what the updater is doing -- then each emulator it keeps. Over a
@@ -253,7 +265,7 @@ private:
     struct Item {
         // Status: a name and what it says, under Updates, that the cursor
         // passes over.
-        enum class Kind { Setting, Heading, Status, Melon, Download, DataManagement, CheckUpdates };
+        enum class Kind { Setting, Heading, Status, Melon, Download, DataManagement, CheckUpdates, GraphicPacks };
         Kind kind = Kind::Setting;
         Row row = Row::Count;
         std::string text;
@@ -346,6 +358,9 @@ private:
     bool over_game_ = false;
 
     bool offers_data_management_ = false;
+    bool offers_graphic_packs_ = false;
+    std::string graphic_packs_label_;
+    std::string graphic_packs_value_;
     bool offers_updates_ = false;
     std::string updates_value_;
     std::vector<UpdateLine> update_lines_;

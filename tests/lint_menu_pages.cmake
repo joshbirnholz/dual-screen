@@ -30,6 +30,8 @@ set(not_pages
     TextEntryPopup
     # An update's offer, over Settings, answered as Settings is.
     UpdatePrompt
+    # The graphics packs row's download and how it went, over Settings, the same.
+    GraphicPacksPrompt
     # A message that any press or tap at all puts away, or an alert whose
     # buttons a PopupCursor answers, as every popup's are.
     MessageScreen

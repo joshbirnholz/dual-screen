@@ -124,7 +124,9 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/update/updater.cpp
     src/update/desktop_updater.cpp
     src/update/zip_extract.cpp
+    src/update/graphic_packs.cpp
     src/ui/update_prompt.cpp
+    src/ui/graphic_packs_prompt.cpp
     companion/source/android_updater.cpp
 )
 list(TRANSFORM DUALSCREEN_LOCAL_PLAY_SOURCES PREPEND "${DUALSCREEN_ROOT}/")
