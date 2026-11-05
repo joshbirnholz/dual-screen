@@ -14,6 +14,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+
+#include "util/win_text.hpp"
 #undef near
 #undef far
 #undef interface
@@ -218,6 +220,15 @@ bool GameBrowser::navigate_to(std::string directory) {
 #endif
 
     for (const DirectoryEntry& entry : entries) {
+#if defined(_WIN32)
+        // What Explorer hides too: $Recycle.Bin, System Volume Information,
+        // AppData and the like.
+        const DWORD attributes = ::GetFileAttributesW(widen(entry.path).c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES &&
+            (attributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0) {
+            continue;
+        }
+#endif
         if (!entry.is_directory &&
             !(amiibo_ ? is_amiibo_file(entry.name) : is_supported_rom(entry.name))) {
             continue;

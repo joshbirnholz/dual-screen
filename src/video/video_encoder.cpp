@@ -192,8 +192,10 @@ bool VideoEncoder::open(const EncoderConfig& config, std::string* error) {
             const bool reduced = config.source_width > 0 && config.source_height > 0 &&
                                  (config.source_width != config.width ||
                                   config.source_height != config.height);
+            const bool known = config.source_width > 0 && config.source_height > 0;
             const std::string provenance =
-                reduced ? ", scaled down from the " + std::to_string(config.source_width) + "x" +
+                !known ? std::string(", trying whether it opens here")
+                : reduced ? ", scaled down from the " + std::to_string(config.source_width) + "x" +
                               std::to_string(config.source_height) +
                               " the game draws it at, to fit what the far end can show"
                         : ", which is the size the game itself is drawing it at";
