@@ -663,6 +663,8 @@ struct App::Impl {
     void open_forwarder(const std::string& rom_path);
     std::unique_ptr<LauncherScreen> launcher;
     std::unique_ptr<HostPickerScreen> host_picker;
+    // Where the Connecting screen's Stop waiting was drawn, for a click or tap.
+    std::vector<GuideHit> connecting_hits;
     // Computers that can start a game, looked for while the launcher is up
     // -- see net::LaunchHostFinder -- the games recently played on them, for
     // the launcher's foot, and the one being started.
@@ -7079,10 +7081,12 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             // stop waiting, and nothing is connected for a button to drive.
             if (companion_session->status() == net::CompanionSession::Status::Connecting) {
                 std::vector<UiAction> pressed = actions;
-                // The quick start page's Cancel, tapped.
-                if (remote_start.is_open()) {
+                // The quick start page's Cancel, or the Connecting screen's
+                // Stop waiting, clicked or tapped.
+                {
                     std::vector<PointerEvent> rest = pointers;
-                    take_guide_taps(remote_start.guide_hits(), pressed, rest);
+                    if (remote_start.is_open()) take_guide_taps(remote_start.guide_hits(), pressed, rest);
+                    take_guide_taps(connecting_hits, pressed, rest);
                 }
                 for (const UiAction action : pressed) {
                     if (action == UiAction::Cancel || action == UiAction::ToggleMenu) {
@@ -7642,9 +7646,11 @@ void App::Impl::render() {
             // A game started from the first screen: its page stays up,
             // saying it is connecting, until the game is on screen.
             remote_start.render(quads, text, button_glyphs, width, height);
+            connecting_hits.clear();
         } else {
             render_connecting_screen(quads, text, button_glyphs, width, height,
-                                     joining_host.device_name, joining_host.game_title, note);
+                                     joining_host.device_name, joining_host.game_title, note,
+                                     &connecting_hits);
         }
         swap();
         ++frames_rendered;
