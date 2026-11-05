@@ -4402,8 +4402,12 @@ void App::Impl::render_menu_overlay() {
     }
     int width = 0;
     int height = 0;
-    MenuOverlay::fit(output_width, output_height, ExternalOverlayArea::kMaxWidth,
-                     ExternalOverlayArea::kMaxHeight, width, height);
+    // At this window's own size where the game's end takes one that large:
+    // a 1440p or 4K display's menu is not one scaled up from 1080p.
+    MenuOverlay::fit(output_width, output_height,
+                     external_source ? external_source->overlay_max_width() : ExternalOverlayArea::kMaxWidth,
+                     external_source ? external_source->overlay_max_height() : ExternalOverlayArea::kMaxHeight,
+                     width, height);
     const float w = static_cast<float>(output_width);
     const float h = static_cast<float>(output_height);
     const bool menu_over = menu_over_wii_u_game() || quick_menu_leaving();

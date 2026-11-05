@@ -878,6 +878,54 @@ void test_the_animation_curves() {
     CHECK(std::abs(Anim::backdrop(Anim::Mode::Leaving, 0.2f)) < 0.001f);
 }
 
+// A menu at a 1440p or 4K display's own size: drawn from the large slots
+// for a producer that said it reads them, and never bigger than 1080p for
+// one that did not.
+void test_a_large_menu_crosses_whole() {
+    {
+        ExternalFrameLink link;
+        ExternalFrameProducer producer;
+        ExternalStreamInfo info = wii_u_info();
+        info.features = kExternalFeatureOverlay;
+        if (!bring_up(link, producer, info)) return;
+        CHECK(!link.large_overlay());
+        CHECK_EQ(link.overlay_max_width(), ExternalOverlayArea::kMaxWidth);
+        std::vector<uint8_t> big(static_cast<std::size_t>(3440) * 1440 * 4, 1);
+        CHECK(!link.publish_overlay(big.data(), 3440, 1440));
+    }
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeatureLargeOverlay;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(producer.large_overlay_available());
+    CHECK_MSG(link.large_overlay(), "the producer's offer of a large overlay was not heard");
+    CHECK_EQ(link.overlay_max_width(), ExternalOverlayArea::kLargeMaxWidth);
+    constexpr int kWidth = 3440;
+    constexpr int kHeight = 1440;
+    std::vector<uint8_t> menu(static_cast<std::size_t>(kWidth) * kHeight * 4);
+    for (std::size_t i = 0; i < menu.size(); ++i) menu[i] = static_cast<uint8_t>(i % 251);
+    CHECK(link.publish_overlay(menu.data(), kWidth, kHeight));
+    CHECK(!link.publish_overlay(menu.data(), ExternalOverlayArea::kLargeMaxWidth + 1, 1));
+    std::vector<uint8_t> got;
+    int width = 0;
+    int height = 0;
+    bool arrived = false;
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!arrived && std::chrono::steady_clock::now() < give_up_at) {
+        bool reset = false;
+        std::string error;
+        CHECK(producer.poll(reset, &error));
+        CHECK(link.poll(&error));
+        arrived = producer.take_overlay(got, width, height);
+        if (!arrived) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(arrived, "the large menu never reached the producer");
+    CHECK_EQ(width, kWidth);
+    CHECK_EQ(height, kHeight);
+    CHECK_MSG(got == menu, "the large menu arrived different from how it was sent");
+}
+
 // This app's quick menu drawn over a Wii U game in Cemu's window: a producer
 // that says it can draw one is handed the pixels, told when they are taken
 // down, and its menu key comes back the other way. One that does not say so is
@@ -1415,6 +1463,7 @@ void test_a_games_dialogs_cross_and_are_answered() {
 }
 
 int main() {
+    test_a_large_menu_crosses_whole();
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
     test_falling_behind_skips_to_the_newest();
