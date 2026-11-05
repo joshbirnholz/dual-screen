@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <optional>
@@ -236,6 +237,16 @@ private:
         PauseWiiUInMenu,
         WiiUTvAudio,
         WiiRemoteRumble,
+        // Cemu's own, kept here -- see wii_u_settings_options().
+        WiiUConsoleLanguage,
+        WiiUTvVolume,
+        WiiUAsyncShaders,
+        WiiUIntroSound,
+        // Under a Notifications heading: what Cemu says in the corner.
+        WiiUNotifyProfiles,
+        WiiUNotifyBattery,
+        WiiUNotifyShaders,
+        WiiUNotifyFriends,
         // Desktops only, where Discord runs: see util/discord_presence.hpp.
         DiscordStatus,
 #endif
@@ -252,6 +263,32 @@ private:
     };
     std::string row_label(Row row) const;
     std::string row_value(Row row) const;
+
+    // A row whose value is a step along a scale, drawn as a Switch 2's
+    // slider and stepped with Left and Right -- the Wii U TV's volume -- and
+    // what it is at, of how many steps.
+    static bool is_slider(Row row);
+    int slider_value(Row row) const;
+    int slider_steps(Row row) const;
+    void set_slider(Row row, int value, SettingsScreenResult& result);
+    // Left or Right on one: a step, then faster for a held direction, as the
+    // quick menu's sliders go -- see LayoutPicker::slider_step().
+    void slider_step(int direction, SettingsScreenResult& result);
+    PixelRect slider_track(const PixelRect& row, float scale) const;
+    // A point along a slider's track: kSliderEntryBase plus the step there.
+    static constexpr int kSliderEntryBase = 0x8000;
+    bool same_entry(int pressed_on, int released_on) const override {
+        if (pressed_on >= kSliderEntryBase && released_on >= kSliderEntryBase) return true;
+        return pressed_on == released_on;
+    }
+    int slider_step_direction_ = 0;
+    std::chrono::steady_clock::time_point slider_step_last_{};
+    std::chrono::steady_clock::time_point slider_held_since_{};
+    // Under a finger: where along it, 0 to 1, or below 0 with none.
+    float slider_drag_at_ = -1.0f;
+    // Where the knob is drawn, gliding to its value.
+    float slider_shown_ = -1.0f;
+    std::chrono::steady_clock::time_point slider_shown_at_{};
 
     // melonDS's rows, in order.
     enum class MelonRow {

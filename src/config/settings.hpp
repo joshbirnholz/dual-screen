@@ -60,6 +60,23 @@ inline constexpr const char* kWiiUTvAudioOption = "tv_channels";
 // Cemu's GamePad, 0 Connected and 1 Disconnected: kept per game as
 // GameConfig::wii_u_gamepad_disconnected, and out of the game's Options.
 inline constexpr const char* kWiiUGamePadOption = "gamepad_connected";
+// Cemu's own settings that Dualscreen keeps under Wii U in Settings, the same
+// for every game, like TV audio: each one's id over the link, and the choice
+// Settings has for it -- told to Cemu whenever it lists its options, and kept
+// out of a game's Options. The choices are in Cemu's order -- see
+// DualscreenRequests.cpp in the fork. TV audio is one of them.
+struct WiiUSettingsOption {
+    const char* id;
+    // What it is, as a log line says it.
+    const char* name;
+    int choice;
+};
+struct Settings;
+std::vector<WiiUSettingsOption> wii_u_settings_options(const Settings& settings);
+// The languages Cemu can tell a game the console is set to, in its order.
+inline constexpr const char* kWiiUConsoleLanguages[12] = {
+    "Japanese", "English", "French", "German", "Italian", "Spanish",
+    "Chinese", "Korean", "Dutch", "Portuguese", "Russian", "Taiwanese"};
 // Settings::wii_remote_rumble's choices, in percent.
 inline constexpr int kWiiRemoteRumbleChoices[5] = {0, 25, 50, 75, 100};
 // Cemu's option for a player's controller type -- "player1_type" and on --
@@ -153,6 +170,20 @@ struct Settings {
     // Remote, in percent -- one of kWiiRemoteRumbleChoices. A real one's
     // motor is a small one, and a pad's at full strength is far louder.
     int wii_remote_rumble = 50;
+    // The rest of Cemu's own settings kept here -- see
+    // wii_u_settings_options(). The language games are told the console is
+    // set to, an index into kWiiUConsoleLanguages; the TV's volume in
+    // percent; whether Cemu compiles shaders while the game goes on (Vulkan
+    // only); whether the console's intro sound plays as a game boots; and
+    // which of Cemu's notifications it shows in the corner of the game.
+    int wii_u_console_language = 1;
+    int wii_u_tv_volume = 50;
+    bool wii_u_async_shaders = true;
+    bool wii_u_intro_sound = false;
+    bool wii_u_notify_controller_profiles = true;
+    bool wii_u_notify_controller_battery = false;
+    bool wii_u_notify_shader_compiling = true;
+    bool wii_u_notify_friends = true;
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {

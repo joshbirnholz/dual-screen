@@ -175,13 +175,25 @@ void test_page(const std::string& sandbox) {
     CHECK_EQ(plain.focus(), 5);
 
     // A switch flips with A, never sideways: Right does nothing on a row,
-    // and Left only goes back to the list.
+    // and Left only goes back to the list -- but for a slider, which Left
+    // and Right step: the Wii U TV's volume, fifth in Wii U.
     for (const SettingsGroup group :
          {SettingsGroup::General, SettingsGroup::Consoles, SettingsGroup::WiiU, SettingsGroup::System}) {
         SettingsScreen switches(paths);
         switches.open(Settings(), {});
         switches.open_group(group);
         for (int row = 0; row < 8; ++row) {
+#if DS_PLAYS_WII_U
+            if (group == SettingsGroup::WiiU && row == 4) {
+                CHECK(press(switches, UiAction::Right).settings_changed);
+                CHECK_EQ(switches.settings().wii_u_tv_volume, 51);
+                CHECK(press(switches, UiAction::Left).settings_changed);
+                CHECK_EQ(switches.settings().wii_u_tv_volume, 50);
+                CHECK(switches.in_group());
+                press(switches, UiAction::Down);
+                continue;
+            }
+#endif
             CHECK_MSG(!press(switches, UiAction::Right).settings_changed, "a sideways press changed a setting");
             press(switches, UiAction::Down);
         }
