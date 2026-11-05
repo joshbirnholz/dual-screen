@@ -6004,6 +6004,14 @@ void App::Impl::follow_recent_games() {
         tile.icon_width = game.icon_width;
         tile.icon_height = game.icon_height;
         tile.icon_rgba = game.icon_rgba;
+        // The other computers that could start it too, asked about when
+        // it is chosen.
+        if (!game.elsewhere.empty()) {
+            tile.places.push_back({tile.key, game.host.name, game.host.asleep});
+            for (const net::RecentGamesFeed::Game::Elsewhere& place : game.elsewhere) {
+                tile.places.push_back({place.host.id + "/" + place.game.id, place.host.name, place.host.asleep});
+            }
+        }
         tiles.push_back(std::move(tile));
     }
     launcher->set_recent(std::move(tiles));
@@ -6955,20 +6963,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 case LauncherChoice::StartRecent: {
                     // Started on that computer, and joined as the bottom
                     // screen once it is up there.
-                    const std::vector<net::RecentGamesFeed::Game> games = recent_games.games();
-                    const auto picked = std::find_if(games.begin(), games.end(), [&](const auto& game) {
-                        return game.host.id + "/" + game.game.id == result.recent;
-                    });
-                    if (picked == games.end()) {
+                    // The computer chosen for it, when more than one could.
+                    net::RecentGamesFeed::Game picked;
+                    if (!net::find_recent_game(recent_games.games(), result.recent, picked)) {
                         launcher->open();
                         break;
                     }
                     start_companion(ScreenId::Bottom);
                     if (state != State::HostPicker) break;
-                    remote_start.open_and_start(picked->host,
-                                                net::remote_start_token(remote_start_tokens(), picked->host.id),
-                                                picked->game, picked->icon_width, picked->icon_height,
-                                                picked->icon_rgba);
+                    remote_start.open_and_start(picked.host,
+                                                net::remote_start_token(remote_start_tokens(), picked.host.id),
+                                                picked.game, picked.icon_width, picked.icon_height,
+                                                picked.icon_rgba);
                     state = State::RemoteStart;
                     break;
                 }

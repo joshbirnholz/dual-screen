@@ -206,6 +206,62 @@ void test_a_host_that_needs_an_update_is_explained_not_joined() {
     }
 }
 
+LauncherTile recent_tile(const std::string& key, const std::string& computer) {
+    LauncherTile tile;
+    tile.key = key;
+    tile.title = "Kirby";
+    tile.computer = computer;
+    return tile;
+}
+
+// Choosing a recent game that only one computer has asks whether to start it
+// there; one more than one computer could start asks which.
+void test_a_game_on_more_than_one_device_asks_which() {
+    LauncherScreen launcher;
+    launcher.open(false);
+    launcher.set_recent({recent_tile("den/1", "Den PC")});
+    // Down off the menu onto the game, then choose it.
+    for (int at = 0; at < 4; ++at) launcher.update({UiAction::Down}, {}, kWidth, kHeight);
+    launcher.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_STR_EQ(launcher.alert_message(), "Start Kirby on Den PC?");
+    CHECK_EQ(launcher.alert_buttons().size(), 2u);
+    LauncherResult result = launcher.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.choice == LauncherChoice::StartRecent);
+    CHECK_STR_EQ(result.recent, "den/1");
+
+    LauncherTile shared = recent_tile("den/1", "Den PC");
+    shared.places = {{"den/1", "Den PC", false}, {"office/9", "Office PC", true}};
+    launcher.open(false);
+    launcher.set_recent({shared});
+    for (int at = 0; at < 4; ++at) launcher.update({UiAction::Down}, {}, kWidth, kHeight);
+    launcher.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_STR_EQ(launcher.alert_message(), "Which device do you want to start Kirby on?");
+    const std::vector<PopupButton> buttons = launcher.alert_buttons();
+    CHECK_EQ(buttons.size(), 3u);
+    if (buttons.size() == 3u) {
+        CHECK_STR_EQ(buttons[0].label, "Den PC");
+        CHECK_STR_EQ(buttons[1].label, "Office PC");
+        CHECK_STR_EQ(buttons[1].detail, "Asleep");
+        CHECK_STR_EQ(buttons[2].label, "Cancel");
+    }
+    const std::vector<GuidePrompt> guide = launcher.guide_prompts();
+    CHECK_EQ(guide.size(), 2u);
+    if (guide.size() == 2u) {
+        CHECK_STR_EQ(guide[0].action, "OK");
+        CHECK_STR_EQ(guide[1].action, "Back");
+    }
+    // B takes it away, starting nothing.
+    result = launcher.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(result.choice == LauncherChoice::None);
+    CHECK(launcher.alert_message().empty());
+    // Asked again, the second computer.
+    launcher.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    launcher.update({UiAction::Down}, {}, kWidth, kHeight);
+    result = launcher.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.choice == LauncherChoice::StartRecent);
+    CHECK_STR_EQ(result.recent, "office/9");
+}
+
 }  // namespace
 
 int main() {
@@ -217,5 +273,6 @@ int main() {
     test_a_companion_that_plays_games_offers_to_load_one();
     test_no_key_leaves_where_leaving_is_not_offered();
     test_the_connection_list_does_not_show_addresses();
+    test_a_game_on_more_than_one_device_asks_which();
     return test::finish("launcher");
 }

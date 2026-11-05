@@ -49,6 +49,15 @@ struct LauncherTile {
     // <computer>?"
     std::string title;
     std::string computer;
+    // Every computer that could start it, this tile's own -- `key` -- first.
+    // With more than one, choosing the tile asks which to start it on
+    // instead of whether to.
+    struct Place {
+        std::string key;
+        std::string computer;
+        bool asleep = false;
+    };
+    std::vector<Place> places;
     int icon_width = 0;
     int icon_height = 0;
     std::vector<uint8_t> icon_rgba;
@@ -100,6 +109,10 @@ public:
     // says it. Exposed rather than built where it is drawn so the order is
     // something that can be checked.
     std::vector<GuidePrompt> guide_prompts() const;
+    // The alert up over the screen, or empty: for checking what it asks and
+    // offers.
+    std::string alert_message() const { return confirm_message(); }
+    std::vector<PopupButton> alert_buttons() const { return confirming_ >= 0 ? confirm_buttons() : std::vector<PopupButton>{}; }
 
     LauncherResult update(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers,
@@ -145,9 +158,14 @@ private:
     int tiles_shown_ = 0;
     int tile_columns_ = 1;
     // The game chosen along the foot, being asked about -- "Start it on
-    // that computer?" -- or -1.
+    // that computer?", or, when more than one computer could start it,
+    // "Which device do you want to start it on?" -- or -1.
     int confirming_ = -1;
     PopupCursor confirm_cursor_;
+    // Whether the game being asked about could be started on more than one
+    // computer, so the alert lists them.
+    bool asking_which_device() const;
+    std::vector<PopupButton> confirm_buttons() const;
     std::string confirm_message() const;
     PopupGeometry confirm_geometry(float output_width, float output_height) const;
 

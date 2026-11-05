@@ -466,6 +466,68 @@ void test_recent_games_are_kept() {
     CHECK_STR_EQ(recent_games_path("/a/b/remote_start_tokens.json"), "/a/b/remote_start_recent.json");
 }
 
+// The same game on two computers is one tile, from where it was played last,
+// with the other computer -- played there or not -- to be asked between.
+void test_the_same_game_on_two_computers_is_one_recent_game() {
+    const auto entry = [](const std::string& host, const std::string& id, const std::string& title, int64_t played) {
+        RecentGamesFeed::Game game;
+        game.host.id = host;
+        game.host.name = host + " PC";
+        game.game.id = id;
+        game.game.title = title;
+        game.game.system = "ds";
+        game.game.last_played = played;
+        return game;
+    };
+    std::vector<RecentGamesFeed::Game> listed{
+        entry("den", "steam:1", "Kirby", 100),         entry("den", "steam:2", "Mario Kart DS", 300),
+        entry("office", "rom:a", "  mario kart ds ", 0), entry("office", "rom:b", "Kirby", 500),
+        entry("deck", "rom:c", "Tetris DS", 0),        entry("deck", "rom:d", "Mario Kart DS", 50)};
+    RecentGamesFeed::Game other_system = entry("office", "rom:e", "Kirby", 0);
+    other_system.game.system = "3ds";
+    listed.push_back(other_system);
+
+    const std::vector<RecentGamesFeed::Game> games = group_recent_games(listed, 16);
+    CHECK_EQ(games.size(), 2u);
+    if (games.size() == 2u) {
+        CHECK_STR_EQ(games[0].game.title, "Kirby");
+        CHECK_STR_EQ(games[0].host.id, "office");
+        CHECK_EQ(games[0].elsewhere.size(), 1u);
+        if (!games[0].elsewhere.empty()) CHECK_STR_EQ(games[0].elsewhere[0].host.id, "den");
+        CHECK_STR_EQ(games[1].game.title, "Mario Kart DS");
+        CHECK_STR_EQ(games[1].host.id, "den");
+        // Played there most recently first, then never played there.
+        CHECK_EQ(games[1].elsewhere.size(), 2u);
+        if (games[1].elsewhere.size() == 2u) {
+            CHECK_STR_EQ(games[1].elsewhere[0].host.id, "deck");
+            CHECK_STR_EQ(games[1].elsewhere[1].host.id, "office");
+        }
+
+        RecentGamesFeed::Game found;
+        CHECK(find_recent_game(games, "office/rom:a", found));
+        CHECK_STR_EQ(found.host.id, "office");
+        CHECK_STR_EQ(found.game.id, "rom:a");
+        CHECK(found.elsewhere.empty());
+        CHECK(find_recent_game(games, "den/steam:2", found));
+        CHECK_STR_EQ(found.game.id, "steam:2");
+        CHECK(!find_recent_game(games, "deck/rom:c", found));
+    }
+    CHECK_EQ(group_recent_games(listed, 1).size(), 1u);
+
+    // And the other computers are kept with it, for while they sleep.
+    const std::string path = make_sandbox() + "/remote_start_recent.json";
+    CHECK(keep_recent_games(path, games));
+    const std::vector<RecentGamesFeed::Game> kept = kept_recent_games(path);
+    CHECK_EQ(kept.size(), 2u);
+    if (kept.size() == 2u) {
+        CHECK_EQ(kept[1].elsewhere.size(), 2u);
+        if (kept[1].elsewhere.size() == 2u) {
+            CHECK_STR_EQ(kept[1].elsewhere[1].host.name, "office PC");
+            CHECK_STR_EQ(kept[1].elsewhere[1].game.id, "rom:a");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -480,5 +542,6 @@ int main() {
     test_a_computer_is_remembered_and_woken();
     test_the_recent_games_feed();
     test_recent_games_are_kept();
+    test_the_same_game_on_two_computers_is_one_recent_game();
     return test::finish("launch-service");
 }
