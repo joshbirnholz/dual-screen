@@ -163,14 +163,19 @@ int LauncherScreen::entry_at(float x, float y, float output_width, float output_
     return -1;
 }
 
-LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
-                                      const std::vector<PointerEvent>& pointers,
+LauncherResult LauncherScreen::update(const std::vector<UiAction>& pressed,
+                                      const std::vector<PointerEvent>& touched,
                                       float output_width,
                                       float output_height) {
     LauncherResult result;
     if (!open_) {
         return result;
     }
+    // A click or tap on a prompt is the press it names. Taken here rather
+    // than by each shell, so a window with a mouse gets it as a phone does.
+    std::vector<UiAction> actions = pressed;
+    std::vector<PointerEvent> pointers = touched;
+    take_guide_taps(guide_hits_, actions, pointers);
 
     const int count = static_cast<int>(rows_.size());
     if (count == 0) {
@@ -506,14 +511,19 @@ int HostPickerScreen::entry_at(float x, float y, float output_width, float outpu
 }
 
 HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredHost>& hosts,
-                                          const std::vector<UiAction>& actions,
-                                          const std::vector<PointerEvent>& pointers,
+                                          const std::vector<UiAction>& pressed,
+                                          const std::vector<PointerEvent>& touched,
                                           float output_width,
                                           float output_height) {
     HostPickerResult result;
     if (!open_) {
         return result;
     }
+    // Back and Connect along the foot, clicked or tapped -- see
+    // LauncherScreen::update().
+    std::vector<UiAction> actions = pressed;
+    std::vector<PointerEvent> pointers = touched;
+    take_guide_taps(guide_hits_, actions, pointers);
 
     const int count = static_cast<int>(hosts.size());
     host_count_ = hosts.size();

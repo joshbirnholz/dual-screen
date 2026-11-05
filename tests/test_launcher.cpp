@@ -2,6 +2,9 @@
 #include <vector>
 
 #include "test_support.hpp"
+#include "render/button_glyphs.hpp"
+#include "render/quad_renderer.hpp"
+#include "render/text_renderer.hpp"
 #include "ui/launcher_screen.hpp"
 
 using namespace ds;
@@ -262,6 +265,54 @@ void test_a_game_on_more_than_one_device_asks_which() {
     CHECK_STR_EQ(result.recent, "office/9");
 }
 
+// A click on the middle of a prompt that was drawn, as a mouse makes one:
+// down and up in the same place.
+std::vector<PointerEvent> click_on(const std::vector<GuideHit>& hits, ButtonGlyph glyph) {
+    for (const GuideHit& hit : hits) {
+        if (hit.glyph != glyph) continue;
+        PointerEvent click;
+        click.x = click.press_x = hit.rect.x + hit.rect.w * 0.5f;
+        click.y = click.press_y = hit.rect.y + hit.rect.h * 0.5f;
+        click.released = true;
+        click.normalized = false;
+        return {click};
+    }
+    return {};
+}
+
+// Clicking Back along the foot of the connection list goes back, as B does.
+// It used to do nothing on a computer: only the companion's own shell turned
+// clicks on these prompts into presses, and the desktop app never did.
+void test_clicking_back_leaves_the_connection_list() {
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    HostPickerScreen picker;
+    picker.open(ScreenId::Bottom);
+    const std::vector<ds::net::DiscoveredHost> none;
+    picker.render(quads, text, glyphs, kWidth, kHeight, none, "Looking");
+    const std::vector<PointerEvent> click = click_on(picker.guide_hits(), ButtonGlyph::B);
+    CHECK_MSG(!click.empty(), "the connection list drew no Back prompt");
+    const HostPickerResult result = picker.update(none, {}, click, kWidth, kHeight);
+    CHECK_MSG(result.cancelled, "clicking Back did not leave the connection list");
+    CHECK_MSG(!picker.is_open(), "the connection list stayed open after Back");
+}
+
+// And Quit along the foot of the first screen, where it is offered.
+void test_clicking_quit_on_the_first_screen_quits() {
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    LauncherScreen launcher;
+    launcher.set_plus_quits(true);
+    launcher.open();
+    launcher.render(quads, text, glyphs, kWidth, kHeight, 0);
+    const std::vector<PointerEvent> click = click_on(launcher.guide_hits(), ButtonGlyph::Plus);
+    CHECK_MSG(!click.empty(), "the first screen drew no Quit prompt");
+    CHECK_MSG(launcher.update({}, click, kWidth, kHeight).choice == LauncherChoice::Quit,
+              "clicking Quit did not quit");
+}
+
 }  // namespace
 
 int main() {
@@ -274,5 +325,7 @@ int main() {
     test_no_key_leaves_where_leaving_is_not_offered();
     test_the_connection_list_does_not_show_addresses();
     test_a_game_on_more_than_one_device_asks_which();
+    test_clicking_back_leaves_the_connection_list();
+    test_clicking_quit_on_the_first_screen_quits();
     return test::finish("launcher");
 }
