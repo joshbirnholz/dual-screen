@@ -1,5 +1,9 @@
 // The icon Explorer, the taskbar and Steam show for dualscreen.exe and
-// dualscreen-companion.exe, and the manifest beside it (see the .manifest).
+// dualscreen-companion.exe, and the manifest beside it. The manifest makes
+// UTF-8 the code page (so every narrow path and argv is the UTF-8 the code
+// keeps), asks for per-monitor DPI awareness and long paths. It holds no
+// comments: Windows refuses to start a program whose manifest does not parse,
+// and a comment with two dashes in it is not XML.
 #include <winuser.h>
 
 #define DS_TEXT_OF(value) #value

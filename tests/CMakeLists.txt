@@ -577,3 +577,13 @@ if(XVFB_RUN_EXECUTABLE AND NOT WIN32)
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()
+
+# Windows refuses to start a program whose embedded manifest is not XML
+# ("side-by-side configuration is incorrect"), and Wine does not mind, so the
+# Windows tests cannot catch it. Checked on every build that has a Python.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME windows_manifest_parses
+             COMMAND ${Python3_EXECUTABLE} -c "import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])"
+                     ${CMAKE_SOURCE_DIR}/assets/windows/dualscreen.manifest)
+endif()

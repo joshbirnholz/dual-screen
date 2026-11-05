@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<!-- What Windows is told about Dualscreen before it runs a line of it.
-     UTF-8 as the code page, so every path and name this app passes to Windows
-     as a plain string (fopen, CreateFileA, argv) is read as the UTF-8 the rest
-     of the code keeps -- a user folder or a game named in any language works.
-     Per-monitor DPI awareness, so SDL sizes the window in real pixels rather
-     than Windows stretching a blurry one. Long paths, past 260 characters. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity type="win32" name="Dualscreen" version="1.0.0.0" processorArchitecture="amd64"/>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
