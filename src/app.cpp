@@ -1253,7 +1253,9 @@ struct App::Impl {
     // Settings' Wii U TV audio, told to a Cemu that is up, when it is not
     // what it was. Cemu reads it as a game starts, so a game already
     // running hears it once it is reset.
-    void apply_wii_u_tv_audio(int previous);
+    // Cemu's own settings kept in Settings -- see wii_u_settings_options() --
+    // told to it where any changed from `previous`.
+    void apply_wii_u_settings(const Settings& previous);
     // An amiibo scanned -- see pending_amiibo -- from the list of those in
     // the amiibo folder, or from the browser.
     bool amiibo_available() const;
@@ -2943,14 +2945,17 @@ void App::Impl::update_cemu_options() {
             it = options.erase(it);
             continue;
         }
-        if (it->id != kWiiUTvAudioOption) {
+        const std::vector<WiiUSettingsOption> owned = wii_u_settings_options(settings);
+        const auto found = std::find_if(owned.begin(), owned.end(),
+                                        [&](const WiiUSettingsOption& option) { return it->id == option.id; });
+        if (found == owned.end()) {
             ++it;
             continue;
         }
-        const int wanted = std::clamp(settings.wii_u_tv_audio, 0, 2);
-        if (it->active != wanted && wanted < static_cast<int>(it->choices.size())) {
+        const int wanted = found->choice;
+        if (it->active != wanted && wanted >= 0 && wanted < static_cast<int>(it->choices.size())) {
             external_source->change_option(it->id, wanted);
-            log_info(std::string("Cemu: TV audio set to ") + kWiiUTvAudioChoices[wanted]);
+            log_info("Cemu: " + it->label + " set to " + it->choices[static_cast<std::size_t>(wanted)]);
         }
         it = options.erase(it);
     }
@@ -3496,13 +3501,22 @@ void App::Impl::set_gamepad_connected(bool connected) {
     log_info("controllers: the GamePad was connected");
 }
 
-void App::Impl::apply_wii_u_tv_audio(int previous) {
-    if (settings.wii_u_tv_audio == previous) return;
+void App::Impl::apply_wii_u_settings(const Settings& previous) {
     if (!external_source || !external_source->running() || !external_source->options_supported()) return;
-    const int wanted = std::clamp(settings.wii_u_tv_audio, 0, 2);
-    external_source->change_option(kWiiUTvAudioOption, wanted);
-    log_info(std::string("Cemu: TV audio set to ") + kWiiUTvAudioChoices[wanted]);
-    if (system == SystemId::WiiU && local_game()) show_corner_notice("TV audio will change when the game is reset.");
+    const std::vector<WiiUSettingsOption> before = wii_u_settings_options(previous);
+    const std::vector<WiiUSettingsOption> now = wii_u_settings_options(settings);
+    for (std::size_t index = 0; index < now.size() && index < before.size(); ++index) {
+        if (now[index].choice == before[index].choice) continue;
+        external_source->change_option(now[index].id, now[index].choice);
+        log_info(std::string("Cemu: ") + now[index].name + " changed");
+    }
+    if (system != SystemId::WiiU || !local_game()) return;
+    // Read by Cemu as a game starts, so not heard until it is reset.
+    if (settings.wii_u_tv_audio != previous.wii_u_tv_audio) {
+        show_corner_notice("TV audio will change when the game is reset.");
+    } else if (settings.wii_u_console_language != previous.wii_u_console_language) {
+        show_corner_notice("The console language will change when the game is reset.");
+    }
 }
 
 bool App::Impl::amiibo_available() const {
@@ -5916,11 +5930,11 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         return;
     }
     if (result.settings_changed) {
-        const int previous_tv_audio = settings.wii_u_tv_audio;
+        const Settings previous = settings;
         settings = settings_screen->settings();
         apply_favorite_color_accent(settings.ds_favorite_color);
         ui_sounds.set_enabled(settings.ui_sounds);
-        apply_wii_u_tv_audio(previous_tv_audio);
+        apply_wii_u_settings(previous);
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
         }

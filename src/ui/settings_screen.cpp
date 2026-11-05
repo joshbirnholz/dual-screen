@@ -34,6 +34,8 @@ std::string rumble_label(int percent) {
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
 constexpr const char* kGraphicPacksDescription =
     "Cemu's community graphics packs, from GitHub: higher resolutions, 60 FPS and fixes for each game.";
+constexpr const char* kAsyncShadersDescription =
+    "Less stutter while new shaders are built, though some things may be missing for a moment. Vulkan only.";
 constexpr const char* kQuickStartDescription =
     "Recently played games will be shown on the home page. Select a game to start it remotely on another "
     "device. Remote Start must be enabled on the other device.";
@@ -175,6 +177,14 @@ std::string SettingsScreen::row_label(Row row) const {
         case Row::PauseWiiUInMenu: return "Pause Wii U Games in the Quick Menu";
         case Row::WiiUTvAudio: return "Wii U TV Audio";
         case Row::WiiRemoteRumble: return "Wii Remote Rumble Strength";
+        case Row::WiiUConsoleLanguage: return "Console Language";
+        case Row::WiiUTvVolume: return "Wii U TV Volume";
+        case Row::WiiUAsyncShaders: return "Async Shader Compile";
+        case Row::WiiUIntroSound: return "Intro Sound";
+        case Row::WiiUNotifyProfiles: return "Controller Profiles";
+        case Row::WiiUNotifyBattery: return "Low Controller Battery";
+        case Row::WiiUNotifyShaders: return "Shader Compiling";
+        case Row::WiiUNotifyFriends: return "Friend List";
         case Row::DiscordStatus: return "Discord Rich Presence";
 #endif
         case Row::QuickStart: return "Quick Start";
@@ -216,6 +226,16 @@ std::string SettingsScreen::row_value(Row row) const {
         case Row::PauseWiiUInMenu: return settings_.pause_wii_u_in_menu ? "On" : "Off";
         case Row::WiiUTvAudio: return kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)];
         case Row::WiiRemoteRumble: return rumble_label(settings_.wii_remote_rumble);
+        case Row::WiiUConsoleLanguage:
+            return kWiiUConsoleLanguages[std::clamp(settings_.wii_u_console_language, 0,
+                                                    static_cast<int>(std::size(kWiiUConsoleLanguages)) - 1)];
+        case Row::WiiUTvVolume: return std::to_string(std::clamp(settings_.wii_u_tv_volume, 0, 100)) + "%";
+        case Row::WiiUAsyncShaders: return settings_.wii_u_async_shaders ? "On" : "Off";
+        case Row::WiiUIntroSound: return settings_.wii_u_intro_sound ? "On" : "Off";
+        case Row::WiiUNotifyProfiles: return settings_.wii_u_notify_controller_profiles ? "On" : "Off";
+        case Row::WiiUNotifyBattery: return settings_.wii_u_notify_controller_battery ? "On" : "Off";
+        case Row::WiiUNotifyShaders: return settings_.wii_u_notify_shader_compiling ? "On" : "Off";
+        case Row::WiiUNotifyFriends: return settings_.wii_u_notify_friends ? "On" : "Off";
         case Row::DiscordStatus: return settings_.discord_status ? "On" : "Off";
 #endif
         case Row::QuickStart: return settings_.quick_start ? "On" : "Off";
@@ -288,12 +308,27 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
 #if DS_PLAYS_WII_U
             add(Row::WiiUScreenAlone);
             add(Row::PauseWiiUInMenu);
+            add(Row::WiiUConsoleLanguage);
             add(Row::WiiUTvAudio);
+            add(Row::WiiUTvVolume);
             add(Row::WiiRemoteRumble);
+#ifndef __APPLE__
+            // Cemu draws with Metal on a Mac, where this does nothing.
+            add(Row::WiiUAsyncShaders);
+#endif
+            add(Row::WiiUIntroSound);
 #endif
             if (offers_graphic_packs_) {
                 items.push_back(Item{Item::Kind::GraphicPacks, Row::Count, graphic_packs_label_, graphic_packs_value_});
             }
+#if DS_PLAYS_WII_U
+            // Last, under their own heading, so nothing else reads as one.
+            items.push_back(Item{Item::Kind::Heading, Row::Count, "Notifications", ""});
+            add(Row::WiiUNotifyProfiles);
+            add(Row::WiiUNotifyBattery);
+            add(Row::WiiUNotifyShaders);
+            add(Row::WiiUNotifyFriends);
+#endif
             for (const CoreStatus& core : cores_) {
                 if (core.system == SystemId::WiiU) add_core(core);
             }
@@ -512,6 +547,10 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
                 choices.push_back(rumble_label(percent));
             }
             break;
+        case Row::WiiUConsoleLanguage:
+            choices.assign(std::begin(kWiiUConsoleLanguages), std::end(kWiiUConsoleLanguages));
+            current = std::clamp(settings_.wii_u_console_language, 0, static_cast<int>(choices.size()) - 1);
+            break;
 #endif
         default: break;
     }
@@ -588,6 +627,10 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
             if (index < 0 || index >= static_cast<int>(std::size(kWiiRemoteRumbleChoices))) return;
             settings_.wii_remote_rumble = kWiiRemoteRumbleChoices[index];
             break;
+        case Row::WiiUConsoleLanguage:
+            if (index < 0 || index >= static_cast<int>(std::size(kWiiUConsoleLanguages))) return;
+            settings_.wii_u_console_language = index;
+            break;
 #endif
         default: return;
     }
@@ -611,6 +654,8 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
         }
         return;
     }
+    // A slider is moved with Left and Right, or a finger along it.
+    if (is_slider(row)) return;
     int current = -1;
     std::vector<std::string> choices = focused_choices(current);
     if (choices.empty()) {
@@ -639,9 +684,92 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
 #endif
 }
 
+bool SettingsScreen::is_slider(Row row) {
+#if DS_PLAYS_WII_U
+    return row == Row::WiiUTvVolume;
+#else
+    (void)row;
+    return false;
+#endif
+}
+
+int SettingsScreen::slider_value(Row row) const {
+#if DS_PLAYS_WII_U
+    if (row == Row::WiiUTvVolume) return std::clamp(settings_.wii_u_tv_volume, 0, 100);
+#endif
+    (void)row;
+    return 0;
+}
+
+int SettingsScreen::slider_steps(Row row) const { return is_slider(row) ? 101 : 0; }
+
+void SettingsScreen::set_slider(Row row, int value, SettingsScreenResult& result) {
+    value = std::clamp(value, 0, std::max(0, slider_steps(row) - 1));
+    if (value == slider_value(row)) return;
+#if DS_PLAYS_WII_U
+    if (row == Row::WiiUTvVolume) settings_.wii_u_tv_volume = value;
+#endif
+    result.settings_changed = true;
+    refresh_items();
+}
+
+void SettingsScreen::slider_step(int direction, SettingsScreenResult& result) {
+    const Row row = focused_row();
+    const int steps = slider_steps(row);
+    if (steps < 2) return;
+    // Held, as a direction repeats about 75 ms apart, it goes faster the
+    // longer it is: a step at a time for the first second, then two, then
+    // five, landing on round values on the way.
+    const auto now = std::chrono::steady_clock::now();
+    const float since_last = std::chrono::duration<float>(now - slider_step_last_).count();
+    const bool held = slider_step_direction_ == direction && since_last >= 0.04f && since_last <= 0.15f;
+    if (!held) slider_held_since_ = now;
+    slider_step_direction_ = direction;
+    slider_step_last_ = now;
+    const float held_for = std::chrono::duration<float>(now - slider_held_since_).count();
+    const int by = held_for < 1.0f ? 1 : held_for < 1.75f ? 2 : 5;
+    const int current = slider_value(row);
+    const int next = direction > 0 ? (current / by + 1) * by : ((current + by - 1) / by - 1) * by;
+    set_slider(row, next, result);
+}
+
+PixelRect SettingsScreen::slider_track(const PixelRect& row, float scale) const {
+    const float line = TextRenderer::line_height(scale);
+    // The right part of the row, leaving its name the rest.
+    return menu_slider_track(row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, std::round(row.w * 0.42f),
+                             line);
+}
+
 bool SettingsScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
                             float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
+    // A finger that went down on a slider's track moves its knob, not the
+    // list, until it lifts -- which taps it there, setting it.
+    const LivePointer& live = live_pointer();
+    const int held = live.down ? entry_at(live.press_x, live.press_y, output_width, output_height) : -1;
+    if (held >= kSliderEntryBase) {
+        int index = 0;
+        for (const Item& item : items_) {
+            if (!item.focusable()) continue;
+            if (item.kind == Item::Kind::Setting && is_slider(item.row) &&
+                index < static_cast<int>(geometry.rows.size())) {
+                const PixelRect track = slider_track(geometry.rows[static_cast<std::size_t>(index)], geometry.scale);
+                const int steps = slider_steps(item.row);
+                const float along = track.w > 0.0f ? std::clamp((live.x - track.x) / track.w, 0.0f, 1.0f) : 0.0f;
+                slider_drag_at_ = steps >= 2 ? std::round(along * static_cast<float>(steps - 1)) /
+                                                   static_cast<float>(steps - 1)
+                                             : along;
+                break;
+            }
+            ++index;
+        }
+        return false;
+    }
+    if (slider_drag_at_ >= 0.0f) {
+        // Lifted: the knob goes on from where the finger left it.
+        slider_shown_ = slider_drag_at_;
+        slider_drag_at_ = -1.0f;
+    }
     drag_.update(pointers, geometry.detail, scroll_, geometry.max_scroll());
     return drag_.release_was_drag();
 }
@@ -666,8 +794,25 @@ int SettingsScreen::entry_at(float x, float y, float output_width, float output_
         }
     }
     if (!geometry.detail.contains(x, y)) return -1;
-    for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
-        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index) * 2 + 1;
+    int index = 0;
+    for (const Item& item : items_) {
+        if (!item.focusable()) continue;
+        if (index >= static_cast<int>(geometry.rows.size())) break;
+        const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
+        if (row.contains(x, y)) {
+            // Along a slider, the step there.
+            if (item.kind == Item::Kind::Setting && is_slider(item.row)) {
+                const PixelRect track = slider_track(row, geometry.scale);
+                const float reach = menu_slider_knob(geometry.line);
+                const int steps = slider_steps(item.row);
+                if (track.w > 0.0f && steps >= 2 && x >= track.x - reach && x <= track.x + track.w + reach) {
+                    const float at = std::clamp((x - track.x) / track.w, 0.0f, 1.0f);
+                    return kSliderEntryBase + static_cast<int>(std::lround(at * static_cast<float>(steps - 1)));
+                }
+            }
+            return index * 2 + 1;
+        }
+        ++index;
     }
     return -1;
 }
@@ -727,6 +872,9 @@ const char* SettingsScreen::row_description(int index) const {
         if (item.kind != Item::Kind::Setting) return nullptr;
         if (item.row == Row::Vsync) return kVsyncDescription;
         if (item.row == Row::QuickStart) return kQuickStartDescription;
+#if DS_PLAYS_WII_U
+        if (item.row == Row::WiiUAsyncShaders) return kAsyncShadersDescription;
+#endif
 #if DS_REMOTE_START_HOST
         if (item.row == Row::RemoteStart) {
             return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
@@ -860,6 +1008,30 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
             break;
         case Row::DiscordStatus:
             settings_.discord_status = !settings_.discord_status;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUAsyncShaders:
+            settings_.wii_u_async_shaders = !settings_.wii_u_async_shaders;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUIntroSound:
+            settings_.wii_u_intro_sound = !settings_.wii_u_intro_sound;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUNotifyProfiles:
+            settings_.wii_u_notify_controller_profiles = !settings_.wii_u_notify_controller_profiles;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUNotifyBattery:
+            settings_.wii_u_notify_controller_battery = !settings_.wii_u_notify_controller_battery;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUNotifyShaders:
+            settings_.wii_u_notify_shader_compiling = !settings_.wii_u_notify_shader_compiling;
+            result.settings_changed = true;
+            break;
+        case Row::WiiUNotifyFriends:
+            settings_.wii_u_notify_friends = !settings_.wii_u_notify_friends;
             result.settings_changed = true;
             break;
 #endif
@@ -1012,6 +1184,10 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             // does nothing there, values not being stepped from the side.
             case UiAction::Right:
             case UiAction::Confirm:
+                if (in_group_ && action == UiAction::Right && is_slider(focused_row())) {
+                    slider_step(1, result);
+                    break;
+                }
                 if (in_group_) {
                     if (action == UiAction::Confirm) press_row(result, compute_geometry(output_width, output_height));
                 } else if (row_count() > 0) {
@@ -1021,7 +1197,14 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
                 break;
             // Back to the list from the group's left-hand edge, as in the
             // quick menu.
-            case UiAction::Left: in_group_ = false; break;
+            // A slider down a step instead.
+            case UiAction::Left:
+                if (in_group_ && is_slider(focused_row())) {
+                    slider_step(-1, result);
+                    break;
+                }
+                in_group_ = false;
+                break;
             // B a step at a time; the menu's own button out of everything.
             case UiAction::Cancel:
                 if (in_group_) {
@@ -1069,6 +1252,21 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     // Heard the one way every tap is.
     for (const int entry : take_taps(pointers, output_width, output_height)) {
         if (entry < 0) continue;
+        if (entry >= kSliderEntryBase) {
+            // Along the slider: set there, the cursor on its row.
+            int at = 0;
+            for (const Item& item : items_) {
+                if (!item.focusable()) continue;
+                if (item.kind == Item::Kind::Setting && is_slider(item.row)) {
+                    in_group_ = true;
+                    focus_ = at;
+                    set_slider(item.row, entry - kSliderEntryBase, result);
+                    break;
+                }
+                ++at;
+            }
+            continue;
+        }
         const int index = entry / 2;
         if (entry % 2 == 0) {
             if (index < group_count) show_group(index);
@@ -1138,14 +1336,18 @@ void SettingsScreen::render(QuadRenderer& quads,
         if (index >= rows) break;
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = in_group_ && index == focus_;
+        const bool slider = item.kind == Item::Kind::Setting && is_slider(item.row);
         // A row with a line of explanation is ruled off above it, and the
         // rule over the row after stays when the cursor is on this one. A
         // row with a heading after it is the last of its run.
         const bool described = row_description(index) != nullptr;
         const std::size_t at = static_cast<std::size_t>(&item - items_.data());
         const bool last = index == rows - 1 || (at + 1 < items_.size() && !items_[at + 1].focusable());
-        draw_menu_row(quads, row, focused, scale, described || last,
-                      in_group_ && index == focus_ + 1 && row_description(focus_) == nullptr);
+        // A slider's ring is round its knob -- see draw_menu_slider_cursor()
+        // -- so its row is drawn as though the cursor were elsewhere.
+        const bool focused_slider = in_group_ && is_slider(focused_row());
+        draw_menu_row(quads, row, focused && !slider, scale, described || last,
+                      in_group_ && index == focus_ + 1 && row_description(focus_) == nullptr && !focused_slider);
 
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is
@@ -1184,6 +1386,36 @@ void SettingsScreen::render(QuadRenderer& quads,
             continue;
         }
 #endif
+        if (slider) {
+            // A Switch 2's slider, and its value beside it, the knob gliding
+            // to where it is set, or under a finger, there.
+            const int steps = slider_steps(setting);
+            const float at = steps >= 2 ? static_cast<float>(slider_value(setting)) / static_cast<float>(steps - 1)
+                                        : 0.0f;
+            const auto now = std::chrono::steady_clock::now();
+            if (slider_drag_at_ >= 0.0f) {
+                slider_shown_ = slider_drag_at_;
+            } else if (slider_shown_ < 0.0f) {
+                slider_shown_ = at;
+            } else {
+                const float elapsed =
+                    std::clamp(std::chrono::duration<float>(now - slider_shown_at_).count(), 0.0f, 0.25f);
+                slider_shown_ += (at - slider_shown_) * (1.0f - std::exp(-elapsed / 0.03f));
+                if (std::abs(at - slider_shown_) < 0.001f) slider_shown_ = at;
+            }
+            slider_shown_at_ = now;
+            const PixelRect track = slider_track(row, scale);
+            draw_menu_slider(quads, track, slider_shown_, true, line);
+            if (focused) draw_menu_slider_cursor(quads, track, slider_shown_, line, scale);
+            std::string shown_value = item.value;
+            if (slider_drag_at_ >= 0.0f && steps >= 2) {
+                shown_value =
+                    std::to_string(static_cast<int>(std::lround(slider_drag_at_ * static_cast<float>(steps - 1)))) + "%";
+            }
+            text.draw(quads, shown_value, std::round(track.x - menu_slider_knob(line) * 0.5f - line * 0.6f),
+                      page_row_text_y(row, scale * 0.9f), scale * 0.9f, theme.text_dim, TextAlign::Right);
+            continue;
+        }
         if (setting == Row::DsFavoriteColor) {
             // The color itself, unnamed, where a value goes.
             const DsFavoriteColor& color = kDsFavoriteColors[static_cast<std::size_t>(
@@ -1287,6 +1519,13 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, settings_.pause_wii_u_in_menu ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_audio));
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_remote_rumble));
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_console_language));
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_volume));
+    mix_sound_state(view.rest, (settings_.wii_u_async_shaders ? 1u : 0u) | (settings_.wii_u_intro_sound ? 2u : 0u) |
+                                   (settings_.wii_u_notify_controller_profiles ? 4u : 0u) |
+                                   (settings_.wii_u_notify_controller_battery ? 8u : 0u) |
+                                   (settings_.wii_u_notify_shader_compiling ? 16u : 0u) |
+                                   (settings_.wii_u_notify_friends ? 32u : 0u));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, settings_.discord_status ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
@@ -1307,6 +1546,12 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
 #if DS_PLAYS_WII_U
             case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
             case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
+            case Row::WiiUAsyncShaders: view.toggle = settings_.wii_u_async_shaders ? 1 : 0; break;
+            case Row::WiiUIntroSound: view.toggle = settings_.wii_u_intro_sound ? 1 : 0; break;
+            case Row::WiiUNotifyProfiles: view.toggle = settings_.wii_u_notify_controller_profiles ? 1 : 0; break;
+            case Row::WiiUNotifyBattery: view.toggle = settings_.wii_u_notify_controller_battery ? 1 : 0; break;
+            case Row::WiiUNotifyShaders: view.toggle = settings_.wii_u_notify_shader_compiling ? 1 : 0; break;
+            case Row::WiiUNotifyFriends: view.toggle = settings_.wii_u_notify_friends ? 1 : 0; break;
 #endif
             case Row::QuickStart: view.toggle = settings_.quick_start ? 1 : 0; break;
             case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;

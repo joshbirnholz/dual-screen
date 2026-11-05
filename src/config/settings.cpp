@@ -181,6 +181,19 @@ Settings Settings::load(const AppPaths& paths) {
     }
     settings.wii_remote_rumble =
         std::clamp(get_or<int>(document, "wii_remote_rumble", settings.wii_remote_rumble), 0, 100);
+    settings.wii_u_console_language =
+        std::clamp(get_or<int>(document, "wii_u_console_language", settings.wii_u_console_language), 0,
+                   static_cast<int>(std::size(kWiiUConsoleLanguages)) - 1);
+    settings.wii_u_tv_volume = std::clamp(get_or<int>(document, "wii_u_tv_volume", settings.wii_u_tv_volume), 0, 100);
+    settings.wii_u_async_shaders = get_or<bool>(document, "wii_u_async_shaders", settings.wii_u_async_shaders);
+    settings.wii_u_intro_sound = get_or<bool>(document, "wii_u_intro_sound", settings.wii_u_intro_sound);
+    settings.wii_u_notify_controller_profiles =
+        get_or<bool>(document, "wii_u_notify_controller_profiles", settings.wii_u_notify_controller_profiles);
+    settings.wii_u_notify_controller_battery =
+        get_or<bool>(document, "wii_u_notify_controller_battery", settings.wii_u_notify_controller_battery);
+    settings.wii_u_notify_shader_compiling =
+        get_or<bool>(document, "wii_u_notify_shader_compiling", settings.wii_u_notify_shader_compiling);
+    settings.wii_u_notify_friends = get_or<bool>(document, "wii_u_notify_friends", settings.wii_u_notify_friends);
     if (document.contains("wii_u_arguments") && document["wii_u_arguments"].is_array()) {
         settings.wii_u_arguments.clear();
         for (const auto& argument : document["wii_u_arguments"]) {
@@ -271,6 +284,14 @@ bool Settings::save(const AppPaths& paths) const {
     document["ds_birth_day"] = ds_birth_day;
     document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
     document["wii_remote_rumble"] = wii_remote_rumble;
+    document["wii_u_console_language"] = wii_u_console_language;
+    document["wii_u_tv_volume"] = wii_u_tv_volume;
+    document["wii_u_async_shaders"] = wii_u_async_shaders;
+    document["wii_u_intro_sound"] = wii_u_intro_sound;
+    document["wii_u_notify_controller_profiles"] = wii_u_notify_controller_profiles;
+    document["wii_u_notify_controller_battery"] = wii_u_notify_controller_battery;
+    document["wii_u_notify_shader_compiling"] = wii_u_notify_shader_compiling;
+    document["wii_u_notify_friends"] = wii_u_notify_friends;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;
@@ -353,6 +374,21 @@ std::vector<std::string> core_search_paths(SystemId system) {
         }
     }
     return paths;
+}
+
+std::vector<WiiUSettingsOption> wii_u_settings_options(const Settings& settings) {
+    return {
+        {kWiiUTvAudioOption, "TV audio", std::clamp(settings.wii_u_tv_audio, 0, 2)},
+        {"console_language", "console language", std::clamp(settings.wii_u_console_language, 0,
+                                        static_cast<int>(std::size(kWiiUConsoleLanguages)) - 1)},
+        {"tv_volume", "TV volume", std::clamp(settings.wii_u_tv_volume, 0, 100)},
+        {"async_compile", "async shader compile", settings.wii_u_async_shaders ? 1 : 0},
+        {"play_boot_sound", "intro sound", settings.wii_u_intro_sound ? 1 : 0},
+        {"notify_controller_profiles", "controller profile notifications", settings.wii_u_notify_controller_profiles ? 1 : 0},
+        {"notify_controller_battery", "low battery notifications", settings.wii_u_notify_controller_battery ? 1 : 0},
+        {"notify_shader_compiling", "shader compiling notifications", settings.wii_u_notify_shader_compiling ? 1 : 0},
+        {"notify_friends", "friend list notifications", settings.wii_u_notify_friends ? 1 : 0},
+    };
 }
 
 }  // namespace ds

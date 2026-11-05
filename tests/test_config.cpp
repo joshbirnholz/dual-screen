@@ -526,6 +526,23 @@ void test_settings_round_trip() {
     defaults.pause_wii_u_in_menu = false;
     CHECK_EQ(defaults.wii_u_tv_audio, 1);  // stereo, as Cemu's own default
     defaults.wii_u_tv_audio = 2;
+    // Cemu's own defaults, each one changed so the round trip checks it.
+    CHECK_EQ(defaults.wii_u_console_language, 1);  // English
+    CHECK_EQ(defaults.wii_u_tv_volume, 50);
+    CHECK(defaults.wii_u_async_shaders);
+    CHECK(!defaults.wii_u_intro_sound);
+    CHECK(defaults.wii_u_notify_controller_profiles);
+    CHECK(!defaults.wii_u_notify_controller_battery);
+    CHECK(defaults.wii_u_notify_shader_compiling);
+    CHECK(defaults.wii_u_notify_friends);
+    defaults.wii_u_console_language = 3;
+    defaults.wii_u_tv_volume = 80;
+    defaults.wii_u_async_shaders = false;
+    defaults.wii_u_intro_sound = true;
+    defaults.wii_u_notify_controller_profiles = false;
+    defaults.wii_u_notify_controller_battery = true;
+    defaults.wii_u_notify_shader_compiling = false;
+    defaults.wii_u_notify_friends = false;
     defaults.ds_nickname = "Josh";
     defaults.ds_favorite_color = 7;
     defaults.ds_birth_month = 2;
@@ -553,6 +570,33 @@ void test_settings_round_trip() {
     CHECK_MSG(!reloaded.pause_wii_u_in_menu,
               "Wii U games being left running in the quick menu did not survive being written down");
     CHECK_MSG(reloaded.wii_u_tv_audio == 2, "surround TV audio did not survive being written down");
+    CHECK_EQ(reloaded.wii_u_console_language, 3);
+    CHECK_EQ(reloaded.wii_u_tv_volume, 80);
+    CHECK(!reloaded.wii_u_async_shaders);
+    CHECK(reloaded.wii_u_intro_sound);
+    CHECK(!reloaded.wii_u_notify_controller_profiles);
+    CHECK(reloaded.wii_u_notify_controller_battery);
+    CHECK(!reloaded.wii_u_notify_shader_compiling);
+    CHECK(!reloaded.wii_u_notify_friends);
+    // What Cemu is told, in its own order of each one's choices.
+    {
+        const std::vector<WiiUSettingsOption> told = wii_u_settings_options(reloaded);
+        const auto choice_of = [&](const std::string& id) {
+            for (const WiiUSettingsOption& option : told) {
+                if (id == option.id) return option.choice;
+            }
+            return -2;
+        };
+        CHECK_EQ(choice_of("tv_channels"), 2);
+        CHECK_EQ(choice_of("console_language"), 3);
+        CHECK_EQ(choice_of("tv_volume"), 80);
+        CHECK_EQ(choice_of("async_compile"), 0);
+        CHECK_EQ(choice_of("play_boot_sound"), 1);
+        CHECK_EQ(choice_of("notify_controller_profiles"), 0);
+        CHECK_EQ(choice_of("notify_controller_battery"), 1);
+        CHECK_EQ(choice_of("notify_shader_compiling"), 0);
+        CHECK_EQ(choice_of("notify_friends"), 0);
+    }
     CHECK_STR_EQ(reloaded.ds_nickname, "Josh");
     CHECK_EQ(reloaded.ds_favorite_color, 7);
     CHECK_EQ(reloaded.ds_birth_month, 2);
