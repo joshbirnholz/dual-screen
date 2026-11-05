@@ -279,13 +279,15 @@ inline void draw_menu_slider(QuadRenderer& quads, const PixelRect& track, float 
 }
 
 // The cursor on a slider, as a Switch 2 draws it: a ring round the knob,
-// clear of it, rather than round the whole row. Hidden as the row's would
+// hugging it, rather than round the whole row. Hidden as the row's would
 // be while a finger is down.
 inline void draw_menu_slider_cursor(QuadRenderer& quads, const PixelRect& track, float at, float line, float scale) {
     if (!cursor_drawn(true)) return;
     at = std::clamp(at, 0.0f, 1.0f);
     const float knob = menu_slider_knob(line);
-    const float ring = std::round(knob + std::max(10.0f, std::round(line * 0.9f)));
+    // Right round the knob, as a Switch 2 rings one: its own width outside
+    // the knob's edge, and no gap.
+    const float ring = std::round(knob + 2.0f * std::max(2.0f, std::round(scale * 1.5f)));
     const float centre_x = std::round(track.x + track.w * at);
     const float centre_y = track.y + track.h * 0.5f;
     const PixelRect rect{std::round(centre_x - ring * 0.5f), std::round(centre_y - ring * 0.5f), ring, ring};
