@@ -1,5 +1,7 @@
 #include "video/video_encoder.hpp"
 
+#include <thread>
+
 #include "video/color_convert.hpp"
 
 #include <algorithm>
@@ -104,12 +106,21 @@ bool have_h264_encoder() {
         // So the question is asked of the machine, once, with a small
         // picture: a host told it can send video that then cannot open an
         // encoder sends a large screen nowhere while it keeps retrying.
-        EncoderConfig probe;
-        probe.width = 64;
-        probe.height = 64;
-        VideoEncoder encoder;
+        //
+        // On a thread of its own, as every real encode is (HostSession's
+        // encoder thread): Media Foundation's encoders want COM in its
+        // multithreaded mode, and the thread that asks first here may well
+        // have it single-threaded already -- SDL's, for one. And at a real
+        // screen's size: NVENC refuses anything much smaller.
+        bool opens = false;
         std::string why;
-        const bool opens = encoder.open(probe, &why);
+        std::thread([&] {
+            EncoderConfig probe;
+            probe.width = 640;
+            probe.height = 480;
+            VideoEncoder encoder;
+            opens = encoder.open(probe, &why);
+        }).join();
         if (!opens) log_info("video encoder: none opens on this PC (" + why + "), so screens go as tiles");
         return opens;
 #else

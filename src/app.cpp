@@ -292,7 +292,7 @@ std::string usage_text() {
         "\n"
         "Options:\n"
         "  --game <path>        ROM to boot straight into\n"
-        "  --core <path>        libretro core (.so) to load, instead of the one\n"
+        "  --core <path>        libretro core (" DS_CORE_SUFFIX ") to load, instead of the one\n"
         "                       found for this game's console\n"
         "  --layout <id>        Override the layout for this run\n"
         "  --system-dir <path>  Folder holding your BIOS/firmware files\n"
@@ -317,7 +317,11 @@ std::string usage_text() {
         "Run with no --game to pick one from a file browser instead.\n"
         "\n"
         "Layouts are remembered per game, keyed by the ROM's SHA-1, in\n"
+#if defined(_WIN32)
+        "%APPDATA%\\dualscreen\\games\\. The layout menu opens on F1 or a\n"
+#else
         "~/.config/dualscreen/games/. The layout menu opens on F1 or a\n"
+#endif
         "two-finger tap; bind F1 in Steam Input to reach it from a pad.\n";
 }
 
@@ -8085,8 +8089,8 @@ int App::run(const AppOptions& options) {
         // this host equally needs a codec built in before it can ever
         // encode a Wii U's GamePad screen as video instead of tiles.
         log_info(std::string("video encode: ") +
-                 (video::can_encode() ? "available" : "not in this build") + "; decode: " +
-                 (video::can_decode() ? "available" : "not in this build"));
+                 (video::can_encode() ? "available" : "unavailable") + "; decode: " +
+                 (video::can_decode() ? "available" : "unavailable"));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.
