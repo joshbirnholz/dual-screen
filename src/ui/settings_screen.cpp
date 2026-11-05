@@ -31,6 +31,9 @@ std::string rumble_label(int percent) {
 
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
+// A section heading's words, against a row's.
+constexpr float kHeadingScale = 0.85f;
+
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
 constexpr const char* kGraphicPacksDescription =
     "Cemu's community graphics packs, from GitHub: higher resolutions, 60 FPS and fixes for each game.";
@@ -938,11 +941,15 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     for (std::size_t index = 0; index < items_.size(); ++index) {
         switch (items_[index].kind) {
             case Item::Kind::Heading:
-                row_y += index > 0 ? line * 1.3f : line * 0.3f;
+                // A section's heading, as a Switch's settings set one: small,
+                // dim words with room above them, sitting just over the
+                // first rule of its rows -- never the size of a row, or
+                // spaced like one.
+                row_y += index > 0 ? line * 2.2f : line * 0.3f;
                 geometry.texts.push_back(Geometry::Text{index, row_y});
-                row_y += line * 1.45f;
+                row_y += TextRenderer::line_height(geometry.scale * kHeadingScale);
                 // Clear of the cursor's ring, on a row straight under it.
-                if (index + 1 < items_.size() && items_[index + 1].focusable()) row_y += line * 0.6f;
+                if (index + 1 < items_.size() && items_[index + 1].focusable()) row_y += line * 0.7f;
                 break;
             case Item::Kind::Status:
                 // Under a row, a little room first; before one, a little
@@ -1447,10 +1454,14 @@ void SettingsScreen::render(QuadRenderer& quads,
     for (const Geometry::Text& placed : geometry.texts) {
         const Item& item = items_[placed.item];
         if (item.kind == Item::Kind::Heading) {
-            text.draw(quads, item.text, text_x, placed.y, scale, theme.text);
+            // Smaller and dimmer than a row's words: a heading, not a row.
+            const float heading_scale = scale * kHeadingScale;
+            text.draw(quads, item.text, text_x, placed.y, heading_scale, theme.text_dim);
             if (!item.value.empty()) {
-                const float name_width = TextRenderer::measure_width(item.text + "  ", scale);
-                text.draw(quads, item.value, text_x + name_width, placed.y, scale, theme.text_dim);
+                const float name_width = TextRenderer::measure_width(item.text + "  ", heading_scale);
+                Color dimmer = theme.text_dim;
+                dimmer.a *= 0.7f;
+                text.draw(quads, item.value, text_x + name_width, placed.y, heading_scale, dimmer);
             }
         } else if (item.kind == Item::Kind::Status) {
             // A name, and what it is at, set out as a row's are.
