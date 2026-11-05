@@ -32,6 +32,8 @@ std::string rumble_label(int percent) {
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
+constexpr const char* kGraphicPacksDescription =
+    "Cemu's community graphics packs, from GitHub: higher resolutions, 60 FPS and fixes for each game.";
 constexpr const char* kQuickStartDescription =
     "Recently played games will be shown on the home page. Select a game to start it remotely on another "
     "device. Remote Start must be enabled on the other device.";
@@ -289,6 +291,9 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             add(Row::WiiUTvAudio);
             add(Row::WiiRemoteRumble);
 #endif
+            if (offers_graphic_packs_) {
+                items.push_back(Item{Item::Kind::GraphicPacks, Row::Count, graphic_packs_label_, graphic_packs_value_});
+            }
             for (const CoreStatus& core : cores_) {
                 if (core.system == SystemId::WiiU) add_core(core);
             }
@@ -718,6 +723,7 @@ const char* SettingsScreen::row_description(int index) const {
     for (const Item& item : items_) {
         if (!item.focusable()) continue;
         if (at++ != index) continue;
+        if (item.kind == Item::Kind::GraphicPacks) return kGraphicPacksDescription;
         if (item.kind != Item::Kind::Setting) return nullptr;
         if (item.row == Row::Vsync) return kVsyncDescription;
         if (item.row == Row::QuickStart) return kQuickStartDescription;
@@ -835,6 +841,7 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
         case Item::Kind::Download: result.open_download = item->system; return;
         case Item::Kind::DataManagement: result.open_data_management = true; return;
         case Item::Kind::CheckUpdates: result.open_updates = true; return;
+        case Item::Kind::GraphicPacks: result.open_graphic_packs = true; return;
         case Item::Kind::Heading:
         case Item::Kind::Status: return;
         case Item::Kind::Setting: break;

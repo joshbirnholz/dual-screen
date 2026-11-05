@@ -12,7 +12,9 @@
 
 #include "config/paths.hpp"
 #include "core/system.hpp"
+#include "ui/graphic_packs_prompt.hpp"
 #include "ui/update_prompt.hpp"
+#include "update/graphic_packs.hpp"
 #include "update/updater.hpp"
 #include "update/zip_extract.hpp"
 
@@ -713,6 +715,146 @@ void test_reads_a_core_out_of_its_zip() {
     CHECK(!list_zip(zip, names, &error));
 }
 
+
+// Cemu's graphics packs -- see update/graphic_packs.hpp.
+
+// GitHub's answer for cemu-project/cemu_graphic_packs, as it is shaped.
+std::string graphic_packs_release(const std::string& version) {
+    return R"({"tag_name": "Github)" + version + R"(", "name": "Cemu Graphic Packs: v)" + version +
+           R"(", "assets": [{"name": "graphicPacks)" + version +
+           R"(.zip", "browser_download_url": "https://github.com/cemu-project/cemu_graphic_packs/releases/download/Github)" +
+           version + "/graphicPacks" + version + R"(.zip"}]})";
+}
+
+// Downloads a zip of graphics packs, whatever it is asked for.
+struct PacksBackend : FakeBackend {
+    std::vector<uint8_t> zip;
+    bool download(const std::string& url, const std::string& path, const std::atomic<bool>& cancel,
+                  const std::function<void(int64_t, int64_t)>& progress, std::string& error) override {
+        if (cancel) return false;
+        if (fail_download) {
+            error = "the network went away";
+            return false;
+        }
+        progress(1, 2);
+        downloaded.push_back(url);
+        return ds::write_file_atomically(path, zip.data(), zip.size(), &error);
+    }
+};
+
+void test_reads_the_graphic_packs_release() {
+    GraphicPacksRelease release;
+    std::string error;
+    CHECK(parse_graphic_packs_release(graphic_packs_release("981"), release, &error));
+    CHECK_STR_EQ(release.name, std::string("Cemu Graphic Packs: v981"));
+    CHECK_STR_EQ(release.url,
+                 std::string("https://github.com/cemu-project/cemu_graphic_packs/releases/download/Github981/"
+                             "graphicPacks981.zip"));
+    CHECK_STR_EQ(graphic_packs_version(release.name), std::string("v981"));
+    CHECK_STR_EQ(graphic_packs_version("Something else"), std::string("Something else"));
+    // GitHub refusing says why.
+    CHECK(!parse_graphic_packs_release(R"({"message": "API rate limit exceeded"})", release, &error));
+    CHECK(error.find("rate limit") != std::string::npos);
+    CHECK(!parse_graphic_packs_release("<html>", release, &error));
+    CHECK(!parse_graphic_packs_release(R"({"name": "x", "assets": []})", release, &error));
+    // Compared as Cemu compares them.
+    CHECK(!graphic_packs_differ("cemu graphic packs: V981", "Cemu Graphic Packs: v981"));
+    CHECK(graphic_packs_differ("", "Cemu Graphic Packs: v981"));
+}
+
+void test_finds_cemus_user_folder() {
+    const std::string folder = make_temp_dir();
+    const std::string program = ds::path_join(folder, "Cemu.AppImage");
+    // Not portable: where Cemu keeps it on this platform.
+#if !defined(_WIN32) && !defined(__APPLE__)
+    CHECK_STR_EQ(cemu_user_data_dir(program, "/home/deck", "", ""), std::string("/home/deck/.local/share/Cemu"));
+    CHECK_STR_EQ(cemu_user_data_dir("", "/home/deck", "/data", ""), std::string("/data/Cemu"));
+#endif
+    // Portable: the folder beside it.
+    CHECK(ds::ensure_directory(ds::path_join(folder, "portable")));
+    CHECK_STR_EQ(cemu_user_data_dir(program, "/home/deck", "", ""), ds::path_join(folder, "portable"));
+    CHECK_STR_EQ(downloaded_graphic_packs_dir("/u"), std::string("/u/graphicPacks/downloadedGraphicPacks"));
+}
+
+void test_graphic_packs_are_downloaded_and_replaced() {
+    const std::string user = make_temp_dir();
+    auto backend = std::make_unique<PacksBackend>();
+    backend->staging = make_temp_dir();
+    backend->pages[kGraphicPacksLatestUrl] = graphic_packs_release("981");
+    backend->zip = make_zip({{"BreathOfTheWild_Resolution/rules.txt", "[Definition]\n"},
+                             {"MarioKart8_60FPS/rules.txt", std::string(5000, 'x')}});
+    PacksBackend* fake = backend.get();
+    GraphicPacksDownloader downloader(std::move(backend), user);
+    ds::GraphicPacksPrompt prompt;
+    prompt.set_downloader(&downloader);
+    CHECK_STR_EQ(prompt.row_label(), std::string("Download Graphics Packs"));
+    CHECK_STR_EQ(prompt.row_value(), std::string("Not downloaded"));
+
+    // None here: chosen, they are downloaded without asking again.
+    prompt.choose(false);
+    downloader.wait();
+    prompt.poll();
+    CHECK(prompt.open());
+    downloader.wait();
+    prompt.poll();
+    CHECK_EQ(static_cast<int>(fake->downloaded.size()), 1);
+    const std::string packs = downloaded_graphic_packs_dir(user);
+    CHECK(ds::file_exists(ds::path_join(packs, "BreathOfTheWild_Resolution/rules.txt")));
+    CHECK(ds::file_exists(ds::path_join(packs, "MarioKart8_60FPS/rules.txt")));
+    CHECK_STR_EQ(installed_graphic_packs(user), std::string("Cemu Graphic Packs: v981"));
+    CHECK_STR_EQ(prompt.row_label(), std::string("Update Graphics Packs"));
+    CHECK_STR_EQ(prompt.row_value(), std::string("v981"));
+    CHECK(prompt.open());  // "The graphics packs are downloaded."
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(!prompt.open());
+
+    // Up to date: said so, nothing downloaded.
+    prompt.choose(false);
+    downloader.wait();
+    prompt.poll();
+    CHECK(prompt.open());
+    CHECK_EQ(static_cast<int>(fake->downloaded.size()), 1);
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+
+    // A newer one: offered, then put in place of the old, which goes.
+    fake->pages[kGraphicPacksLatestUrl] = graphic_packs_release("982");
+    fake->zip = make_zip({{"MarioKart8_60FPS/rules.txt", "new"}});
+    prompt.choose(false);
+    downloader.wait();
+    prompt.poll();
+    CHECK_STR_EQ(prompt.row_value(), std::string("v982 available"));
+    CHECK(prompt.open());
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);  // Update
+    downloader.wait();
+    prompt.poll();
+    CHECK_STR_EQ(installed_graphic_packs(user), std::string("Cemu Graphic Packs: v982"));
+    CHECK(!ds::file_exists(ds::path_join(packs, "BreathOfTheWild_Resolution/rules.txt")));
+    std::vector<uint8_t> got;
+    CHECK(ds::read_file(ds::path_join(packs, "MarioKart8_60FPS/rules.txt"), got, nullptr));
+    CHECK(std::string(got.begin(), got.end()) == "new");
+    CHECK(!ds::directory_exists(ds::path_join(user, "downloadedGraphicPacks.old")));
+    CHECK(!ds::directory_exists(ds::path_join(user, "downloadedGraphicPacks.new")));
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+
+    // A damaged zip leaves the ones here as they were.
+    fake->pages[kGraphicPacksLatestUrl] = graphic_packs_release("983");
+    fake->zip = {'n', 'o', 'p', 'e'};
+    downloader.check();
+    downloader.wait();
+    downloader.install();
+    downloader.wait();
+    CHECK(downloader.status().phase == GraphicPacksDownloader::Phase::Failed);
+    CHECK_STR_EQ(installed_graphic_packs(user), std::string("Cemu Graphic Packs: v982"));
+    CHECK(ds::file_exists(ds::path_join(packs, "MarioKart8_60FPS/rules.txt")));
+
+    // Over a Wii U game: left alone, and said why.
+    const int downloads = static_cast<int>(fake->downloaded.size());
+    prompt.choose(true);
+    CHECK(prompt.open());
+    CHECK(!downloader.busy());
+    CHECK_EQ(static_cast<int>(fake->downloaded.size()), downloads);
+}
+
 }  // namespace
 
 int main() {
@@ -739,5 +881,8 @@ int main() {
     test_a_core_is_downloaded_when_asked();
     test_finds_the_cores_here();
     test_reads_a_core_out_of_its_zip();
+    test_reads_the_graphic_packs_release();
+    test_finds_cemus_user_folder();
+    test_graphic_packs_are_downloaded_and_replaced();
     return test::finish("updater");
 }

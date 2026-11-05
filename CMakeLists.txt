@@ -217,7 +217,9 @@ add_library(dualscreen_core STATIC
     src/update/updater.cpp
     src/update/desktop_updater.cpp
     src/update/zip_extract.cpp
+    src/update/graphic_packs.cpp
     src/ui/update_prompt.cpp
+    src/ui/graphic_packs_prompt.cpp
     src/util/log.cpp
 )
 

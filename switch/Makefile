@@ -145,6 +145,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp discord_presence.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp \
+               graphic_packs.cpp graphic_packs_prompt.cpp \
                game_catalog.cpp steam_shortcuts.cpp launch_host.cpp
 
 # Making forwarders -- X on a ROM in the file picker: the Switch's half, which

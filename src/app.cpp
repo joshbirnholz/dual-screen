@@ -90,7 +90,9 @@
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
 #include "ui/update_prompt.hpp"
+#include "ui/graphic_packs_prompt.hpp"
 #include "update/desktop_updater.hpp"
+#include "update/graphic_packs.hpp"
 #include "update/updater.hpp"
 #include "util/child_process.hpp"
 #include "util/discord_presence.hpp"
@@ -575,6 +577,10 @@ struct App::Impl {
     // Android device's are their companion menu's. See update/updater.hpp.
     std::unique_ptr<update::Updater> updater;
     UpdatePrompt update_prompt;
+    // Cemu's community graphics packs, downloaded from Settings' Wii U group
+    // into the user folder of the Cemu games are played with.
+    std::unique_ptr<update::GraphicPacksDownloader> graphic_packs_downloader;
+    GraphicPacksPrompt graphic_packs_prompt;
     void start_updater(const AppOptions& options);
     void poll_updates();
     // Where the core Dualscreen keeps for `system` is, or would be.
@@ -5775,6 +5781,11 @@ void App::Impl::start_updater(const AppOptions& options) {
         if (host_session) host_session->request_companion_update(request);
     });
     settings_screen->set_offers_updates(true);
+    // Its own staging folder, so its downloads never meet the updater's.
+    graphic_packs_downloader = std::make_unique<update::GraphicPacksDownloader>(
+        update::make_desktop_backend(path_join(paths.data_dir, "graphic-packs"), cores),
+        update::cemu_user_data_dir(settings.wii_u_program));
+    graphic_packs_prompt.set_downloader(graphic_packs_downloader.get());
     // At start-up, quietly, and only on a build from CI: a build made by hand
     // is not offered one unless it asks, so there is nothing to look for --
     // and nothing for a test run to go out to the network for. A build made
@@ -5785,6 +5796,13 @@ void App::Impl::start_updater(const AppOptions& options) {
 }
 
 void App::Impl::poll_updates() {
+    if (graphic_packs_downloader) {
+        // Whichever Cemu games are played with, as settings name it now.
+        graphic_packs_downloader->set_user_data(update::cemu_user_data_dir(settings.wii_u_program));
+        graphic_packs_prompt.poll();
+        settings_screen->set_graphic_packs_row(true, graphic_packs_prompt.row_label(),
+                                               graphic_packs_prompt.row_value());
+    }
     if (!updater) return;
     // A companion joined here is offered its own update beside this one's;
     // joined to a host, this device is asked by it about its own.
@@ -5868,6 +5886,10 @@ void App::Impl::poll_updates() {
 }
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
+    if (result.open_graphic_packs) {
+        graphic_packs_prompt.choose(external_source && external_source->running());
+        return;
+    }
     if (result.open_updates) {
         // A restart starts the program again as it was started: into the
         // game a shortcut named, when it is that one being played.
@@ -6842,6 +6864,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::ResumeNotice: break;
     }
     update_prompt.describe_for_sound(view);
+    graphic_packs_prompt.describe_for_sound(view);
     return view;
 }
 
@@ -6870,6 +6893,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
     if (update_prompt.open()) {
         update_prompt.update(actions, pointers, static_cast<float>(output_width),
                              static_cast<float>(output_height));
+        return;
+    }
+    if (graphic_packs_prompt.open()) {
+        graphic_packs_prompt.update(actions, pointers, static_cast<float>(output_width),
+                                    static_cast<float>(output_height));
         return;
     }
     if (menu_key_back_to_game(actions)) return;
@@ -7574,6 +7602,7 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         settings_screen->set_over_game(over_game);
         settings_screen->render(quads, text, button_glyphs, width, height);
         update_prompt.render(quads, text, button_glyphs, width, height);
+        graphic_packs_prompt.render(quads, text, button_glyphs, width, height);
     } else if (state == State::DataManagement) {
         data_screen->set_over_game(over_game);
         data_screen->render(quads, text, button_glyphs, width, height);
@@ -8956,6 +8985,11 @@ int App::run(const AppOptions& options) {
                 if (for_settings && impl.update_prompt.open()) {
                     impl.update_prompt.update({action}, {}, static_cast<float>(impl.output_width),
                                               static_cast<float>(impl.output_height));
+                    continue;
+                }
+                if (for_settings && impl.graphic_packs_prompt.open()) {
+                    impl.graphic_packs_prompt.update({action}, {}, static_cast<float>(impl.output_width),
+                                                     static_cast<float>(impl.output_height));
                     continue;
                 }
                 if (for_settings && impl.menu_key_back_to_game({action})) continue;
