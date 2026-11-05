@@ -350,7 +350,14 @@ void test_cancel_climbs_all_the_way_out() {
     const std::vector<PointerEvent> no_pointers;
 
     std::string here = deep;
-    while (here != "/") {
+    const auto at_root = [](const std::string& path) {
+#if defined(_WIN32)
+        return path_root_length(path) >= path.size();
+#else
+        return path == "/";
+#endif
+    };
+    while (!at_root(here)) {
         const std::string expected = path_dirname(here);
         browser.update(input, {UiAction::Cancel}, no_pointers, 1280.0f, 800.0f);
         CHECK_MSG(browser.current_directory() == expected,
@@ -359,6 +366,17 @@ void test_cancel_climbs_all_the_way_out() {
         if (browser.current_directory() != expected) return;
         here = expected;
     }
+#if defined(_WIN32)
+    // Above a drive's root: the drives, this one among them, to go down into.
+    browser.update(input, {UiAction::Cancel}, no_pointers, 1280.0f, 800.0f);
+    CHECK_STR_EQ(browser.current_directory(), "This PC");
+    bool listed = false;
+    for (const GameBrowserEntry& entry : browser.entries()) {
+        // A root with no drive letter ("/") is the current drive, whichever.
+        if (entry.label + "/" == here || (here == "/" && entry.is_directory)) listed = true;
+    }
+    CHECK_MSG(listed, here + " is not among the drives listed");
+#endif
 }
 
 // The trap that stranded a player in the app's own build directory: the
@@ -381,7 +399,7 @@ void test_a_relative_directory_never_traps_the_browser() {
         GameBrowser browser;
         browser.open(remembered);
         const std::string landed = browser.current_directory();
-        CHECK_MSG(!landed.empty() && landed.front() == '/',
+        CHECK_MSG(is_absolute_path(landed),
                   std::string("opening with \"") + remembered + "\" left the browser at '" +
                       landed + "'");
         if (landed.empty() || landed.front() != '/') continue;

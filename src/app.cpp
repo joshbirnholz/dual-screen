@@ -3513,8 +3513,8 @@ namespace {
 // Where amiibo dumps are usually kept, for a first look before one has ever
 // been chosen.
 std::string first_amiibo_folder() {
-    const char* home = std::getenv("HOME");
-    if (home == nullptr) return std::string();
+    const std::string home = user_home_dir();
+    if (home.empty()) return std::string();
     for (const char* candidate :
          {"amiibo", "Amiibo", "Documents/amiibo", "Documents/Amiibo", "Emulation/amiibo"}) {
         const std::string path = path_join(home, candidate);
@@ -3618,9 +3618,9 @@ void App::Impl::choose_amiibo(const std::string& path) {
 void App::Impl::open_amiibo_browser() {
     enter_cemu_page(State::Amiibo);
     amiibo_browser.set_amiibo(true);
-    const char* home = std::getenv("HOME");
+    const std::string home = user_home_dir();
     std::string folder = settings.amiibo_dir.empty() ? first_amiibo_folder() : settings.amiibo_dir;
-    if (folder.empty()) folder = home != nullptr ? home : "/";
+    if (folder.empty()) folder = !home.empty() ? home : "/";
     amiibo_browser.open(folder);
     log_info("the amiibo browser is up, in " + amiibo_browser.current_directory());
 }
@@ -6285,8 +6285,7 @@ void App::Impl::update_save_rom_dirs() {
     // And where the 3DS and Wii U saves are: Azahar's under the saves folder
     // as the store already knows, Cemu's wherever Cemu keeps them.
     FolderSaveRoots roots = save_store->folder_roots();
-    const char* home = std::getenv("HOME");
-    roots.wii_u_mlc = find_cemu_mlc(settings.wii_u_mlc_path, settings.wii_u_program, home != nullptr ? home : "");
+    roots.wii_u_mlc = find_cemu_mlc(settings.wii_u_mlc_path, settings.wii_u_program, user_home_dir());
     if (roots.wii_u_mlc != save_store->folder_roots().wii_u_mlc) {
         log_info(roots.wii_u_mlc.empty() ? std::string("Cemu's mlc01 folder was not found; no Wii U saves")
                                          : "Wii U saves are in " + roots.wii_u_mlc);
@@ -6296,7 +6295,7 @@ void App::Impl::update_save_rom_dirs() {
     roots.wii_u_title_lists =
         roots.wii_u_mlc.empty()
             ? std::vector<std::string>()
-            : find_cemu_title_lists(settings.wii_u_program, home != nullptr ? home : "", roots.wii_u_mlc);
+            : find_cemu_title_lists(settings.wii_u_program, user_home_dir(), roots.wii_u_mlc);
     if (roots.wii_u_title_lists != save_store->folder_roots().wii_u_title_lists && !roots.wii_u_title_lists.empty()) {
         log_info("Wii U games are named from Cemu's game list in " + roots.wii_u_title_lists.front());
     }

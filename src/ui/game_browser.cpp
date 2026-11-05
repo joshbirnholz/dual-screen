@@ -9,7 +9,23 @@
 #include "ui/page_frame.hpp"
 #include "util/log.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#undef near
+#undef far
+#undef interface
+#endif
+
 namespace ds {
+#if defined(_WIN32)
+namespace {
+// Where ".." at a drive's root goes: the drives, as Explorer names that place.
+const char* const kThisPc = "This PC";
+}  // namespace
+#endif
 bool is_supported_rom(const std::string& filename) {
     // Whatever any system claims, so the browser lists a 3DS game beside a DS
     // one and picking either simply works. Archives are not claimed by
@@ -52,6 +68,19 @@ std::vector<std::string> default_browse_dirs() {
     }
     candidates.push_back(storage);
     return candidates;
+#elif defined(_WIN32)
+    // The user's own folders, then EmuDeck's place on a Windows PC.
+    const std::string found = user_home_dir();
+    const std::string home = found.empty() ? std::string("C:/") : found;
+    std::vector<std::string> candidates;
+    for (const std::string& candidate :
+         {path_join(home, "Emulation/roms/nds"), path_join(home, "Emulation/roms"), std::string("C:/Emulation/roms/nds"),
+          std::string("C:/Emulation/roms"), path_join(home, "roms"), path_join(home, "ROMs"),
+          path_join(home, "Documents/roms"), path_join(home, "Games"), path_join(home, "Downloads")}) {
+        if (directory_exists(candidate)) candidates.push_back(candidate);
+    }
+    candidates.push_back(directory_exists(home) ? home : std::string("C:/"));
+    return candidates;
 #else
     const char* home_env = std::getenv("HOME");
     const std::string home = (home_env != nullptr && home_env[0] != '\0') ? home_env : "/home";
@@ -88,7 +117,7 @@ void GameBrowser::open(const std::string& directory) {
     // to have been started from lands the player somewhere arbitrary -- so it
     // is discarded in favour of a sensible default rather than honoured.
     std::string start = expand_user_path(directory);
-    if (!start.empty() && start.front() != '/') {
+    if (!start.empty() && !is_absolute_path(start)) {
         log_warn("ignoring a remembered folder that is not an absolute path: " + start);
         start.clear();
     }
@@ -108,6 +137,29 @@ bool GameBrowser::navigate_to(std::string directory) {
     // Everything below assumes a path that can be walked upwards. A relative
     // one cannot: path_dirname maps "." and any bare name to "." forever, so a
     // browser that ever stored one could never climb out of it again.
+#if defined(_WIN32)
+    // Above a drive's root: every drive there is, to go down into.
+    if (directory == kThisPc) {
+        error_.clear();
+        directory_ = directory;
+        rows_.clear();
+        focus_ = 0;
+        scroll_ = 0.0f;
+        drag_.stop();
+        const DWORD drives = ::GetLogicalDrives();
+        for (int letter = 0; letter < 26; ++letter) {
+            if ((drives & (1u << letter)) == 0) continue;
+            const std::string root = std::string(1, static_cast<char>('A' + letter)) + ":/";
+            if (!directory_exists(root)) continue;  // an empty card reader, say
+            Row row;
+            row.label = root.substr(0, 2);
+            row.path = root;
+            row.is_directory = true;
+            rows_.push_back(row);
+        }
+        return true;
+    }
+#endif
     directory = absolute_path(directory);
 
     std::vector<DirectoryEntry> entries;
@@ -119,7 +171,13 @@ bool GameBrowser::navigate_to(std::string directory) {
         if (!directory_.empty()) {
             return false;
         }
-        // Nothing to fall back to on the very first listing.
+        // Nothing to go back to on the very first listing: the nearest
+        // folder above it that does open, rather than a list with no way out.
+        const std::string parent = path_dirname(directory);
+        if (parent != directory && !parent.empty()) return navigate_to(parent);
+#if defined(_WIN32)
+        return navigate_to(kThisPc);
+#endif
         directory_ = directory;
         rows_.clear();
         focus_ = 0;
@@ -135,7 +193,12 @@ bool GameBrowser::navigate_to(std::string directory) {
     scroll_ = 0.0f;
     drag_.stop();
 
-    if (directory != "/") {
+#if defined(_WIN32)
+    const bool at_root = path_root_length(directory) >= directory.size();
+#else
+    const bool at_root = directory == "/";
+#endif
+    if (!at_root) {
         Row up;
         up.label = "..";
         up.path = path_dirname(directory);
@@ -143,6 +206,16 @@ bool GameBrowser::navigate_to(std::string directory) {
         up.is_parent = true;
         rows_.push_back(up);
     }
+#if defined(_WIN32)
+    else {
+        Row up;
+        up.label = "..";
+        up.path = kThisPc;
+        up.is_directory = true;
+        up.is_parent = true;
+        rows_.push_back(up);
+    }
+#endif
 
     for (const DirectoryEntry& entry : entries) {
         if (!entry.is_directory &&

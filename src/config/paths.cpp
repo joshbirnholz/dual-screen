@@ -49,6 +49,11 @@ std::string home_dir() {
 
 }  // namespace
 
+std::string user_home_dir() {
+    const std::string home = home_dir();
+    return home == "." ? std::string() : home;
+}
+
 std::string native_to_generic_path(const std::string& path) {
 #if defined(_WIN32)
     std::string generic = path;

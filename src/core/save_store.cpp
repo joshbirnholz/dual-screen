@@ -227,6 +227,7 @@ std::vector<std::string> find_cemu_title_lists(const std::string& cemu_program, 
         folders.push_back(path_join(path_join(path_join(home, ".local"), "share"), "Cemu"));
         folders.push_back(path_join(path_join(path_join(home, ".var"), "app"), "info.cemu.Cemu/data/Cemu"));
         folders.push_back(path_join(home, "Library/Application Support/Cemu"));
+        folders.push_back(path_join(home, "AppData/Roaming/Cemu"));  // Windows
     }
     std::vector<std::string> out;
     for (const std::string& folder : folders) {
@@ -254,6 +255,9 @@ std::string find_cemu_mlc(const std::string& configured, const std::string& cemu
         places.push_back({path_join(flatpak, "config/Cemu"), path_join(flatpak, "data/Cemu/mlc01")});
         const std::string mac = path_join(home, "Library/Application Support/Cemu");
         places.push_back({mac, path_join(mac, "mlc01")});
+        // Windows, when not portable: everything in the roaming profile.
+        const std::string windows = path_join(home, "AppData/Roaming/Cemu");
+        places.push_back({windows, path_join(windows, "mlc01")});
     }
     for (const auto& place : places) {
         std::vector<uint8_t> bytes;

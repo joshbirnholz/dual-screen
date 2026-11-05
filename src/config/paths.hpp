@@ -151,6 +151,9 @@ std::string path_stem(const std::string& path);
 // The extension without the dot, lowercased. Empty when there is none.
 std::string path_extension_lower(const std::string& path);
 std::string path_dirname(const std::string& path);
+// The user's home folder -- USERPROFILE on Windows, HOME elsewhere -- with
+// forward slashes, or empty when there is none.
+std::string user_home_dir();
 // Expands a leading "~/". Anything else is returned unchanged -- in particular
 // a relative path stays relative. Use absolute_path() when a path has to be
 // one that can be walked upwards.
