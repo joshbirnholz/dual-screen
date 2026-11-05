@@ -184,6 +184,14 @@ public:
         int icon_width = 0;
         int icon_height = 0;
         std::vector<uint8_t> icon_rgba;
+        // The same game on the other computers that could start it too --
+        // see same_launchable_game() -- most recently played there first,
+        // then ones never played there. Empty when only `host` has it.
+        struct Elsewhere {
+            LaunchHost host;
+            LaunchableGame game;
+        };
+        std::vector<Elsewhere> elsewhere;
     };
 
     RecentGamesFeed() = default;
@@ -213,6 +221,25 @@ private:
     };
     std::shared_ptr<Shared> shared_;
 };
+
+// Whether two computers' games are the same one: the same system and the
+// same title, letters' case and the spaces around it aside. Each computer
+// names its games by an id of its own, so that is all there is to go on.
+bool same_launchable_game(const LaunchableGame& a, const LaunchableGame& b);
+
+// Every game the computers listed, each with the computer it is on, made
+// into the first screen's recent games: those played anywhere, newest first,
+// at most `most`, each game once -- where it was played last -- with the
+// other computers that have it too under `elsewhere`.
+std::vector<RecentGamesFeed::Game> group_recent_games(const std::vector<RecentGamesFeed::Game>& listed,
+                                                      std::size_t most);
+
+// A recent game by the key the first screen gives it -- "<computer id>/<game
+// id>" -- whether that is the computer it was played on last or one of the
+// others that has it. The game comes back as that computer has it, with the
+// icon kept from the first.
+bool find_recent_game(const std::vector<RecentGamesFeed::Game>& games, const std::string& key,
+                      RecentGamesFeed::Game& out);
 
 // The recent games last seen, icons and all, kept beside the tokens -- in
 // remote_start_recent.json -- so the first screen still has them while the

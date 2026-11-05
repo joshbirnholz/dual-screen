@@ -106,6 +106,11 @@ void LauncherScreen::set_recent(std::vector<LauncherTile> tiles) {
     for (std::size_t index = 0; index < tiles_.size() && !asked.empty(); ++index) {
         if (tiles_[index].key == asked) confirming_ = static_cast<int>(index);
     }
+    // The computers it could start on changed under the alert: asked again,
+    // from the top.
+    if (confirming_ >= 0 && static_cast<int>(confirm_buttons().size()) != confirm_cursor_.count()) {
+        confirm_cursor_.reset(static_cast<int>(confirm_buttons().size()), asking_which_device() ? 0 : 1);
+    }
     // Textures for games no longer shown go.
     for (auto texture = tile_textures_.begin(); texture != tile_textures_.end();) {
         const bool kept = std::any_of(tiles_.begin(), tiles_.end(),
@@ -177,9 +182,18 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
         bool off = false;
         for (const int tap : take_taps(pointers, output_width, output_height)) off = off || tap == kTapOffPopup;
         const int answer = confirm_cursor_.update(actions, pointers, confirm_geometry(output_width, output_height));
-        if (answer == 1) {
+        const LauncherTile& tile = tiles_[static_cast<std::size_t>(confirming_)];
+        if (asking_which_device()) {
+            // One of the computers, by its place in the list; the last
+            // button is Cancel.
+            if (answer >= 0 && answer < static_cast<int>(tile.places.size())) {
+                result.choice = LauncherChoice::StartRecent;
+                result.recent = tile.places[static_cast<std::size_t>(answer)].key;
+                open_ = false;
+            }
+        } else if (answer == 1) {
             result.choice = LauncherChoice::StartRecent;
-            result.recent = tiles_[static_cast<std::size_t>(confirming_)].key;
+            result.recent = tile.key;
             open_ = false;
         }
         if (answer != PopupCursor::kNone || off) confirming_ = -1;
@@ -197,7 +211,9 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
             // Asked first: it starts a game on another computer, perhaps
             // waking it.
             confirming_ = index - count;
-            confirm_cursor_.reset(2, 1);
+            // Which computer is the first in the list -- the one it was
+            // played on last -- or Start.
+            confirm_cursor_.reset(static_cast<int>(confirm_buttons().size()), asking_which_device() ? 0 : 1);
         }
     };
 
@@ -272,11 +288,29 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
 std::string LauncherScreen::confirm_message() const {
     if (confirming_ < 0 || confirming_ >= static_cast<int>(tiles_.size())) return std::string();
     const LauncherTile& tile = tiles_[static_cast<std::size_t>(confirming_)];
+    if (asking_which_device()) return "Which device do you want to start " + tile.title + " on?";
     return "Start " + tile.title + " on " + tile.computer + "?";
 }
 
+bool LauncherScreen::asking_which_device() const {
+    return confirming_ >= 0 && confirming_ < static_cast<int>(tiles_.size()) &&
+           tiles_[static_cast<std::size_t>(confirming_)].places.size() > 1;
+}
+
+std::vector<PopupButton> LauncherScreen::confirm_buttons() const {
+    if (!asking_which_device()) return {{"Cancel", ""}, {"Start", ""}};
+    // One above the other, each computer by its name -- one asleep says it
+    // will be woken -- and Cancel under them.
+    std::vector<PopupButton> buttons;
+    for (const LauncherTile::Place& place : tiles_[static_cast<std::size_t>(confirming_)].places) {
+        buttons.push_back({place.computer, place.asleep ? "Asleep" : ""});
+    }
+    buttons.push_back({"Cancel", ""});
+    return buttons;
+}
+
 PopupGeometry LauncherScreen::confirm_geometry(float output_width, float output_height) const {
-    static const std::vector<PopupButton> buttons{{"Cancel", ""}, {"Start", ""}};
+    const std::vector<PopupButton> buttons = confirm_buttons();
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
                           popup_text_height(PopupText{confirm_message(), {}, 0}, width, output_height), buttons);
@@ -293,6 +327,12 @@ std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available)
 
 std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
     std::vector<GuidePrompt> guide;
+    // An alert up: it is what A and B answer.
+    if (confirming_ >= 0) {
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+        return guide;
+    }
     // Leftmost, the way Disconnect leads the quick menu's row: the one that
     // ends something goes first, and everything else keeps its place beside it.
     if (plus_quits_) {
@@ -389,7 +429,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
 
     if (confirming_ >= 0) {
-        static const std::vector<PopupButton> buttons{{"Cancel", ""}, {"Start", ""}};
+        const std::vector<PopupButton> buttons = confirm_buttons();
         const PopupGeometry popup = confirm_geometry(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, buttons, confirm_cursor_.focus(),
                    confirm_cursor_.shown());

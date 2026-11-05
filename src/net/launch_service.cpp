@@ -580,19 +580,112 @@ std::string recent_games_path(const std::string& tokens_path) {
     return path_join(path_dirname(tokens_path), "remote_start_recent.json");
 }
 
+namespace {
+
+std::string game_title_key(const std::string& title) {
+    std::size_t first = 0;
+    std::size_t last = title.size();
+    while (first < last && std::isspace(static_cast<unsigned char>(title[first]))) ++first;
+    while (last > first && std::isspace(static_cast<unsigned char>(title[last - 1]))) --last;
+    std::string key;
+    for (std::size_t at = first; at < last; ++at) {
+        key += static_cast<char>(std::tolower(static_cast<unsigned char>(title[at])));
+    }
+    return key;
+}
+
+json recent_host_json(const LaunchHost& host) {
+    return {{"id", host.id},           {"name", host.name}, {"kind", host.kind},
+            {"address", host.address}, {"port", host.port}, {"macs", host.macs}};
+}
+
+LaunchHost recent_host_from(const json& host) {
+    LaunchHost out;
+    out.id = get_or<std::string>(host, "id", "");
+    out.name = get_or<std::string>(host, "name", out.id);
+    out.kind = get_or<std::string>(host, "kind", "pc");
+    out.address = get_or<std::string>(host, "address", "");
+    out.port = get_or<uint16_t>(host, "port", kLaunchPort);
+    out.macs = get_or<std::vector<std::string>>(host, "macs", {});
+    return out;
+}
+
+}  // namespace
+
+bool same_launchable_game(const LaunchableGame& a, const LaunchableGame& b) {
+    const std::string title = game_title_key(a.title);
+    return !title.empty() && a.system == b.system && title == game_title_key(b.title);
+}
+
+std::vector<RecentGamesFeed::Game> group_recent_games(const std::vector<RecentGamesFeed::Game>& listed,
+                                                      std::size_t most) {
+    std::vector<RecentGamesFeed::Game> sorted = listed;
+    std::stable_sort(sorted.begin(), sorted.end(), [](const RecentGamesFeed::Game& a, const RecentGamesFeed::Game& b) {
+        return a.game.last_played > b.game.last_played;
+    });
+    std::vector<RecentGamesFeed::Game> grouped;
+    for (const RecentGamesFeed::Game& entry : sorted) {
+        if (grouped.size() >= most) break;
+        // Played nowhere, or already there from where it was played later.
+        if (entry.game.last_played <= 0) break;
+        const bool shown = std::any_of(grouped.begin(), grouped.end(), [&](const RecentGamesFeed::Game& had) {
+            return (had.host.id == entry.host.id && had.game.id == entry.game.id) ||
+                   same_launchable_game(had.game, entry.game);
+        });
+        if (shown) continue;
+        RecentGamesFeed::Game game = entry;
+        game.elsewhere.clear();
+        for (const RecentGamesFeed::Game& other : sorted) {
+            if (other.host.id == entry.host.id || !same_launchable_game(other.game, entry.game)) continue;
+            const bool counted = std::any_of(game.elsewhere.begin(), game.elsewhere.end(),
+                                             [&](const RecentGamesFeed::Game::Elsewhere& place) {
+                                                 return place.host.id == other.host.id;
+                                             });
+            if (!counted) game.elsewhere.push_back({other.host, other.game});
+        }
+        grouped.push_back(std::move(game));
+    }
+    return grouped;
+}
+
+bool find_recent_game(const std::vector<RecentGamesFeed::Game>& games, const std::string& key,
+                      RecentGamesFeed::Game& out) {
+    for (const RecentGamesFeed::Game& game : games) {
+        if (game.host.id + "/" + game.game.id == key) {
+            out = game;
+            return true;
+        }
+        for (const RecentGamesFeed::Game::Elsewhere& place : game.elsewhere) {
+            if (place.host.id + "/" + place.game.id != key) continue;
+            out = game;
+            out.host = place.host;
+            out.game = place.game;
+            out.elsewhere.clear();
+            return true;
+        }
+    }
+    return false;
+}
+
 bool keep_recent_games(const std::string& path, const std::vector<RecentGamesFeed::Game>& games) {
     json list = json::array();
     for (const RecentGamesFeed::Game& entry : games) {
-        json game = {{"host", {{"id", entry.host.id},
-                               {"name", entry.host.name},
-                               {"kind", entry.host.kind},
-                               {"address", entry.host.address},
-                               {"port", entry.host.port},
-                               {"macs", entry.host.macs}}},
+        json game = {{"host", recent_host_json(entry.host)},
                      {"id", entry.game.id},
                      {"title", entry.game.title},
                      {"system", entry.game.system},
                      {"played", entry.game.last_played}};
+        if (!entry.elsewhere.empty()) {
+            json elsewhere = json::array();
+            for (const RecentGamesFeed::Game::Elsewhere& place : entry.elsewhere) {
+                elsewhere.push_back({{"host", recent_host_json(place.host)},
+                                     {"id", place.game.id},
+                                     {"title", place.game.title},
+                                     {"system", place.game.system},
+                                     {"played", place.game.last_played}});
+            }
+            game["elsewhere"] = elsewhere;
+        }
         if (entry.icon_width > 0 && entry.icon_height > 0 && !entry.icon_rgba.empty()) {
             uLongf bound = compressBound(static_cast<uLong>(entry.icon_rgba.size()));
             std::vector<uint8_t> deflated(bound);
@@ -616,17 +709,26 @@ std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path) {
         if (!game.is_object() || !game.contains("host") || !game["host"].is_object()) continue;
         const json& host = game["host"];
         RecentGamesFeed::Game entry;
-        entry.host.id = get_or<std::string>(host, "id", "");
-        entry.host.name = get_or<std::string>(host, "name", entry.host.id);
-        entry.host.kind = get_or<std::string>(host, "kind", "pc");
-        entry.host.address = get_or<std::string>(host, "address", "");
-        entry.host.port = get_or<uint16_t>(host, "port", kLaunchPort);
-        entry.host.macs = get_or<std::vector<std::string>>(host, "macs", {});
+        entry.host = recent_host_from(host);
         entry.game.id = get_or<std::string>(game, "id", "");
         entry.game.title = get_or<std::string>(game, "title", "");
         entry.game.system = get_or<std::string>(game, "system", "");
         entry.game.last_played = get_or<int64_t>(game, "played", 0);
         if (entry.host.id.empty() || entry.game.id.empty()) continue;
+        const auto elsewhere = game.find("elsewhere");
+        if (elsewhere != game.end() && elsewhere->is_array()) {
+            for (const json& place : *elsewhere) {
+                if (!place.is_object() || !place.contains("host") || !place["host"].is_object()) continue;
+                RecentGamesFeed::Game::Elsewhere other;
+                other.host = recent_host_from(place["host"]);
+                other.game.id = get_or<std::string>(place, "id", "");
+                other.game.title = get_or<std::string>(place, "title", "");
+                other.game.system = get_or<std::string>(place, "system", "");
+                other.game.last_played = get_or<int64_t>(place, "played", 0);
+                if (other.host.id.empty() || other.game.id.empty()) continue;
+                entry.elsewhere.push_back(std::move(other));
+            }
+        }
         if (game.contains("icon") && game["icon"].is_object()) {
             const json& icon = game["icon"];
             const int width = get_or<int>(icon, "w", 0);
@@ -648,6 +750,25 @@ std::vector<RecentGamesFeed::Game> kept_recent_games(const std::string& path) {
     return games;
 }
 
+namespace {
+
+// Whether two of the first screen's games could be started on the same other
+// computers, each as awake as it was.
+bool same_places(const RecentGamesFeed::Game& a, const RecentGamesFeed::Game& b) {
+    if (a.elsewhere.size() != b.elsewhere.size()) return false;
+    for (std::size_t at = 0; at < a.elsewhere.size(); ++at) {
+        const RecentGamesFeed::Game::Elsewhere& one = a.elsewhere[at];
+        const RecentGamesFeed::Game::Elsewhere& two = b.elsewhere[at];
+        if (one.host.id != two.host.id || one.game.id != two.game.id || one.host.asleep != two.host.asleep ||
+            one.host.address != two.host.address || one.host.name != two.host.name) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
 void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
     stop();
     auto shared = std::make_shared<Shared>();
@@ -660,6 +781,7 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
         std::vector<Game> kept = kept_recent_games(kept_path);
         for (Game& entry : kept) {
             entry.host.asleep = !entry.host.macs.empty();
+            for (Game::Elsewhere& place : entry.elsewhere) place.host.asleep = !place.host.macs.empty();
             icons[entry.host.id + "/" + entry.game.id] = entry;
         }
         if (kept.size() > most) kept.resize(most);
@@ -674,7 +796,11 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 std::lock_guard<std::mutex> lock(shared->mutex);
                 hosts = shared->hosts;
             }
-            std::vector<Game> gathered;
+            // Every game each computer has, played or not: one never played
+            // on this computer is still one it could start, when it was
+            // played on another.
+            std::vector<Game> listed_everywhere;
+            std::vector<LaunchHost> silent;
             bool answered = false;
             for (const LaunchHost& host : hosts) {
                 if (shared->stopping) break;
@@ -682,20 +808,40 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 if (token.empty()) continue;
                 std::vector<LaunchableGame> listed;
                 bool unpaired = false;
-                if (!list_host_games(host, token, listed, unpaired, nullptr)) continue;
+                if (!list_host_games(host, token, listed, unpaired, nullptr)) {
+                    silent.push_back(host);
+                    continue;
+                }
                 answered = true;
                 for (const LaunchableGame& game : listed) {
-                    if (game.last_played <= 0) continue;
                     Game entry;
                     entry.host = host;
                     entry.game = game;
-                    gathered.push_back(entry);
+                    listed_everywhere.push_back(entry);
                 }
             }
-            std::stable_sort(gathered.begin(), gathered.end(), [](const Game& a, const Game& b) {
-                return a.game.last_played > b.game.last_played;
-            });
-            if (gathered.size() > most) gathered.resize(most);
+            // A paired computer not answering -- asleep, as far as this can
+            // tell -- still has the games last seen on it, to be woken for.
+            for (const LaunchHost& host : silent) {
+                const auto add = [&](const LaunchHost& was, const LaunchableGame& game) {
+                    if (was.id != host.id) return;
+                    const bool listed = std::any_of(listed_everywhere.begin(), listed_everywhere.end(),
+                                                    [&](const Game& had) {
+                                                        return had.host.id == was.id && had.game.id == game.id;
+                                                    });
+                    if (listed) return;
+                    Game entry;
+                    entry.host = was;
+                    entry.host.asleep = !entry.host.macs.empty();
+                    entry.game = game;
+                    listed_everywhere.push_back(entry);
+                };
+                for (const Game& was : kept) {
+                    add(was.host, was.game);
+                    for (const Game::Elsewhere& place : was.elsewhere) add(place.host, place.game);
+                }
+            }
+            std::vector<Game> gathered = group_recent_games(listed_everywhere, most);
             for (Game& entry : gathered) {
                 if (shared->stopping) break;
                 const std::string key = entry.host.id + "/" + entry.game.id;
@@ -724,7 +870,8 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 for (std::size_t at = 0; same && at < kept.size(); ++at) {
                     same = kept[at].host.id == gathered[at].host.id && kept[at].game.id == gathered[at].game.id &&
                            kept[at].host.address == gathered[at].host.address &&
-                           kept[at].icon_rgba.size() == gathered[at].icon_rgba.size();
+                           kept[at].icon_rgba.size() == gathered[at].icon_rgba.size() &&
+                           same_places(kept[at], gathered[at]);
                 }
                 if (!same) {
                     kept = gathered;
@@ -734,7 +881,10 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 // Nobody paired with answering: the ones last seen, their
                 // computer asleep as far as this can tell.
                 gathered = kept;
-                for (Game& entry : gathered) entry.host.asleep = !entry.host.macs.empty();
+                for (Game& entry : gathered) {
+                    entry.host.asleep = !entry.host.macs.empty();
+                    for (Game::Elsewhere& place : entry.elsewhere) place.host.asleep = !place.host.macs.empty();
+                }
             }
             {
                 std::lock_guard<std::mutex> lock(shared->mutex);
@@ -743,7 +893,8 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                 for (std::size_t at = 0; same && at < had.size(); ++at) {
                     same = had[at].host.id == gathered[at].host.id && had[at].game.id == gathered[at].game.id &&
                            had[at].host.asleep == gathered[at].host.asleep &&
-                           had[at].icon_rgba.size() == gathered[at].icon_rgba.size();
+                           had[at].icon_rgba.size() == gathered[at].icon_rgba.size() &&
+                           same_places(had[at], gathered[at]);
                 }
                 if (!same) {
                     shared->games = std::move(gathered);
