@@ -16,10 +16,15 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#if !defined(_WIN32)
+// The fake Discord is a Unix socket, so it is played only where Discord
+// listens on one; on Windows it is a named pipe, checked by name below.
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#define DS_FAKE_DISCORD 1
+#endif
 
 #include "core/ds_rom_info.hpp"
 #include "util/discord_presence.hpp"
@@ -33,6 +38,7 @@ struct Frame {
     nlohmann::json body;
 };
 
+#if DS_FAKE_DISCORD
 bool read_exactly(int fd, char* into, size_t length, int timeout_ms) {
     size_t got = 0;
     while (got < length) {
@@ -81,6 +87,7 @@ int accept_within(int listener, int timeout_ms) {
     if (::poll(&waiting, 1, timeout_ms) <= 0) return -1;
     return ::accept(listener, nullptr, nullptr);
 }
+#endif
 
 void test_a_frame_is_opcode_then_length_little_endian() {
     const std::string frame = discord_frame(1, "{}");
@@ -162,6 +169,7 @@ void test_a_ds_icon_is_named_as_the_icons_branch_names_it() {
     CHECK(discord_game_icon_url("ds/" + ds_icon_key(icon)).find("/icons/ds/4cff9b7f") != std::string::npos);
 }
 
+#if DS_FAKE_DISCORD
 void test_the_flatpak_discord_is_looked_for_too() {
     ::setenv("XDG_RUNTIME_DIR", "/run/user/1000/", 1);
     const std::vector<std::string> paths = discord_socket_paths();
@@ -287,6 +295,13 @@ void test_no_discord_is_nothing_to_wait_for() {
     CHECK(std::chrono::steady_clock::now() - before < std::chrono::seconds(2));
     ::rmdir(root);
 }
+#else
+void test_windows_discord_is_looked_for_on_its_pipes() {
+    const std::vector<std::string> paths = discord_socket_paths();
+    CHECK(paths.size() == 10);
+    CHECK(!paths.empty() && paths.front() == "\\\\.\\pipe\\discord-ipc-0");
+}
+#endif
 
 }  // namespace
 
@@ -294,8 +309,12 @@ int main() {
     test_a_frame_is_opcode_then_length_little_endian();
     test_the_activity_names_the_game_and_clearing_sends_none();
     test_a_ds_icon_is_named_as_the_icons_branch_names_it();
+#if DS_FAKE_DISCORD
     test_the_flatpak_discord_is_looked_for_too();
     test_discord_is_told_and_told_again_after_it_restarts();
     test_no_discord_is_nothing_to_wait_for();
+#else
+    test_windows_discord_is_looked_for_on_its_pipes();
+#endif
     return test::finish("discord presence");
 }

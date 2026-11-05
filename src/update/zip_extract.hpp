@@ -19,4 +19,12 @@ bool list_zip(const std::string& zip, std::vector<std::string>& names, std::stri
 bool extract_zip_entry(const std::string& zip, const std::string& name, const std::string& out_path,
                        std::string* error);
 
+// Every entry whose name starts with `under` ("" for all of them), unpacked
+// into `folder` with that much taken off the front of its name: a release's
+// "Dualscreen/" folder, say. Reads the archive once, however many files it
+// holds. Refuses an archive that names a file outside `folder`. `written`,
+// when given, gets each file's name as unpacked, relative to `folder`.
+bool extract_zip_all(const std::string& zip, const std::string& folder, const std::string& under,
+                     std::vector<std::string>* written, std::string* error);
+
 }  // namespace ds::update

@@ -83,6 +83,10 @@ void test_each_users_file_is_found() {
     std::filesystem::create_directories(config);
     std::ofstream(config / "shortcuts.vdf") << "x";
     std::filesystem::create_directories(home / ".local/share/Steam/userdata/0/config");
+#if defined(_WIN32)
+    // Steam's folder on Windows is wherever its installer put it.
+    ::setenv("DUALSCREEN_STEAM_FOLDER", (home / ".local/share/Steam").string().c_str(), 1);
+#endif
     const std::vector<std::string> files = steam_shortcut_files(home.string());
     CHECK_EQ(files.size(), 1u);
     CHECK(!files.empty() && files[0].find("12345") != std::string::npos);
@@ -102,6 +106,9 @@ void test_the_catalog_prefers_steam() {
     std::ofstream(roms / "n3ds/Zelda.3ds") << "x";
     std::ofstream(roms / "nds/readme.txt") << "x";
 
+#if defined(_WIN32)
+    ::setenv("DUALSCREEN_STEAM_FOLDER", (home / ".local/share/Steam").string().c_str(), 1);
+#endif
     std::vector<LaunchableGame> games = launchable_games(home.string(), {roms.string()});
     CHECK_EQ(games.size(), 2u);
     if (games.size() == 2u) {

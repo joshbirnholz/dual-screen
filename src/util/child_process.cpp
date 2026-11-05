@@ -112,6 +112,98 @@ void ChildProcess::stop() {
 
 }  // namespace ds
 
+#elif defined(_WIN32)
+
+#include "util/win_process.hpp"
+
+namespace ds {
+namespace {
+
+constexpr DWORD kGracefulStopMilliseconds = 3000;
+
+// Asks each of the process's top-level windows to close, as clicking its X
+// would: the polite stop, before ending it outright.
+BOOL CALLBACK close_windows_of(HWND window, LPARAM process_id) {
+    DWORD owner = 0;
+    ::GetWindowThreadProcessId(window, &owner);
+    if (owner == static_cast<DWORD>(process_id) && ::IsWindowVisible(window)) {
+        ::PostMessageW(window, WM_CLOSE, 0, 0);
+    }
+    return TRUE;
+}
+
+}  // namespace
+
+ChildProcess::~ChildProcess() { stop(); }
+
+bool ChildProcess::start(const std::string& program, const std::vector<std::string>& arguments,
+                         std::string* error) {
+    stop();
+    // A job that ends everything in it when its last handle closes -- this
+    // program's, even if it crashes -- so an emulator is never left behind.
+    HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
+    if (job != nullptr) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits {};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        ::SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    }
+    WindowsLaunch launch;
+    launch.hidden = false;  // an emulator has a window of its own to show
+    launch.working_directory = path_dirname(program);
+    HANDLE process = nullptr;
+    DWORD id = 0;
+    std::string why;
+    if (!start_windows_process(program, arguments, launch, process, &id, &why)) {
+        if (job != nullptr) ::CloseHandle(job);
+        if (error != nullptr) *error = "could not start it: " + why;
+        return false;
+    }
+    if (job != nullptr) ::AssignProcessToJobObject(job, process);
+    process_ = process;
+    job_ = job;
+    pid_ = static_cast<int>(id);
+    log_info("started " + program);
+    return true;
+}
+
+bool ChildProcess::running() {
+    if (process_ == nullptr) return false;
+    if (::WaitForSingleObject(static_cast<HANDLE>(process_), 0) == WAIT_TIMEOUT) return true;
+    ::CloseHandle(static_cast<HANDLE>(process_));
+    process_ = nullptr;
+    // Its job stays until stop(): whatever it started may still be running.
+    pid_ = -1;
+    return false;
+}
+
+void ChildProcess::stop() {
+    if (process_ != nullptr) {
+        HANDLE process = static_cast<HANDLE>(process_);
+        if (::WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
+            ::EnumWindows(close_windows_of, static_cast<LPARAM>(pid_));
+            if (::WaitForSingleObject(process, kGracefulStopMilliseconds) == WAIT_TIMEOUT) {
+                log_warn("it would not stop when asked, so it is being ended");
+                if (job_ != nullptr) {
+                    ::TerminateJobObject(static_cast<HANDLE>(job_), 1);
+                } else {
+                    ::TerminateProcess(process, 1);
+                }
+                ::WaitForSingleObject(process, 5000);
+            }
+        }
+        ::CloseHandle(process);
+        process_ = nullptr;
+    }
+    if (job_ != nullptr) {
+        // Anything it left running goes with the job.
+        ::CloseHandle(static_cast<HANDLE>(job_));
+        job_ = nullptr;
+    }
+    pid_ = -1;
+}
+
+}  // namespace ds
+
 #else  // __linux__
 
 namespace ds {

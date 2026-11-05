@@ -8,6 +8,8 @@
 
 #include "test_support.hpp"
 
+#include <cstring>
+
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -183,8 +185,46 @@ void test_each_platform_puts_things_where_that_platform_keeps_them() {
 #else
     CHECK(native_path_style() == PathStyle::AppleLibrary);
 #endif
+#elif defined(_WIN32)
+    CHECK(native_path_style() == PathStyle::Windows);
 #else
     CHECK(native_path_style() == PathStyle::Xdg);
+#endif
+}
+
+// Windows's: settings in the roaming profile, what the app owns in the local
+// one, each as the environment names it, and slashes made forward.
+void test_windows_path_convention() {
+    const auto windows_set = [](const char* name) {
+        const std::string value = std::strcmp(name, "APPDATA") == 0        ? "C:\\Users\\Josh\\AppData\\Roaming"
+                                  : std::strcmp(name, "LOCALAPPDATA") == 0 ? "C:\\Users\\Josh\\AppData\\Local"
+                                                                           : "";
+        return value;
+    };
+    const AppPaths paths = AppPaths::under(path_convention(PathStyle::Windows, "C:/Users/Josh", windows_set));
+    CHECK_STR_EQ(paths.settings_file, "C:/Users/Josh/AppData/Roaming/dualscreen/settings.json");
+    CHECK_STR_EQ(paths.saves_dir, "C:/Users/Josh/AppData/Local/dualscreen/saves");
+    CHECK_STR_EQ(paths.log_file, "C:/Users/Josh/AppData/Local/dualscreen/dualscreen.log");
+    const auto nothing_set = [](const char*) { return std::string(); };
+    const AppPaths fallback = AppPaths::under(path_convention(PathStyle::Windows, "C:/Users/Josh", nothing_set));
+    CHECK_STR_EQ(fallback.settings_file, "C:/Users/Josh/AppData/Roaming/dualscreen/settings.json");
+    CHECK_STR_EQ(fallback.saves_dir, "C:/Users/Josh/AppData/Local/dualscreen/saves");
+}
+
+// Drive letters and network shares are roots there, as "/" is here.
+void test_windows_path_helpers() {
+#if defined(_WIN32)
+    CHECK(is_absolute_path("C:/Games"));
+    CHECK(is_absolute_path("C:\\Games"));
+    CHECK(is_absolute_path("//nas/roms/ds"));
+    CHECK(!is_absolute_path("Games/ds"));
+    CHECK_STR_EQ(path_join("C:/Users/Josh", "D:/roms"), "D:/roms");
+    CHECK_STR_EQ(path_dirname("C:/Games"), "C:/");
+    CHECK_STR_EQ(path_dirname("C:/"), "C:/");
+    CHECK_STR_EQ(path_basename("C:\\Games\\Mario Kart DS.nds"), "Mario Kart DS.nds");
+    CHECK_STR_EQ(absolute_path("C:\\Games\\..\\roms\\.\\ds"), "C:/roms/ds");
+    CHECK_STR_EQ(absolute_path("C:/.."), "C:/");
+    CHECK_STR_EQ(absolute_path("//nas/roms/../ds"), "//nas/roms/ds");
 #endif
 }
 
@@ -215,13 +255,13 @@ void test_path_helpers() {
     // Relative inputs resolve against the working directory, and never come
     // back as something path_dirname would treat as its own parent.
     char buffer[4096];
-    const std::string working = ::getcwd(buffer, sizeof(buffer));
+    const std::string working = native_to_generic_path(::getcwd(buffer, sizeof(buffer)));
     CHECK_STR_EQ(absolute_path("."), working);
     CHECK_STR_EQ(absolute_path("./tests"), working + "/tests");
     CHECK_STR_EQ(absolute_path("CMakeFiles"), working + "/CMakeFiles");
     for (const char* relative : {".", "./tests", "CMakeFiles", ".."}) {
         const std::string resolved = absolute_path(relative);
-        CHECK_MSG(!resolved.empty() && resolved.front() == '/',
+        CHECK_MSG(!resolved.empty() && is_absolute_path(resolved),
                   std::string(relative) + " did not resolve to an absolute path");
         CHECK_MSG(path_dirname(resolved) != resolved,
                   std::string(relative) + " resolved to a directory that is its own parent");
@@ -682,6 +722,8 @@ int main() {
     test_paths_resolve_under_xdg();
     test_each_platform_puts_things_where_that_platform_keeps_them();
     test_path_helpers();
+    test_windows_path_convention();
+    test_windows_path_helpers();
     test_files_are_replaced_and_a_cut_short_replace_is_read_back();
     test_game_config_round_trip();
     test_game_config_preserves_unknown_keys();

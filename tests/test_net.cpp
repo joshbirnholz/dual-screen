@@ -5,9 +5,7 @@
 
 #include <cerrno>
 
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
+#include "net/socket_api.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -351,13 +349,19 @@ void test_streams_enable_keepalive_with_a_short_idle_time() {
         const int descriptor = stream->descriptor_for_test();
 
         int keepalive = 0;
-        socklen_t length = sizeof(keepalive);
-        CHECK(::getsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, &keepalive, &length) == 0);
+        socklen_type length = sizeof(keepalive);
+        CHECK(::getsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, DS_SOCKOPT_OUT(&keepalive), &length) == 0);
         CHECK_MSG(keepalive != 0, "a stream did not enable SO_KEEPALIVE");
 
+#if defined(_WIN32)
+        // Windows reads its keepalive timing back only from 1709 on, and
+        // Wine not at all; SIO_KEEPALIVE_VALS sets it everywhere but cannot
+        // be asked. So only that it is on is checked there.
+        continue;
+#endif
         int idle_seconds = 0;
         length = sizeof(idle_seconds);
-        CHECK(::getsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, &length) == 0);
+        CHECK(::getsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, DS_SOCKOPT_OUT(&idle_seconds), &length) == 0);
         // The OS default is two hours -- ten seconds' worth of probing has to
         // have actually been configured, not left at that default.
         CHECK_MSG(idle_seconds > 0 && idle_seconds <= 10,
@@ -401,8 +405,8 @@ void test_the_kernel_send_queue_is_small_enough_to_notice() {
     // leave whichever path this test does not walk unbounded.
     for (const TcpStream* stream : {&client, &server}) {
         int send_buffer = 0;
-        socklen_t length = sizeof(send_buffer);
-        CHECK(::getsockopt(stream->descriptor_for_test(), SOL_SOCKET, SO_SNDBUF, &send_buffer,
+        socklen_type length = sizeof(send_buffer);
+        CHECK(::getsockopt(stream->descriptor_for_test(), SOL_SOCKET, SO_SNDBUF, DS_SOCKOPT_OUT(&send_buffer),
                            &length) == 0);
         // Linux reports back roughly twice what was asked for, so this is a
         // check that a bound was set at all rather than one on its exact size.
@@ -416,7 +420,7 @@ void test_the_kernel_send_queue_is_small_enough_to_notice() {
     // connecting to one. A receiver that never reads a byte, with a small
     // window of its own, so what this measures is the sending side.
     const int receive_buffer = 32 * 1024;
-    ::setsockopt(client.descriptor_for_test(), SOL_SOCKET, SO_RCVBUF, &receive_buffer,
+    ::setsockopt(client.descriptor_for_test(), SOL_SOCKET, SO_RCVBUF, DS_SOCKOPT(&receive_buffer),
                  sizeof(receive_buffer));
 
     // 40 KB a frame: what one dynamic DS screen actually costs after RGB565

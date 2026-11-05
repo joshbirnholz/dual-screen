@@ -1,4 +1,4 @@
-# Builds Dualscreen for SteamOS, the Switch and Android on every push, and
+# Builds Dualscreen for SteamOS, Windows, the Switch and Android on every push, and
 # publishes them together as one rolling pre-release, "nightly", on this
 # repository's Releases page: the newest build always in the same place, which
 # is what an app checking for updates will look at.
@@ -77,6 +77,43 @@ jobs:
         with:
           name: steamos
           path: dualscreen-steamos.tar.gz
+
+  windows:
+    name: Windows
+    runs-on: ubuntu-24.04
+    # Cross-compiled with MinGW-w64, the same way as on a developer's machine
+    # (see tools/build-windows.sh), and tested under Wine.
+    steps:
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            g++-mingw-w64-x86-64-posix mingw-w64-tools cmake ninja-build nasm \
+            pkg-config curl git zip wine wine64
+      - uses: actions/checkout@v4
+      # SDL2, zlib, zstd and the minimal FFmpeg change only when their
+      # versions in the script do.
+      - uses: actions/cache@v4
+        with:
+          path: .deps-windows
+          key: deps-windows-${{ hashFiles('tools/build-windows.sh') }}-ubuntu24
+      - name: Build
+        run: ./tools/build-windows.sh --package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dualscreen-windows.zip
+      - name: Test (under Wine)
+        env:
+          WINEDEBUG: '-all'
+          WINEPREFIX: ${{ runner.temp }}/wine
+        run: |
+          deps="$(winepath -w "$PWD/.deps-windows/prefix/bin")"
+          runtime="$(dirname "$(x86_64-w64-mingw32-gcc-posix -print-file-name=libwinpthread-1.dll)")"
+          export WINEPATH="$deps;$(winepath -w "$runtime")"
+          wineboot --init > /dev/null 2>&1 || true
+          cd build-windows
+          ctest -j2 --output-on-failure --repeat until-pass:2
 
   switch:
     name: Switch
@@ -185,7 +222,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [steamos, switch, android]
+    needs: [steamos, windows, switch, android]
     # Whatever was built, even if something else was not.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -203,6 +240,7 @@ jobs:
           fi
           missing=""
           [ -f dist/dualscreen-steamos.tar.gz ] || missing="$missing SteamOS"
+          [ -f dist/dualscreen-windows.zip ] || missing="$missing Windows"
           [ -f dist/Dualscreen.nro ] || missing="$missing Switch"
           [ -f dist/dualscreen-android.apk ] || missing="$missing Android"
           short="${GITHUB_SHA::7}"
@@ -213,6 +251,7 @@ jobs:
             echo "Build ${{ github.run_number }}, from ${short} on ${GITHUB_REF_NAME}."
             echo
             echo "- **SteamOS**: \`dualscreen-steamos.tar.gz\` -- unpack it anywhere and add \`dualscreen\` to Steam."
+            echo "- **Windows**: \`dualscreen-windows.zip\` -- unzip it anywhere and run \`dualscreen.exe\` in its Dualscreen folder, or add it to Steam."
             echo "- **Switch**: \`Dualscreen.nro\` -- copy it to \`/switch/\` on the SD card."
             echo "- **Android**: \`dualscreen-android.apk\`."
             if [ "${{ needs.android.result }}" = "success" ] && [ "${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}" != "true" ]; then

@@ -253,9 +253,9 @@ void LayoutPicker::rebuild_footer() {
     }
     // Or on one of Cemu's that has just been greyed out.
     if (on_content_ && !item_selectable(item_)) {
-        const int near = selectable_item_near(item_, -1);
-        if (near >= 0) {
-            item_ = near;
+        const int nearest = selectable_item_near(item_, -1);
+        if (nearest >= 0) {
+            item_ = nearest;
         } else {
             on_content_ = false;
         }

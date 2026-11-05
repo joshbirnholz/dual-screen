@@ -1,5 +1,6 @@
 #include "update/desktop_updater.hpp"
 
+#include <algorithm>
 #include <atomic>
 
 #include "config/paths.hpp"
@@ -7,6 +8,8 @@
 #include "util/log.hpp"
 
 #if defined(__linux__) && defined(__x86_64__) && !defined(__ANDROID__)
+#define DS_DESKTOP_UPDATES 1
+#elif defined(_WIN32) && defined(__x86_64__)
 #define DS_DESKTOP_UPDATES 1
 #else
 #define DS_DESKTOP_UPDATES 0
@@ -18,9 +21,13 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(_WIN32)
+#include "util/win_process.hpp"
+#else
+#include <sys/wait.h>
+#endif
 
 #include <cctype>
 #include <cstdio>
@@ -50,6 +57,9 @@ namespace fs = std::filesystem;
 // kernel calls the one still running "<path> (deleted)" -- and the path
 // without that is the new one, which is the one wanted.
 std::string self_path() {
+#if defined(_WIN32)
+    return windows_self_path();
+#else
     char buffer[4096];
     const ssize_t length = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
     if (length <= 0) return std::string();
@@ -59,6 +69,7 @@ std::string self_path() {
         path.resize(path.size() - deleted.size());
     }
     return path;
+#endif
 }
 
 std::string read_text(const std::string& path) {
@@ -68,10 +79,34 @@ std::string read_text(const std::string& path) {
     return text.str();
 }
 
+#if !defined(_WIN32)  // Windows's run() waits on the process itself
 void sleep_briefly() {
     const timespec pause{0, 100 * 1000 * 1000};
     ::nanosleep(&pause, nullptr);
 }
+#endif
+
+// What this platform calls the programs below. Windows 10 and 11 come with
+// both curl.exe and tar.exe in System32, so the same two do the same work
+// there -- named in full, so a curl of some other install earlier on the
+// PATH is not the one asked.
+#if defined(_WIN32)
+std::string system_program(const char* name) {
+    wchar_t folder[MAX_PATH] = {0};
+    const UINT length = ::GetSystemDirectoryW(folder, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return name;
+    return native_to_generic_path(narrow(std::wstring(folder, length))) + "/" + name + ".exe";
+}
+const std::string kCurl = system_program("curl");
+#else
+const std::string kCurl = "curl";
+#endif
+
+#if defined(_WIN32)
+constexpr const char* kNullDevice = "NUL";
+#else
+constexpr const char* kNullDevice = "/dev/null";
+#endif
 
 // Runs a program -- curl, tar -- with nothing passed through a shell, its
 // output into `out_path` and its complaints into `err_path`. `tick` is called
@@ -80,6 +115,29 @@ void sleep_briefly() {
 // was stopped.
 int run(const std::vector<std::string>& arguments, const std::string& out_path, const std::string& err_path,
         const std::function<bool()>& tick) {
+#if defined(_WIN32)
+    WindowsLaunch launch;
+    launch.redirect = true;
+    launch.out_path = out_path;
+    launch.err_path = err_path;
+    HANDLE child = nullptr;
+    const std::vector<std::string> rest(arguments.begin() + 1, arguments.end());
+    if (!start_windows_process(arguments.front(), rest, launch, child, nullptr, nullptr)) return 127;
+    for (;;) {
+        if (::WaitForSingleObject(child, 100) == WAIT_OBJECT_0) {
+            DWORD code = 1;
+            ::GetExitCodeProcess(child, &code);
+            ::CloseHandle(child);
+            return static_cast<int>(code);
+        }
+        if (tick && !tick()) {
+            ::TerminateProcess(child, 1);
+            ::WaitForSingleObject(child, 5000);
+            ::CloseHandle(child);
+            return -1;
+        }
+    }
+#else
     std::vector<std::string> owned = arguments;
     std::vector<char*> argv;
     for (std::string& argument : owned) argv.push_back(argument.data());
@@ -108,11 +166,16 @@ int run(const std::vector<std::string>& arguments, const std::string& out_path, 
         }
         sleep_briefly();
     }
+#endif
 }
 
 // What curl said went wrong, in words for the player.
 std::string curl_error(int status, const std::string& err_path) {
+#if defined(_WIN32)
+    if (status == 127) return "curl.exe could not be started (it comes with Windows 10 1803 and later)";
+#else
     if (status == 127) return "curl is not installed";
+#endif
     if (status == 6 || status == 7 || status == 28) return "GitHub could not be reached";
     if (status == 22) {
         const std::string said = read_text(err_path);
@@ -132,7 +195,7 @@ std::string curl_error(int status, const std::string& err_path) {
 // answers HEAD with 401.
 int64_t remote_size(const std::string& url, const std::string& scratch, const std::atomic<bool>& cancel) {
     const std::string headers = scratch + ".headers";
-    const int status = run({"curl", "-sSL", "-r", "0-0", "-D", headers, "-o", "/dev/null", "--connect-timeout", "10",
+    const int status = run({kCurl, "-sSL", "-r", "0-0", "-D", headers, "-o", kNullDevice, "--connect-timeout", "10",
                             "--max-time", "30", url},
                            "", "", [&] { return !cancel.load(); });
     int64_t size = 0;
@@ -159,11 +222,34 @@ int64_t remote_size(const std::string& url, const std::string& scratch, const st
 bool put_in_place(const std::string& from, const std::string& to, std::string& error) {
     const std::string temporary = path_join(path_dirname(to), "." + path_basename(to) + ".update");
     std::error_code code;
-    fs::copy_file(from, temporary, fs::copy_options::overwrite_existing, code);
+    fs::copy_file(fs::u8path(from), fs::u8path(temporary), fs::copy_options::overwrite_existing, code);
     if (code) {
         error = "could not write " + temporary + ": " + code.message();
         return false;
     }
+#if defined(_WIN32)
+    // A program or DLL that is running cannot be replaced on Windows, but it
+    // can be renamed: the running one moves aside to <name>.old -- and goes
+    // the next time this starts, see remove_left_behind() -- and the new one
+    // takes its name, for whatever is started after.
+    const std::wstring wide_to = widen(to);
+    const std::wstring aside = widen(to + ".old");
+    if (::MoveFileExW(widen(temporary).c_str(), wide_to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0) return true;
+    ::DeleteFileW(aside.c_str());
+    if (::GetFileAttributesW(wide_to.c_str()) != INVALID_FILE_ATTRIBUTES &&
+        ::MoveFileExW(wide_to.c_str(), aside.c_str(), MOVEFILE_REPLACE_EXISTING) == 0) {
+        error = "could not move " + to + " aside: " + windows_error_text(::GetLastError());
+        std::remove(temporary.c_str());
+        return false;
+    }
+    if (::MoveFileExW(widen(temporary).c_str(), wide_to.c_str(), MOVEFILE_REPLACE_EXISTING) == 0) {
+        error = "could not replace " + to + ": " + windows_error_text(::GetLastError());
+        ::MoveFileExW(aside.c_str(), wide_to.c_str(), MOVEFILE_REPLACE_EXISTING);
+        std::remove(temporary.c_str());
+        return false;
+    }
+    return true;
+#endif
     struct stat source {};
     if (::stat(from.c_str(), &source) == 0) ::chmod(temporary.c_str(), source.st_mode & 07777);
     if (::rename(temporary.c_str(), to.c_str()) != 0) {
@@ -187,7 +273,7 @@ public:
             error = "could not make " + staging_dir();
             return false;
         }
-        const int status = run({"curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", url}, out, err,
+        const int status = run({kCurl, "-fsSL", "--connect-timeout", "10", "--max-time", "30", url}, out, err,
                                [&] { return !cancel.load(); });
         if (status != 0) {
             error = curl_error(status, err);
@@ -203,7 +289,7 @@ public:
                   const std::function<void(int64_t, int64_t)>& progress, std::string& error) override {
         const int64_t total = remote_size(url, path, cancel);
         const std::string err = path + ".err";
-        const int status = run({"curl", "-fsSL", "--connect-timeout", "15", "--retry", "2", "-o", path, url}, "", err,
+        const int status = run({kCurl, "-fsSL", "--connect-timeout", "15", "--retry", "2", "-o", path, url}, "", err,
                                [&] {
                                    if (cancel) return false;
                                    struct stat file {};
@@ -227,6 +313,49 @@ public:
     }
 
 private:
+#if defined(_WIN32)
+    // dualscreen-windows.zip: a Dualscreen folder holding the programs and
+    // the DLLs they run with. Unpacked aside, then each file put in place,
+    // the program last -- the same order, for the same reason, as below.
+    bool install_dualscreen(const std::string& file, std::string& error) {
+        const std::string target = install_dir();
+        if (target.empty()) {
+            error = "the folder Dualscreen is in could not be found";
+            return false;
+        }
+        const std::string unpacked = path_join(staging_dir(), "unpacked");
+        std::error_code code;
+        fs::remove_all(fs::u8path(unpacked), code);
+        std::vector<std::string> names;
+        if (!extract_zip_all(file, unpacked, "Dualscreen/", &names, &error)) {
+            error = "the download would not unpack: " + error;
+            fs::remove_all(fs::u8path(unpacked), code);
+            return false;
+        }
+        const auto program = std::find(names.begin(), names.end(), "dualscreen.exe");
+        if (program == names.end()) {
+            error = "the download has no Dualscreen in it";
+            fs::remove_all(fs::u8path(unpacked), code);
+            return false;
+        }
+        names.erase(program);
+        names.push_back("dualscreen.exe");
+        for (const std::string& name : names) {
+            const std::string to = path_join(target, name);
+            if (!ensure_directory(path_dirname(to)) || !put_in_place(path_join(unpacked, name), to, error)) {
+                if (error.empty()) error = "could not make " + path_dirname(to);
+                if (error.find("Access is denied") != std::string::npos) {
+                    error = "the folder Dualscreen is in (" + target + ") cannot be written to";
+                }
+                fs::remove_all(fs::u8path(unpacked), code);
+                return false;
+            }
+        }
+        log_info("updates: replaced " + std::to_string(names.size()) + " files in " + target);
+        fs::remove_all(fs::u8path(unpacked), code);
+        return true;
+    }
+#else
     bool install_dualscreen(const std::string& file, std::string& error) {
         const std::string target = install_dir();
         if (target.empty() || ::access(target.c_str(), W_OK) != 0) {
@@ -275,6 +404,7 @@ private:
         fs::remove_all(unpacked, code);
         return true;
     }
+#endif
 
     // A core: the library out of its zip, beside the others in the cores
     // folder, and which build it is beside that.
@@ -301,8 +431,41 @@ private:
             error = "could not make " + path_dirname(target);
             return false;
         }
+#if defined(_WIN32)
+        // A zip of Cemu.exe and the folders it reads beside it, unpacked over
+        // the one there: its settings and keys, which Cemu keeps in that
+        // folder too, are files the zip does not have, so they stay.
+        const std::string unpacked = path_join(staging_dir(), "cemu");
+        std::error_code code;
+        fs::remove_all(fs::u8path(unpacked), code);
+        std::vector<std::string> names;
+        if (!extract_zip_all(file, unpacked, "", &names, &error)) {
+            error = "the download would not unpack: " + error;
+            fs::remove_all(fs::u8path(unpacked), code);
+            return false;
+        }
+        const auto program = std::find(names.begin(), names.end(), "Cemu.exe");
+        if (program == names.end()) {
+            error = "the download has no Cemu.exe in it";
+            fs::remove_all(fs::u8path(unpacked), code);
+            return false;
+        }
+        names.erase(program);
+        names.push_back("Cemu.exe");
+        const std::string folder = path_dirname(target);
+        for (const std::string& name : names) {
+            const std::string to = path_join(folder, name);
+            if (!ensure_directory(path_dirname(to)) || !put_in_place(path_join(unpacked, name), to, error)) {
+                if (error.empty()) error = "could not make " + path_dirname(to);
+                fs::remove_all(fs::u8path(unpacked), code);
+                return false;
+            }
+        }
+        fs::remove_all(fs::u8path(unpacked), code);
+#else
         ::chmod(file.c_str(), 0755);
         if (!put_in_place(file, target, error)) return false;
+#endif
         const std::string number = std::to_string(release.build) + "\n";
         std::string ignored;
         write_file_atomically(managed_cemu_build_file(data_dir_), number.data(), number.size(), &ignored);
@@ -326,6 +489,22 @@ std::string install_dir() {
     return self.empty() ? std::string() : path_dirname(self);
 }
 
+void remove_left_behind() {
+#if defined(_WIN32)
+    // What an update moved aside because it was running at the time -- see
+    // put_in_place(). Nothing is running them now.
+    const std::string folder = install_dir();
+    if (folder.empty()) return;
+    std::error_code code;
+    for (const fs::directory_entry& entry : fs::recursive_directory_iterator(fs::u8path(folder), code)) {
+        if (entry.is_regular_file(code) && entry.path().extension() == ".old") {
+            std::error_code ignored;
+            fs::remove(entry.path(), ignored);
+        }
+    }
+#endif
+}
+
 void restart_if_requested(char** argv) {
     if (!restart_requested()) return;
     const std::string self = self_path();
@@ -335,6 +514,25 @@ void restart_if_requested(char** argv) {
     }
     log_info("updates: starting " + self + " again");
     close_log_file();
+#if defined(_WIN32)
+    // Windows has no exec(): a new process, with this one's own command line
+    // as it was given, and this one then ends as main() returns. Nothing of
+    // this one's is inherited, so its sockets close with it.
+    (void)argv;
+    std::wstring line = ::GetCommandLineW();
+    STARTUPINFOW startup {};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION info {};
+    const std::wstring program = widen(self);
+    if (::CreateProcessW(program.c_str(), line.data(), nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT, nullptr,
+                         nullptr, &startup, &info)) {
+        ::CloseHandle(info.hThread);
+        ::CloseHandle(info.hProcess);
+    } else {
+        std::fprintf(stderr, "dualscreen: could not start %s again: %s\n", self.c_str(),
+                     windows_error_text(::GetLastError()).c_str());
+    }
+#else
     // Nothing this run had open goes on into the next: a socket left open
     // would hold the port the new one wants.
     if (DIR* fds = ::opendir("/proc/self/fd")) {
@@ -348,6 +546,7 @@ void restart_if_requested(char** argv) {
     ::execv(self.c_str(), argv);
     // Still here: say so somewhere, now that the log is closed.
     std::fprintf(stderr, "dualscreen: could not start %s again: %s\n", self.c_str(), std::strerror(errno));
+#endif
 }
 
 #else
@@ -356,6 +555,7 @@ bool desktop_updates_supported() { return false; }
 std::unique_ptr<Backend> make_desktop_backend(const std::string&, const std::string&) { return nullptr; }
 std::string install_dir() { return std::string(); }
 void restart_if_requested(char**) {}
+void remove_left_behind() {}
 
 #endif
 

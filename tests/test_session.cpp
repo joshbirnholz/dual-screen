@@ -5,6 +5,7 @@
 // is shown, the way the companion's window would.
 
 #include "test_support.hpp"
+#include "video_support.hpp"
 
 #include <SDL.h>
 
@@ -2526,7 +2527,7 @@ void test_host_can_disconnect_the_companion() {
 // the last tiled frame, and the frames in between went a different way
 // entirely. Both ends have to still be describing the same picture afterwards.
 void test_the_codec_can_change_without_reconnecting() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -2625,7 +2626,7 @@ void test_the_codec_can_change_without_reconnecting() {
 // HostSession actually asks for it once it knows the companion's display is
 // smaller than the screen being sent.
 void test_video_is_capped_to_the_companions_display_size() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -2888,7 +2889,7 @@ void test_the_codec_is_picked_from_what_the_screen_costs() {
 // The same choice made by a live session, with no codec forced: a small screen
 // goes as tiles, a large one as video, and back again when it shrinks.
 void test_a_session_picks_the_codec_by_itself() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -3112,7 +3113,7 @@ bool draw_and_read_back(QuadRenderer& renderer, const Texture& screen, int width
 // switch that leaves stale tiles behind, decodes against the wrong reference,
 // swaps colours or stops the picture fails here rather than on a Switch.
 void test_switching_codec_mid_game_keeps_the_picture_right() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -3317,7 +3318,7 @@ void test_switching_codec_mid_game_keeps_the_picture_right() {
 // each video frame put a lost piece back on the spot, so the picture keeps
 // moving and nothing has to be asked for.
 void test_a_lost_piece_does_not_lose_the_frame() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -3404,7 +3405,7 @@ void test_a_lost_piece_does_not_lose_the_frame() {
 // and dozens more pieces to lose. The frames behind the one being repaired
 // wait for it and are shown after it, in order.
 void test_a_burst_of_losses_is_repaired_by_asking_again() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -3510,7 +3511,7 @@ void test_a_burst_of_losses_is_repaired_by_asking_again() {
 // size pictures are actually arriving at, and given back once the link has
 // been calm for a while.
 void test_a_troubled_link_gets_a_smaller_picture() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -3594,7 +3595,7 @@ void test_a_troubled_link_gets_a_smaller_picture() {
 // Cemu renders at 1080p -- reaches it whole: nothing between the two ends
 // takes it down to 720p.
 void test_a_1080p_picture_reaches_a_1080p_display_whole() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -4258,7 +4259,7 @@ void test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial() {
 // until a picture that stands on its own actually arrives, since both the
 // request and the answer ride UDP and can be lost like anything else.
 void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
-    if (!video::have_ffmpeg()) {
+    if (!test::video_encodes_here()) {
         test::skip("this build has no video codec");
         return;
     }

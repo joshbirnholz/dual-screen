@@ -29,6 +29,8 @@
 
 #include <SDL.h>
 
+#include "util/win_console.hpp"
+
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 // iOS, iPadOS and tvOS, which are one platform for nearly everything here and
@@ -2691,6 +2693,7 @@ void show_failure(const std::string& message) {
 }  // namespace ds::sw
 
 int main(int argc, char** argv) {
+    ds::attach_parent_console();
     using namespace ds;
     using namespace ds::sw;
 

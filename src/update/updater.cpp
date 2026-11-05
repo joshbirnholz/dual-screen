@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "config/paths.hpp"
+#include "core/system.hpp"
 #include "util/log.hpp"
 
 namespace ds::update {
@@ -92,16 +93,16 @@ ComponentSpec core_component(Component id, const std::string& cores_dir, bool in
     ComponentSpec core;
     core.id = id;
     core.source = Source::Buildbot;
-    core.repository = kBuildbotLinux;
+    core.repository = kBuildbotNative;
     core.automatic = in_use;
     if (id == Component::ThreeDsCore) {
         core.name = "Azahar";
         // Azahar's own first, as core_search_paths() prefers it: the one with
         // motion. Citra where the buildbot has no Azahar.
-        core.candidates = {"azahar_libretro.so.zip", "citra_libretro.so.zip"};
+        core.candidates = {"azahar_libretro" DS_CORE_SUFFIX ".zip", "citra_libretro" DS_CORE_SUFFIX ".zip"};
     } else {
         core.name = "melonDS DS";
-        core.candidates = {"melondsds_libretro.so.zip"};
+        core.candidates = {"melondsds_libretro" DS_CORE_SUFFIX ".zip"};
     }
     core.asset = core.candidates.front();
     core.installed = kNotInstalled;
@@ -162,7 +163,11 @@ std::vector<ComponentSpec> components_for(const std::string& platform_asset, int
 }
 
 std::string managed_cemu_path(const std::string& data_dir) {
+#if defined(_WIN32)
+    return path_join(path_join(data_dir, "cemu"), "Cemu.exe");
+#else
     return path_join(path_join(data_dir, "cemu"), kCemuAsset);
+#endif
 }
 
 std::string managed_cemu_build_file(const std::string& data_dir) {

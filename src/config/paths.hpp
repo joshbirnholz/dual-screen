@@ -64,6 +64,11 @@ enum class PathStyle {
     // HOME is not set, so the XDG answer would be wherever the app happened
     // to be started from.
     SwitchSd,
+    // Windows: settings under %APPDATA% (the roaming profile), and what the
+    // app owns -- saves, the system folder, the log -- under %LOCALAPPDATA%.
+    // Paths are kept with forward slashes, which every Windows API accepts,
+    // so the rest of the code joins and splits them as it does elsewhere.
+    Windows,
 };
 
 // This build's own, which is the only one resolve() below will use.
@@ -155,5 +160,19 @@ std::string expand_user_path(const std::string& path);
 // with "/", so it has a real parent to climb to; an empty path stays empty.
 // Purely lexical: nothing has to exist for this to work.
 std::string absolute_path(const std::string& path);
+
+// How long the root at the front of a path is: 1 for "/", and on Windows 3
+// for "C:/" (or "C:\"), and the whole "//server/share/" of a network share.
+// 0 for a relative path.
+std::size_t path_root_length(const std::string& path);
+bool is_absolute_path(const std::string& path);
+
+// Windows writes paths with backslashes; this codebase keeps them with
+// forward slashes, which Windows accepts everywhere. These convert at the
+// edges -- a path from the system on the way in, one shown to Windows's own
+// tools (Explorer, cmd) on the way out. Both return the path unchanged
+// elsewhere.
+std::string native_to_generic_path(const std::string& path);
+std::string generic_to_native_path(const std::string& path);
 
 }  // namespace ds

@@ -1,0 +1,31 @@
+// The icon Explorer, the taskbar and Steam show for dualscreen.exe and
+// dualscreen-companion.exe, and the manifest beside it (see the .manifest).
+#include <winuser.h>
+
+#define DS_TEXT_OF(value) #value
+#define DS_TEXT(value) DS_TEXT_OF(value)
+
+1 ICON "dualscreen.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "dualscreen.manifest"
+
+1 VERSIONINFO
+FILEVERSION 1,0,0,DUALSCREEN_RC_BUILD
+PRODUCTVERSION 1,0,0,DUALSCREEN_RC_BUILD
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Dualscreen"
+            VALUE "ProductName", "Dualscreen"
+            VALUE "FileVersion", DS_TEXT(DUALSCREEN_RC_BUILD)
+            VALUE "ProductVersion", DS_TEXT(DUALSCREEN_RC_BUILD)
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

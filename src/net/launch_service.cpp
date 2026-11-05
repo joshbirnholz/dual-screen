@@ -16,8 +16,16 @@
 #include <nlohmann/json.hpp>
 #include <zlib.h>
 
+#include "config/paths.hpp"
 #include "net/transport.hpp"
 #include "util/log.hpp"
+
+#if defined(_WIN32)
+#include "net/socket_api.hpp"
+#include <iphlpapi.h>
+#undef interface  // see socket_api.hpp
+#include <cstdio>
+#endif
 
 namespace ds::net {
 namespace {
@@ -569,7 +577,7 @@ std::vector<LaunchHost> LaunchHostFinder::hosts() const {
 }
 
 std::string recent_games_path(const std::string& tokens_path) {
-    return (std::filesystem::path(tokens_path).parent_path() / "remote_start_recent.json").string();
+    return path_join(path_dirname(tokens_path), "remote_start_recent.json");
 }
 
 bool keep_recent_games(const std::string& path, const std::vector<RecentGamesFeed::Game>& games) {
@@ -838,6 +846,29 @@ std::vector<std::string> this_machine_macs() {
         if (in && std::getline(in, mac) && mac.size() == 17 && mac != "00:00:00:00:00:00" &&
             seen.insert(mac).second) {
             macs.push_back(mac);
+        }
+    }
+#elif defined(_WIN32)
+    // Every adapter that is up and has an address on a network, as
+    // local_networks() lists them: its hardware address, for waking it.
+    ULONG bytes = 16 * 1024;
+    std::vector<uint8_t> buffer;
+    ULONG result = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; ++attempt) {
+        buffer.resize(bytes);
+        result = ::GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST, nullptr,
+                                        reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &bytes);
+    }
+    std::set<std::string> seen;
+    if (result == NO_ERROR) {
+        for (auto* adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()); adapter != nullptr;
+             adapter = adapter->Next) {
+            if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
+            if (adapter->FirstUnicastAddress == nullptr || adapter->PhysicalAddressLength != 6) continue;
+            char mac[18] = {0};
+            const BYTE* at = adapter->PhysicalAddress;
+            std::snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x", at[0], at[1], at[2], at[3], at[4], at[5]);
+            if (std::string(mac) != "00:00:00:00:00:00" && seen.insert(mac).second) macs.push_back(mac);
         }
     }
 #endif

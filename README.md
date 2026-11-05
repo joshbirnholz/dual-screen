@@ -1419,6 +1419,30 @@ the full 1920x1080 with a Cemu graphic pack that raises the TV resolution to
 1080p. Drawing at 4K filled four times the pixels every frame for detail no
 stream carries. An iPhone or iPad draws at its full resolution.
 
+### Windows
+
+Every nightly release has `dualscreen-windows.zip`. Unzip it anywhere and run
+`dualscreen.exe` from its `Dualscreen` folder, or add that to Steam. It is
+the whole app: it hosts games, joins as a companion, updates itself, fetches
+cores and Cemu (`Cemu-dualscreen-windows-x64.zip`, from the fork's nightly),
+syncs saves, and runs the Remote Start service (Settings turns it on, and it
+starts with Windows from then on). Settings live in `%APPDATA%\dualscreen`;
+saves, cores, Cemu and the log live in `%LOCALAPPDATA%\dualscreen`.
+
+The build is cross-compiled from Linux with MinGW-w64, the same way in CI as
+on a developer's machine:
+
+```sh
+sudo apt install g++-mingw-w64-x86-64-posix mingw-w64-tools cmake ninja-build nasm pkg-config curl git zip
+./tools/build-windows.sh            # into build-windows/
+./tools/build-windows.sh --package  # ...and dualscreen-windows.zip
+```
+
+The first run builds SDL2, zlib, zstd and a minimal FFmpeg into
+`.deps-windows/`, which takes a few minutes. H.264 is encoded by whichever of
+NVENC, AMF or Media Foundation the PC has, and decoded with D3D11VA. If Wine is
+installed, `cd build-windows && ctest` runs the test suite under it.
+
 ### Nintendo Switch
 
 Needs devkitPro with the Switch toolchain. On Windows, run this from

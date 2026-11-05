@@ -266,7 +266,16 @@ struct EncoderConfig {
     int bitrate_kbps = 4000;
     // Tried in order; the first that opens wins. Hardware first, always: the
     // host is running an emulator with the rest of the frame.
+#if defined(_WIN32)
+    // Windows: NVIDIA's and AMD's own encoders, then Media Foundation's --
+    // the GPU's encoder through Windows itself, which is how an Intel GPU is
+    // reached -- and last Windows's own software one, which every Windows 10
+    // and 11 has. All four are in the FFmpeg tools/build-windows.sh makes;
+    // the first two load their drivers' DLLs only when they open.
+    std::vector<std::string> backends{"h264_nvenc", "h264_amf", "h264_mf", "h264_mf_software"};
+#else
     std::vector<std::string> backends{"h264_vaapi", "libx264"};
+#endif
     PixelOrder pixel_order = PixelOrder::Bgra;
 };
 

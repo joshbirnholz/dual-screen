@@ -22,6 +22,17 @@ find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# Windows: Winsock and the adapter list for networking, the shell for known
+# folders, and Windows 10's API level for both. NOMINMAX keeps <windows.h>
+# from turning std::min and std::max into macros; WIN32_LEAN_AND_MEAN keeps
+# it from pulling in the old winsock.h ahead of winsock2.h.
+# For every target here -- the app, the companion, the tests and the tools.
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00 WINVER=0x0A00
+                            SDL_MAIN_HANDLED)
+    link_libraries(ws2_32 iphlpapi shell32 ole32 uuid advapi32 bcrypt)
+endif()
+
 # The compressed video path, for a screen the tile codec cannot carry -- see
 # docs/research-notes.md. Optional on purpose: everything DS and 3DS do works
 # without it, and the Switch and Android toolchains do not have FFmpeg wired up
@@ -59,7 +70,7 @@ if(NOT nlohmann_json_FOUND)
     # The copy in third_party is the one the Switch build uses, which has no
     # package to find it in; it is the same release as the download below.
     find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
-              PATHS ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+              PATHS ${CMAKE_CURRENT_SOURCE_DIR}/third_party NO_DEFAULT_PATH)
     if(NLOHMANN_JSON_INCLUDE_DIR)
         add_library(nlohmann_json INTERFACE)
         target_include_directories(nlohmann_json INTERFACE ${NLOHMANN_JSON_INCLUDE_DIR})
@@ -276,6 +287,19 @@ if(FFMPEG_FOUND)
     set_target_properties(dualscreen PROPERTIES BUILD_RPATH "$ORIGIN")
 endif()
 
+# On Windows: the icon, version and manifest (assets/windows), and a program
+# with no console window of its own -- it is a game, started from Steam or
+# Explorer. main() attaches to the console it was started from, if any, so
+# --help and the log still show in a terminal.
+if(WIN32)
+    set(DUALSCREEN_WINDOWS_RC ${CMAKE_CURRENT_SOURCE_DIR}/assets/windows/dualscreen.rc)
+    set_source_files_properties(${DUALSCREEN_WINDOWS_RC} PROPERTIES
+        COMPILE_DEFINITIONS "DUALSCREEN_RC_BUILD=${DUALSCREEN_BUILD_NUMBER}"
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/windows/dualscreen.manifest;${CMAKE_CURRENT_SOURCE_DIR}/assets/windows/dualscreen.ico")
+    target_sources(dualscreen PRIVATE ${DUALSCREEN_WINDOWS_RC})
+    set_target_properties(dualscreen PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
 install(TARGETS dualscreen RUNTIME DESTINATION bin)
 
 # The companion clients: the same program for a desktop, a Nintendo Switch and
@@ -320,6 +344,10 @@ else()
 endif()
 
 target_compile_options(dualscreen-companion PRIVATE -Wall -Wextra)
+if(WIN32)
+    target_sources(dualscreen-companion PRIVATE ${DUALSCREEN_WINDOWS_RC})
+    set_target_properties(dualscreen-companion PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_link_options(dualscreen-companion PRIVATE -static-libstdc++ -static-libgcc)
 endif()
@@ -338,10 +366,12 @@ endif()
 # what it asks the frontend for, without needing a ROM for it.
 # What a screen costs on the wire, driven through the real encoder. Not a test:
 # it answers a question about a console this app does not run yet.
+if(NOT WIN32)  # a measuring tool, run on the Linux machine that builds
 add_executable(frame_budget tools/frame_budget.cpp src/net/protocol.cpp src/util/log.cpp)
 target_include_directories(frame_budget PRIVATE ${CMAKE_SOURCE_DIR}/src ${SDL2_INCLUDE_DIRS})
 target_link_libraries(frame_budget PRIVATE ZLIB::ZLIB ${SDL2_LIBRARIES})
 target_compile_options(frame_budget PRIVATE -Wall -Wextra)
+endif()
 
 # Stands in for Cemu, so everything on this side of the frame link can be
 # finished and held to before the emulator on the other side of it exists.
@@ -350,8 +380,10 @@ add_executable(fake_wii_u tools/fake_wii_u.cpp src/core/external_frame_link.cpp
 target_include_directories(fake_wii_u PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(fake_wii_u PRIVATE -Wall -Wextra)
 
+if(NOT WIN32)  # dlopen()s a core by hand; a Linux-side diagnostic only
 add_executable(probe_core tools/probe_core.cpp)
 target_include_directories(probe_core PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 target_link_libraries(probe_core PRIVATE ${SDL2_LIBRARIES} ${CMAKE_DL_LIBS})
 target_include_directories(probe_core PRIVATE ${SDL2_INCLUDE_DIRS})
 target_compile_options(probe_core PRIVATE -Wall -Wextra)
+endif()

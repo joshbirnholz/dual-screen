@@ -14,9 +14,13 @@
 #include <TargetConditionals.h>
 #endif
 
-#if defined(__SWITCH__) || defined(__ANDROID__) || defined(_WIN32) || \
-    (defined(__APPLE__) && TARGET_OS_IPHONE)
+#if defined(__SWITCH__) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 #define DS_DISCORD_PRESENCE 0
+#elif defined(_WIN32)
+// Discord on Windows listens on a named pipe rather than a Unix socket; the
+// frames on it are the same.
+#define DS_DISCORD_PRESENCE 1
+#include "util/win_process.hpp"
 #else
 #define DS_DISCORD_PRESENCE 1
 #include <fcntl.h>
@@ -110,6 +114,11 @@ std::string discord_activity_command(const DiscordActivity& activity, long proce
 }
 
 std::vector<std::string> discord_socket_paths() {
+#if defined(_WIN32)
+    std::vector<std::string> pipes;
+    for (int number = 0; number < 10; ++number) pipes.push_back("\\\\.\\pipe\\discord-ipc-" + std::to_string(number));
+    return pipes;
+#endif
     std::vector<std::string> bases;
     for (const char* name : {"XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"}) {
         const char* value = std::getenv(name);
@@ -171,6 +180,50 @@ void DiscordPresence::run() {}
 
 namespace {
 
+#if defined(_WIN32)
+using Link = HANDLE;
+const Link kNoLink = INVALID_HANDLE_VALUE;
+
+void close_link(Link link) { ::CloseHandle(link); }
+
+bool send_all(Link link, const std::string& bytes) {
+    std::size_t sent = 0;
+    while (sent < bytes.size()) {
+        DWORD now = 0;
+        if (!::WriteFile(link, bytes.data() + sent, static_cast<DWORD>(bytes.size() - sent), &now, nullptr) || now == 0) {
+            return false;
+        }
+        sent += now;
+    }
+    return true;
+}
+
+// Up to `size` bytes once some are there, waiting up to `timeout_ms` for
+// them: >0 read, 0 none yet, <0 the pipe is closed or broken. A pipe has no
+// poll(), so it is asked how much is waiting instead.
+int read_some(Link link, int timeout_ms, char* into, std::size_t size) {
+    const ULONGLONG give_up = ::GetTickCount64() + static_cast<ULONGLONG>(timeout_ms > 0 ? timeout_ms : 0);
+    for (;;) {
+        DWORD waiting = 0;
+        if (!::PeekNamedPipe(link, nullptr, 0, nullptr, &waiting, nullptr)) return -1;
+        if (waiting > 0) {
+            DWORD got = 0;
+            if (!::ReadFile(link, into, static_cast<DWORD>(std::min<std::size_t>(size, waiting)), &got, nullptr)) {
+                return -1;
+            }
+            return static_cast<int>(got);
+        }
+        if (::GetTickCount64() >= give_up) return 0;
+        ::Sleep(10);
+    }
+}
+
+#else
+using Link = int;
+const Link kNoLink = -1;
+
+void close_link(Link link) { ::close(link); }
+
 bool send_all(int fd, const std::string& bytes) {
     size_t sent = 0;
     while (sent < bytes.size()) {
@@ -191,6 +244,18 @@ bool send_all(int fd, const std::string& bytes) {
     return true;
 }
 
+int read_some(int fd, int timeout_ms, char* into, std::size_t size) {
+    pollfd waiting{fd, POLLIN, 0};
+    const int ready = ::poll(&waiting, 1, timeout_ms);
+    if (ready < 0) return errno == EINTR ? 0 : -1;
+    if (ready == 0) return 0;
+    const ssize_t got = ::recv(fd, into, size, 0);
+    if (got < 0) return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK ? 0 : -1;
+    if (got == 0) return -1;
+    return static_cast<int>(got);
+}
+#endif
+
 // Discord's replies arrive whole or not at all in practice, but a frame split
 // across reads is still put back together. Returns false once the socket is
 // closed or broken, or Discord closes it on purpose.
@@ -199,15 +264,11 @@ public:
     // Reads what is waiting, waiting up to `timeout_ms` for the first of it.
     // `on_frame` is called with each whole frame's opcode and JSON.
     template <typename OnFrame>
-    bool pump(int fd, int timeout_ms, OnFrame on_frame) {
-        pollfd waiting{fd, POLLIN, 0};
-        const int ready = ::poll(&waiting, 1, timeout_ms);
-        if (ready < 0) return errno == EINTR;
-        if (ready == 0) return true;
+    bool pump(Link fd, int timeout_ms, OnFrame on_frame) {
         char chunk[4096];
-        const ssize_t got = ::recv(fd, chunk, sizeof(chunk), 0);
-        if (got < 0) return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
-        if (got == 0) return false;
+        const int got = read_some(fd, timeout_ms, chunk, sizeof(chunk));
+        if (got < 0) return false;
+        if (got == 0) return true;
         buffer_.append(chunk, static_cast<size_t>(got));
         while (buffer_.size() >= 8) {
             uint32_t opcode = 0;
@@ -236,6 +297,21 @@ private:
 // Whether `url` answers at all, asked of curl -- the program the updater
 // uses too -- rather than this app growing an HTTP client for one question.
 bool curl_finds(const std::string& url) {
+#if defined(_WIN32)
+    // curl.exe, which Windows 10 and 11 come with.
+    WindowsLaunch launch;
+    launch.redirect = true;
+    HANDLE child = nullptr;
+    if (!start_windows_process("curl.exe", {"-sfI", "--max-time", "10", "-o", "NUL", url}, launch, child, nullptr,
+                               nullptr)) {
+        return false;
+    }
+    ::WaitForSingleObject(child, 15000);
+    DWORD code = 1;
+    ::GetExitCodeProcess(child, &code);
+    ::CloseHandle(child);
+    return code == 0;
+#else
     const pid_t child = ::fork();
     if (child < 0) return false;
     if (child == 0) {
@@ -252,7 +328,25 @@ bool curl_finds(const std::string& url) {
     while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
     }
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
 }
+
+#if defined(_WIN32)
+Link connect_to_discord(std::string* where) {
+    for (const std::string& path : discord_socket_paths()) {
+        const HANDLE pipe = ::CreateFileW(widen(path).c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                          0, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE) {
+            *where = path;
+            return pipe;
+        }
+    }
+    return kNoLink;
+}
+
+long this_process_id() { return static_cast<long>(::GetCurrentProcessId()); }
+#else
+long this_process_id() { return static_cast<long>(::getpid()); }
 
 int connect_to_discord(std::string* where) {
     for (const std::string& path : discord_socket_paths()) {
@@ -276,12 +370,13 @@ int connect_to_discord(std::string* where) {
     }
     return -1;
 }
+#endif
 
 }  // namespace
 
 void DiscordPresence::run() {
     using Clock = std::chrono::steady_clock;
-    int fd = -1;
+    Link fd = kNoLink;
     Reader reader;
     Clock::time_point next_look = Clock::now();
     long nonce = 0;
@@ -291,8 +386,8 @@ void DiscordPresence::run() {
     const ImageCheck image_exists = image_exists_ ? image_exists_ : ImageCheck(curl_finds);
 
     const auto hang_up = [&] {
-        if (fd >= 0) ::close(fd);
-        fd = -1;
+        if (fd != kNoLink) close_link(fd);
+        fd = kNoLink;
         reader = Reader();
         next_look = Clock::now() + std::chrono::seconds(5);
         std::lock_guard<std::mutex> lock(mutex_);
@@ -305,11 +400,11 @@ void DiscordPresence::run() {
             if (stopping_) break;
         }
 
-        if (fd < 0 && Clock::now() >= next_look) {
+        if (fd == kNoLink && Clock::now() >= next_look) {
             std::string where;
             fd = connect_to_discord(&where);
             bool ready = false;
-            if (fd >= 0) {
+            if (fd != kNoLink) {
                 const nlohmann::json hello = {{"v", 1}, {"client_id", application_id_}};
                 if (send_all(fd, discord_frame(Handshake, hello.dump()))) {
                     // READY, or a close saying why not -- a wrong application
@@ -335,7 +430,7 @@ void DiscordPresence::run() {
             }
         }
 
-        if (fd >= 0) {
+        if (fd != kNoLink) {
             DiscordActivity activity;
             bool tell = false;
             {
@@ -354,7 +449,7 @@ void DiscordPresence::run() {
                     }
                     if (!found->second) activity.image.clear();
                 }
-                if (send_all(fd, discord_frame(Frame, discord_activity_command(activity, static_cast<long>(::getpid()),
+                if (send_all(fd, discord_frame(Frame, discord_activity_command(activity, this_process_id(),
                                                                                 std::to_string(++nonce))))) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     // Unless it changed again while being sent.
@@ -365,7 +460,7 @@ void DiscordPresence::run() {
             }
             // Replies are read and dropped so they never fill the socket; a
             // refused activity is only worth a debug line.
-            if (fd >= 0 && !reader.pump(fd, 0, [](uint32_t, const std::string& json) {
+            if (fd != kNoLink && !reader.pump(fd, 0, [](uint32_t, const std::string& json) {
                     if (reply_is(json, "ERROR")) {
                         log_debug("Discord refused the activity: " + json);
                     }
@@ -378,16 +473,16 @@ void DiscordPresence::run() {
         if (stopping_) break;
         // Woken early by a new activity; otherwise often enough to notice
         // Discord going away or arriving.
-        wake_.wait_for(lock, std::chrono::milliseconds(fd >= 0 ? 1000 : 500),
-                       [&] { return stopping_ || (fd >= 0 && !told_); });
+        wake_.wait_for(lock, std::chrono::milliseconds(fd != kNoLink ? 1000 : 500),
+                       [&] { return stopping_ || (fd != kNoLink && !told_); });
     }
 
-    if (fd >= 0) {
+    if (fd != kNoLink) {
         // Cleared on the way out rather than left to Discord noticing the
         // process has gone, which it does, but slowly.
         send_all(fd, discord_frame(Frame, discord_activity_command(DiscordActivity(),
-                                                                    static_cast<long>(::getpid()), "bye")));
-        ::close(fd);
+                                                                    this_process_id(), "bye")));
+        close_link(fd);
     }
 }
 

@@ -63,7 +63,7 @@ public:
         // Something here moved it since it was last set -- a finger, the
         // cursor bringing the list with it: that wins over following. Not a
         // list's own rounding, turning rows into pixels and back.
-        if (following_ && !near(state, placed_, 0.001f)) following_ = false;
+        if (following_ && !close_to(state, placed_, 0.001f)) following_ = false;
         if (theirs != nullptr && theirs->page == shown && theirs->positions != heard_) {
             heard_ = theirs->positions;
             if (!scrolling_here) {
@@ -85,7 +85,7 @@ public:
             page->set_scroll_state(next, output_width, output_height);
             placed_ = page->scroll_state(output_width, output_height);
             // There, or as near as this screen goes: done.
-            if (near(placed_, state, 0.0001f) || placed_ == target_) following_ = false;
+            if (close_to(placed_, state, 0.0001f) || placed_ == target_) following_ = false;
             // Taken, not said: see above.
             shown_ = shown;
             said_ = placed_;
@@ -106,7 +106,7 @@ public:
     bool following() const { return following_; }
 
 private:
-    static bool near(const std::vector<float>& a, const std::vector<float>& b, float within) {
+    static bool close_to(const std::vector<float>& a, const std::vector<float>& b, float within) {
         if (a.size() != b.size()) return false;
         for (std::size_t index = 0; index < a.size(); ++index) {
             if (std::fabs(a[index] - b[index]) > within) return false;

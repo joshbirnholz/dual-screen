@@ -5741,7 +5741,7 @@ void App::Impl::start_updater(const AppOptions& options) {
     if (settings.wii_u_program.empty() && file_exists(cemu)) settings.wii_u_program = cemu;
     const bool cemu_in_use = settings.wii_u_program == cemu;
     std::vector<update::ComponentSpec> components =
-        update::components_for(update::kSteamOsAsset, build_number(), true,
+        update::components_for(update::kDesktopAsset, build_number(), true,
                                update::managed_cemu_build(paths.data_dir), cemu_in_use);
     // The DS and 3DS cores, from libretro's buildbot as RetroArch gets them:
     // kept up to date while the one in Dualscreen's cores folder is the one
@@ -6560,7 +6560,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure, G
                 const std::string& program = settings.external_program_for(system);
                 const bool missing =
                     program.empty() ? options.external_socket.empty()
-                                    : program.find('/') != std::string::npos && !file_exists(program);
+                                    : program.find_first_of("/\\") != std::string::npos && !file_exists(program);
                 if (missing && offer_emulator(system, rom_path, fatal_on_failure)) {
                     external_source.reset();
                     return false;

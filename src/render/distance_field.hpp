@@ -19,17 +19,17 @@ constexpr float kDistanceFieldSpread = 8.0f;
 namespace distance_field_detail {
 
 // Felzenszwalb and Huttenlocher's squared distance transform along one row:
-// each f[q] replaced by the least (q - p)^2 + f[p] over every p, or by `far`
-// where that is more. Only the texels nearer than `far` are looked at, which
+// each f[q] replaced by the least (q - p)^2 + f[p] over every p, or by `beyond`
+// where that is more. Only the texels nearer than `beyond` are looked at, which
 // away from the shapes is none. Where two parabolas cross is worked out from
 // their difference, which stays small, so floats are exact enough however
 // long the row is.
-inline void squared_distance_1d(const float* f, float* d, int n, float far, std::vector<int>& v,
+inline void squared_distance_1d(const float* f, float* d, int n, float beyond, std::vector<int>& v,
                                 std::vector<float>& z) {
     constexpr float kEnd = 1e30f;
     int k = -1;
     for (int q = 0; q < n; ++q) {
-        if (f[q] >= far) continue;
+        if (f[q] >= beyond) continue;
         if (k < 0) {
             k = 0;
             v[0] = q;
@@ -56,14 +56,14 @@ inline void squared_distance_1d(const float* f, float* d, int n, float far, std:
         z[k + 1] = kEnd;
     }
     if (k < 0) {
-        std::fill(d, d + n, far);
+        std::fill(d, d + n, beyond);
         return;
     }
     k = 0;
     for (int q = 0; q < n; ++q) {
         while (z[k + 1] < static_cast<float>(q)) ++k;
         const float dq = static_cast<float>(q - v[k]);
-        d[q] = std::min(far, dq * dq + f[v[k]]);
+        d[q] = std::min(beyond, dq * dq + f[v[k]]);
     }
 }
 
@@ -73,11 +73,11 @@ inline std::vector<float> squared_distances(const std::vector<uint8_t>& seed, in
     // Down the columns first, each texel's distance to the nearest seed above
     // or below it: two sweeps, a row at a time.
     std::vector<int> up(seed.size());
-    const int far = reach + 1;
+    const int beyond = reach + 1;
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const std::size_t i = static_cast<std::size_t>(y) * width + x;
-            up[i] = seed[i] ? 0 : (y == 0 ? far : std::min(far, up[i - width] + 1));
+            up[i] = seed[i] ? 0 : (y == 0 ? beyond : std::min(beyond, up[i - width] + 1));
         }
     }
     std::vector<float> grid(seed.size());
@@ -93,7 +93,7 @@ inline std::vector<float> squared_distances(const std::vector<uint8_t>& seed, in
     std::vector<float> in(static_cast<std::size_t>(width));
     std::vector<int> v(static_cast<std::size_t>(width));
     std::vector<float> z(static_cast<std::size_t>(width) + 1);
-    const float far_squared = static_cast<float>(far) * static_cast<float>(far);
+    const float far_squared = static_cast<float>(beyond) * static_cast<float>(beyond);
     for (int y = 0; y < height; ++y) {
         float* row = grid.data() + static_cast<std::size_t>(y) * width;
         std::copy(row, row + width, in.begin());

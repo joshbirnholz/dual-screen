@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "render/embedded_assets.hpp"
 #include "util/log.hpp"
@@ -93,7 +94,7 @@ void load_font_file(const std::string& path, std::vector<std::unique_ptr<LoadedF
     fonts.push_back(std::move(candidate.front()));
 }
 
-#if !defined(__SWITCH__) && !defined(__APPLE__)
+#if !defined(__SWITCH__) && !defined(__APPLE__) && !defined(_WIN32)
 // What fontconfig would draw a language in, when it is installed.
 std::string fontconfig_file(const char* language) {
     const std::string command = std::string("fc-match -f '%{file}' ':lang=") + language + "' 2>/dev/null";
@@ -137,6 +138,21 @@ const std::vector<std::unique_ptr<LoadedFont>>& fonts() {
                                  "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                                  "/Library/Fonts/Arial Unicode.ttf"}) {
             load_font_file(path, fonts);
+        }
+#elif defined(_WIN32)
+        // Windows's own: Yu Gothic (8.1 on) or MS Gothic, Microsoft YaHei, Malgun Gothic.
+        const char* windows = std::getenv("WINDIR");
+        const std::string folder = std::string(windows != nullptr && *windows != '\0' ? windows : "C:/Windows") +
+                                   "/Fonts/";
+        // One of each: the first that is there.
+        for (const auto& choices : {std::vector<const char*>{"YuGothR.ttc", "msgothic.ttc"},
+                                    std::vector<const char*>{"msyh.ttc", "msyh.ttf"},
+                                    std::vector<const char*>{"malgun.ttf"}}) {
+            for (const char* name : choices) {
+                const std::size_t before = fonts.size();
+                load_font_file(folder + name, fonts);
+                if (fonts.size() > before) break;
+            }
         }
 #else
         for (const char* language : {"ja", "zh-cn", "ko"}) load_font_file(fontconfig_file(language), fonts);

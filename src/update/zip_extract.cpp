@@ -84,21 +84,16 @@ bool list_zip(const std::string& zip, std::vector<std::string>& names, std::stri
     return true;
 }
 
-bool extract_zip_entry(const std::string& zip, const std::string& name, const std::string& out_path,
-                       std::string* error) {
+namespace {
+
+// One entry of an archive already read whole, written to `out_path`.
+bool extract_one(const std::vector<uint8_t>& data, const ZipEntry* found, const std::string& out_path,
+                 std::string* error) {
     const auto fail = [&](const std::string& why) {
         if (error != nullptr) *error = why;
         return false;
     };
-    std::vector<uint8_t> data;
-    if (!read_file(zip, data, error)) return false;
-    std::vector<ZipEntry> entries;
-    if (!read_directory(data, entries, error)) return false;
-    const ZipEntry* found = nullptr;
-    for (const ZipEntry& entry : entries) {
-        if (entry.name == name) found = &entry;
-    }
-    if (found == nullptr) return fail("the zip has no " + name);
+    const std::string& name = found->name;
     if (found->flags & 0x1) return fail("the zip is encrypted");
     if (found->size > kMaxEntry) return fail(name + " is too big");
     const std::size_t local = found->local_offset;
@@ -113,7 +108,7 @@ bool extract_zip_entry(const std::string& zip, const std::string& name, const st
     } else if (found->method == 8) {
         z_stream stream{};
         if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) return fail("zlib would not start");
-        stream.next_in = &data[start];
+        stream.next_in = const_cast<Bytef*>(&data[start]);
         stream.avail_in = found->compressed;
         stream.next_out = out.data();
         stream.avail_out = static_cast<uInt>(out.size());
@@ -127,6 +122,73 @@ bool extract_zip_entry(const std::string& zip, const std::string& name, const st
     const uLong crc = crc32(crc32(0L, Z_NULL, 0), out.data(), static_cast<uInt>(out.size()));
     if (static_cast<uint32_t>(crc) != found->crc) return fail(name + " is damaged");
     return write_file_atomically(out_path, out.data(), out.size(), error);
+}
+
+// A name that would land outside the folder it is unpacked into.
+bool escapes(const std::string& name) {
+    if (name.empty() || name.front() == '/' || name.front() == '\\' || name.find(':') != std::string::npos) {
+        return true;
+    }
+    std::size_t start = 0;
+    while (start <= name.size()) {
+        const std::size_t slash = name.find_first_of("/\\", start);
+        const std::string part = name.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+        if (part == "..") return true;
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+    return false;
+}
+
+}  // namespace
+
+bool extract_zip_entry(const std::string& zip, const std::string& name, const std::string& out_path,
+                       std::string* error) {
+    std::vector<uint8_t> data;
+    if (!read_file(zip, data, error)) return false;
+    std::vector<ZipEntry> entries;
+    if (!read_directory(data, entries, error)) return false;
+    const ZipEntry* found = nullptr;
+    for (const ZipEntry& entry : entries) {
+        if (entry.name == name) found = &entry;
+    }
+    if (found == nullptr) {
+        if (error != nullptr) *error = "the zip has no " + name;
+        return false;
+    }
+    return extract_one(data, found, out_path, error);
+}
+
+bool extract_zip_all(const std::string& zip, const std::string& folder, const std::string& under,
+                     std::vector<std::string>* written, std::string* error) {
+    std::vector<uint8_t> data;
+    if (!read_file(zip, data, error)) return false;
+    std::vector<ZipEntry> entries;
+    if (!read_directory(data, entries, error)) return false;
+    if (!ensure_directory(folder)) {
+        if (error != nullptr) *error = "could not make " + folder;
+        return false;
+    }
+    for (const ZipEntry& entry : entries) {
+        if (entry.name.compare(0, under.size(), under) != 0) continue;
+        const std::string inside = entry.name.substr(under.size());
+        if (inside.empty()) continue;
+        if (escapes(inside)) {
+            if (error != nullptr) *error = "the zip names a file outside its own folder: " + entry.name;
+            return false;
+        }
+        const std::string out = path_join(folder, inside);
+        if (inside.back() == '/' || inside.back() == '\\') {
+            if (!ensure_directory(out.substr(0, out.size() - 1))) {
+                if (error != nullptr) *error = "could not make " + out;
+                return false;
+            }
+            continue;
+        }
+        if (!extract_one(data, &entry, out, error)) return false;
+        if (written != nullptr) written->push_back(inside);
+    }
+    return true;
 }
 
 }  // namespace ds::update

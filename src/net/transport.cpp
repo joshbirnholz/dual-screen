@@ -1,16 +1,18 @@
 #include "net/transport.hpp"
 
-#include <arpa/inet.h>
+#include "net/socket_api.hpp"
+
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <time.h>
-#include <unistd.h>
+
+#if defined(_WIN32)
+#include <iphlpapi.h>
+#include <mstcpip.h>
+#undef interface  // see socket_api.hpp
+#include <chrono>
+#else
+#include <sys/ioctl.h>
+#endif
 
 #ifdef __SWITCH__
 #include <switch.h>
@@ -27,7 +29,7 @@
 //
 // Written as what the platform can do rather than which platform it is, so
 // raising Android's floor to 24 picks the real thing up on its own.
-#if defined(__SWITCH__)
+#if defined(__SWITCH__) || defined(_WIN32)
 #define DS_GETIFADDRS_AVAILABLE 0
 #elif defined(__ANDROID__) && defined(__ANDROID_API__) && __ANDROID_API__ < 24
 #define DS_GETIFADDRS_AVAILABLE 0
@@ -59,10 +61,7 @@
 namespace ds::net {
 namespace {
 
-bool set_non_blocking(int descriptor) {
-    const int flags = ::fcntl(descriptor, F_GETFL, 0);
-    return flags >= 0 && ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0;
-}
+bool set_non_blocking(int descriptor) { return set_socket_non_blocking(descriptor); }
 
 // Neither side ever sends anything the other doesn't need to reply to, so an
 // idle stream is normal, not a sign of trouble -- but a peer that vanished
@@ -77,7 +76,7 @@ bool set_non_blocking(int descriptor) {
 // within about ten seconds instead.
 void enable_keepalive(int descriptor) {
     const int one = 1;
-    ::setsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+    ::setsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, DS_SOCKOPT(&one), sizeof(one));
     // How soon the probes start and how often they repeat is a per-socket
     // option only where the TCP stack exposes one. Where it does not -- the
     // Switch's does not -- keepalive is still on, just on that stack's own
@@ -93,18 +92,30 @@ void enable_keepalive(int descriptor) {
     (void)probe_count;
     // Linux's name for "seconds of quiet before the first probe".
 #if defined(TCP_KEEPIDLE)
-    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, sizeof(idle_seconds));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, DS_SOCKOPT(&idle_seconds), sizeof(idle_seconds));
     // Apple's name for the same thing, and only the same thing -- the two
     // below it are spelled alike on both, which is why this is the one option
     // that needs saying twice rather than the whole block being duplicated.
 #elif defined(TCP_KEEPALIVE)
-    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPALIVE, &idle_seconds, sizeof(idle_seconds));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPALIVE, DS_SOCKOPT(&idle_seconds), sizeof(idle_seconds));
 #endif
 #if defined(TCP_KEEPINTVL)
-    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPINTVL, &interval_seconds, sizeof(interval_seconds));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPINTVL, DS_SOCKOPT(&interval_seconds), sizeof(interval_seconds));
 #endif
 #if defined(TCP_KEEPCNT)
-    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPCNT, &probe_count, sizeof(probe_count));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPCNT, DS_SOCKOPT(&probe_count), sizeof(probe_count));
+#endif
+#if defined(_WIN32)
+    // And the way every Windows takes it, which the options above (Windows
+    // 10 1709 on) only spell differently: in milliseconds, with the number
+    // of probes fixed by Windows at ten.
+    tcp_keepalive timing {};
+    timing.onoff = 1;
+    timing.keepalivetime = static_cast<ULONG>(idle_seconds) * 1000u;
+    timing.keepaliveinterval = static_cast<ULONG>(interval_seconds) * 1000u;
+    DWORD returned = 0;
+    ::WSAIoctl(static_cast<SOCKET>(descriptor), SIO_KEEPALIVE_VALS, &timing, sizeof(timing), nullptr, 0, &returned,
+               nullptr, nullptr);
 #endif
 }
 
@@ -126,7 +137,7 @@ void enable_keepalive(int descriptor) {
 constexpr int kSendQueueBytes = 64 * 1024;
 
 void bound_send_queue(int descriptor) {
-    ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &kSendQueueBytes, sizeof(kSendQueueBytes));
+    ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, DS_SOCKOPT(&kSendQueueBytes), sizeof(kSendQueueBytes));
 }
 
 // Writing to a socket whose peer has gone raises SIGPIPE, which by default
@@ -161,7 +172,7 @@ constexpr int kSendFlags = 0;
 // error text suggests. It reaches the player, not just the log -- the session
 // puts its failure reason on screen.
 std::string explain_connect_error(int code, const std::string& address) {
-    std::string reason = std::string("connect: ") + std::strerror(code);
+    std::string reason = std::string("connect: ") + socket_error_text(code);
 #if defined(__APPLE__)
     if (code == EHOSTUNREACH || code == ENETUNREACH || code == EPERM || code == EACCES) {
         reason += " (" + address +
@@ -177,7 +188,7 @@ std::string explain_connect_error(int code, const std::string& address) {
 void refuse_sigpipe(int descriptor) {
 #if defined(SO_NOSIGPIPE)
     const int one = 1;
-    ::setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+    ::setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, DS_SOCKOPT(&one), sizeof(one));
 #else
     (void)descriptor;
 #endif
@@ -231,8 +242,8 @@ bool send_from(int descriptor, const LocalNetwork& network, const sockaddr_in& t
     }
 #endif
     (void)network;
-    return ::sendto(descriptor, data, size, 0, reinterpret_cast<const sockaddr*>(&to), sizeof(to)) ==
-           static_cast<ssize_t>(size);
+    return ::sendto(descriptor, DS_SOCKBUF(data), static_cast<int>(size), 0,
+                    reinterpret_cast<const sockaddr*>(&to), sizeof(to)) == static_cast<ssize_t>(size);
 }
 
 // A wire beats a radio: it is the faster and steadier of the two, and unlike
@@ -254,6 +265,11 @@ std::string describe(const sockaddr_in& address) {
 }  // namespace
 
 uint64_t monotonic_millis() {
+#if defined(_WIN32)
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count());
+#endif
     timespec now {};
     ::clock_gettime(CLOCK_MONOTONIC, &now);
     return static_cast<uint64_t>(now.tv_sec) * 1000u + static_cast<uint64_t>(now.tv_nsec) / 1000000u;
@@ -313,7 +329,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
     const int one = 1;
     // Frames are latency-sensitive and small; waiting to coalesce them adds
     // exactly the delay this is meant to avoid.
-    ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, DS_SOCKOPT(&one), sizeof(one));
     bound_send_queue(descriptor);
     enable_keepalive(descriptor);
     return stream;
@@ -323,15 +339,15 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
     close();
     connect_error_ = 0;
 
-    descriptor_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    descriptor_ = open_socket(AF_INET, SOCK_STREAM, 0);
     if (descriptor_ < 0) {
-        if (error != nullptr) *error = std::string("socket: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("socket: ") + socket_error_text(socket_error());
         return false;
     }
     set_non_blocking(descriptor_);
     refuse_sigpipe(descriptor_);
     const int one = 1;
-    ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, DS_SOCKOPT(&one), sizeof(one));
     bound_send_queue(descriptor_);
     enable_keepalive(descriptor_);
     // Control messages are small and rare, but they are also the ones a player
@@ -353,11 +369,12 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
         connecting_ = false;
         return true;
     }
-    if (errno == EINPROGRESS) {
+    const int connect_code = socket_error();
+    if (socket_connect_pending(connect_code)) {
         connecting_ = true;
         return true;
     }
-    connect_error_ = errno;
+    connect_error_ = connect_code;
     if (error != nullptr) *error = explain_connect_error(connect_error_, address);
     close();
     return false;
@@ -368,7 +385,7 @@ std::string TcpStream::local_address() const {
         return std::string();
     }
     sockaddr_in local {};
-    socklen_t length = sizeof(local);
+    socklen_type length = sizeof(local);
     if (::getsockname(descriptor_, reinterpret_cast<sockaddr*>(&local), &length) != 0) {
         return std::string();
     }
@@ -377,7 +394,7 @@ std::string TcpStream::local_address() const {
 
 void TcpStream::close() {
     if (descriptor_ >= 0) {
-        ::close(descriptor_);
+        close_socket(descriptor_);
         descriptor_ = -1;
     }
     connecting_ = false;
@@ -434,18 +451,18 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
         pollfd waiting {};
         waiting.fd = descriptor_;
         waiting.events = POLLOUT;
-        const int ready = ::poll(&waiting, 1, 0);
-        if (ready < 0 && errno != EINTR) {
-            if (error != nullptr) *error = std::string("poll: ") + std::strerror(errno);
+        const int ready = poll_sockets(&waiting, 1, 0);
+        if (ready < 0 && socket_error() != EINTR) {
+            if (error != nullptr) *error = std::string("poll: ") + socket_error_text(socket_error());
             return false;
         }
         if (ready <= 0 || (waiting.revents & (POLLOUT | POLLERR | POLLHUP)) == 0) {
             return true;  // still handshaking
         }
         int result = 0;
-        socklen_t length = sizeof(result);
-        if (::getsockopt(descriptor_, SOL_SOCKET, SO_ERROR, &result, &length) != 0) {
-            if (error != nullptr) *error = std::string("getsockopt: ") + std::strerror(errno);
+        socklen_type length = sizeof(result);
+        if (::getsockopt(descriptor_, SOL_SOCKET, SO_ERROR, DS_SOCKOPT_OUT(&result), &length) != 0) {
+            if (error != nullptr) *error = std::string("getsockopt: ") + socket_error_text(socket_error());
             return false;
         }
         if (result != 0) {
@@ -461,16 +478,17 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
 
     // Writes first, so a frame queued this tick goes out this tick.
     while (outbox_sent_ < outbox_.size()) {
-        const ssize_t written = ::send(descriptor_, outbox_.data() + outbox_sent_,
-                                       outbox_.size() - outbox_sent_, kSendFlags);
+        const ssize_t written = ::send(descriptor_, DS_SOCKBUF(outbox_.data() + outbox_sent_),
+                                       static_cast<int>(outbox_.size() - outbox_sent_), kSendFlags);
         if (written > 0) {
             outbox_sent_ += static_cast<std::size_t>(written);
             continue;
         }
-        if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        const int send_code = written < 0 ? socket_error() : 0;
+        if (written < 0 && socket_would_block(send_code)) {
             break;  // the kernel buffer is full; the rest goes next tick
         }
-        if (error != nullptr) *error = std::string("send: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("send: ") + socket_error_text(send_code);
         return false;
     }
     if (outbox_sent_ > 0) {
@@ -480,7 +498,7 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
 
     uint8_t chunk[64 * 1024];
     while (true) {
-        const ssize_t read = ::recv(descriptor_, chunk, sizeof(chunk), 0);
+        const ssize_t read = ::recv(descriptor_, DS_SOCKBUF_OUT(chunk), sizeof(chunk), 0);
         if (read > 0) {
             inbox.insert(inbox.end(), chunk, chunk + read);
             continue;
@@ -489,13 +507,14 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
             if (error != nullptr) *error = "the other device disconnected";
             return false;
         }
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        const int recv_code = socket_error();
+        if (socket_would_block(recv_code)) {
             break;
         }
-        if (errno == EINTR) {
+        if (recv_code == EINTR) {
             continue;
         }
-        if (error != nullptr) *error = std::string("recv: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("recv: ") + socket_error_text(recv_code);
         return false;
     }
     return true;
@@ -508,13 +527,19 @@ TcpListener::~TcpListener() { stop(); }
 bool TcpListener::start(uint16_t port, std::string* error) {
     stop();
 
-    descriptor_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    descriptor_ = open_socket(AF_INET, SOCK_STREAM, 0);
     if (descriptor_ < 0) {
-        if (error != nullptr) *error = std::string("socket: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("socket: ") + socket_error_text(socket_error());
         return false;
     }
+    // Lets a restarted host take its port straight back rather than waiting
+    // out TIME_WAIT. Not on Windows, where SO_REUSEADDR means something else
+    // entirely -- a second listener stealing a port that is still in use --
+    // and a closed listener's port is free again at once anyway.
+#if !defined(_WIN32)
     const int one = 1;
-    ::setsockopt(descriptor_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_REUSEADDR, DS_SOCKOPT(&one), sizeof(one));
+#endif
     set_non_blocking(descriptor_);
     refuse_sigpipe(descriptor_);
 
@@ -524,19 +549,19 @@ bool TcpListener::start(uint16_t port, std::string* error) {
     address.sin_port = htons(port);
     if (::bind(descriptor_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
         if (error != nullptr) {
-            *error = "cannot listen on port " + std::to_string(port) + ": " + std::strerror(errno);
+            *error = "cannot listen on port " + std::to_string(port) + ": " + socket_error_text(socket_error());
         }
         stop();
         return false;
     }
     if (::listen(descriptor_, 4) != 0) {
-        if (error != nullptr) *error = std::string("listen: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("listen: ") + socket_error_text(socket_error());
         stop();
         return false;
     }
 
     // Port 0 means "any free port"; read back what we actually got.
-    socklen_t length = sizeof(address);
+    socklen_type length = sizeof(address);
     if (::getsockname(descriptor_, reinterpret_cast<sockaddr*>(&address), &length) == 0) {
         port_ = ntohs(address.sin_port);
     } else {
@@ -547,7 +572,7 @@ bool TcpListener::start(uint16_t port, std::string* error) {
 
 void TcpListener::stop() {
     if (descriptor_ >= 0) {
-        ::close(descriptor_);
+        close_socket(descriptor_);
         descriptor_ = -1;
     }
     port_ = 0;
@@ -558,8 +583,8 @@ bool TcpListener::accept(TcpStream& out) {
         return false;
     }
     sockaddr_in peer {};
-    socklen_t length = sizeof(peer);
-    const int accepted = ::accept(descriptor_, reinterpret_cast<sockaddr*>(&peer), &length);
+    socklen_type length = sizeof(peer);
+    const int accepted = static_cast<int>(::accept(descriptor_, reinterpret_cast<sockaddr*>(&peer), &length));
     if (accepted < 0) {
         return false;
     }
@@ -613,36 +638,36 @@ void mark_as_interactive_media(int descriptor) {
     // DSCP 46 (Expedited Forwarding) in the upper six bits: 46 << 2 == 0xb8.
     // The same value Moonlight uses.
     const int tos = 0xb8;
-    ::setsockopt(descriptor, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+    ::setsockopt(descriptor, IPPROTO_IP, IP_TOS, DS_SOCKOPT(&tos), sizeof(tos));
 #endif
 #if defined(SO_PRIORITY)
     // And the local queue this leaves by, which on Linux is a separate
     // decision from what the IP header says: 6 is the band mapped to
     // interactive traffic by the default qdisc.
     const int priority = 6;
-    ::setsockopt(descriptor, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority));
+    ::setsockopt(descriptor, SOL_SOCKET, SO_PRIORITY, DS_SOCKOPT(&priority), sizeof(priority));
 #endif
 #if defined(SO_NET_SERVICE_TYPE) && defined(NET_SERVICE_TYPE_VI)
     // Apple's own name for the same idea, which is what actually reaches the
     // wifi driver on a Mac; the ToS byte alone does not.
     const int service = NET_SERVICE_TYPE_VI;
-    ::setsockopt(descriptor, SOL_SOCKET, SO_NET_SERVICE_TYPE, &service, sizeof(service));
+    ::setsockopt(descriptor, SOL_SOCKET, SO_NET_SERVICE_TYPE, DS_SOCKOPT(&service), sizeof(service));
 #endif
 }
 
 bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* error) {
     stop();
 
-    descriptor_ = ::socket(AF_INET, SOCK_DGRAM, 0);
+    descriptor_ = open_socket(AF_INET, SOCK_DGRAM, 0);
     if (descriptor_ < 0) {
-        if (error != nullptr) *error = std::string("socket: ") + std::strerror(errno);
+        if (error != nullptr) *error = std::string("socket: ") + socket_error_text(socket_error());
         return false;
     }
     set_non_blocking(descriptor_);
     const int one = 1;
-    ::setsockopt(descriptor_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_REUSEADDR, DS_SOCKOPT(&one), sizeof(one));
     if (allow_broadcast) {
-        ::setsockopt(descriptor_, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
+        ::setsockopt(descriptor_, SOL_SOCKET, SO_BROADCAST, DS_SOCKOPT(&one), sizeof(one));
     }
     // The same motivation as TCP's own bound_send_queue() -- see its comment
     // -- but not the same number. TCP's 64KB is fine for that connection's
@@ -660,7 +685,7 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     // streams at, while still well short of the kernel's own default (which
     // is what let latency grow unseen in the first place).
     constexpr int kMediaSendQueueBytes = 512 * 1024;
-    ::setsockopt(descriptor_, SOL_SOCKET, SO_SNDBUF, &kMediaSendQueueBytes,
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_SNDBUF, DS_SOCKOPT(&kMediaSendQueueBytes),
                 sizeof(kMediaSendQueueBytes));
     // And the same argument for the other end of the wire, which turned out
     // to matter more. A receiving app drains this once a frame; between two
@@ -677,7 +702,7 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     // that. Which is why the Switch build also raises the ceiling itself --
     // see socketInitialize() in the companion's main().
     constexpr int kMediaReceiveQueueBytes = 1024 * 1024;
-    ::setsockopt(descriptor_, SOL_SOCKET, SO_RCVBUF, &kMediaReceiveQueueBytes,
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_RCVBUF, DS_SOCKOPT(&kMediaReceiveQueueBytes),
                 sizeof(kMediaReceiveQueueBytes));
 
     mark_as_interactive_media(descriptor_);
@@ -690,7 +715,7 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
         if (::bind(descriptor_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
             if (error != nullptr) {
                 *error = "cannot bind UDP port " + std::to_string(listen_port) + ": " +
-                         std::strerror(errno);
+                         socket_error_text(socket_error());
             }
             stop();
             return false;
@@ -701,7 +726,7 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
 
 void UdpSocket::stop() {
     if (descriptor_ >= 0) {
-        ::close(descriptor_);
+        close_socket(descriptor_);
         descriptor_ = -1;
     }
     // A pin belongs to the session that set it. Left behind, it would be
@@ -762,7 +787,7 @@ bool UdpSocket::send_to(const std::string& address, uint16_t port, const uint8_t
         // on, doing the opposite job here: holding one session to one of them.
         return send_from(descriptor_, source_, target, data, size);
     }
-    const ssize_t sent = ::sendto(descriptor_, data, size, 0,
+    const ssize_t sent = ::sendto(descriptor_, DS_SOCKBUF(data), static_cast<int>(size), 0,
                                   reinterpret_cast<sockaddr*>(&target), sizeof(target));
     return sent == static_cast<ssize_t>(size);
 }
@@ -783,8 +808,8 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address,
     // that overran it, not the real bound.
     uint8_t chunk[4096];
     sockaddr_in peer {};
-    socklen_t length = sizeof(peer);
-    const ssize_t read = ::recvfrom(descriptor_, chunk, sizeof(chunk), 0,
+    socklen_type length = sizeof(peer);
+    const ssize_t read = ::recvfrom(descriptor_, DS_SOCKBUF_OUT(chunk), sizeof(chunk), 0,
                                     reinterpret_cast<sockaddr*>(&peer), &length);
     if (read <= 0) {
         return false;
@@ -802,7 +827,7 @@ bool UdpSocket::wait_readable(int timeout_ms) const {
     pollfd waiting {};
     waiting.fd = descriptor_;
     waiting.events = POLLIN;
-    return ::poll(&waiting, 1, timeout_ms) > 0 && (waiting.revents & POLLIN) != 0;
+    return poll_sockets(&waiting, 1, timeout_ms) > 0 && (waiting.revents & POLLIN) != 0;
 }
 
 std::vector<LocalNetwork> local_networks() {
@@ -834,6 +859,46 @@ std::vector<LocalNetwork> local_networks() {
             networks.push_back(network);
         }
         ::freeifaddrs(list);
+    }
+#elif defined(_WIN32)
+    // Windows's interface list. Only adapters that are up and have an IPv4
+    // address; the broadcast address is worked out from the prefix length,
+    // since Windows reports no broadcast address of its own.
+    ensure_sockets();
+    ULONG bytes = 16 * 1024;
+    std::vector<uint8_t> buffer;
+    ULONG result = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; ++attempt) {
+        buffer.resize(bytes);
+        result = ::GetAdaptersAddresses(
+            AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &bytes);
+    }
+    if (result == NO_ERROR) {
+        for (auto* adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()); adapter != nullptr;
+             adapter = adapter->Next) {
+            if (adapter->OperStatus != IfOperStatusUp) continue;
+            for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
+                const sockaddr* raw = unicast->Address.lpSockaddr;
+                if (raw == nullptr || raw->sa_family != AF_INET) continue;
+                const sockaddr_in own = *reinterpret_cast<const sockaddr_in*>(raw);
+                LocalNetwork network;
+                network.interface = adapter->AdapterName != nullptr ? adapter->AdapterName : "";
+                network.address = describe(own);
+                network.wireless = adapter->IfType == IF_TYPE_IEEE80211;
+                if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+                    network.broadcast = network.address;
+                } else {
+                    const unsigned prefix = unicast->OnLinkPrefixLength;
+                    if (prefix == 0 || prefix > 32) continue;
+                    const uint32_t mask = prefix == 32 ? 0xFFFFFFFFu : ~(0xFFFFFFFFu >> prefix);
+                    sockaddr_in everyone = own;
+                    everyone.sin_addr.s_addr = own.sin_addr.s_addr | htonl(~mask);
+                    network.broadcast = describe(everyone);
+                }
+                networks.push_back(network);
+            }
+        }
     }
 #elif defined(__SWITCH__)
     // No interface list here, but the console is only ever on one network,

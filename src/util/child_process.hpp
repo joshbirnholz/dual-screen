@@ -31,6 +31,12 @@ public:
 
 private:
     int pid_ = -1;
+#if defined(_WIN32)
+    // The process, and the job it runs in: the job is what lets stop() end
+    // whatever it started too, as a process group does elsewhere.
+    void* process_ = nullptr;
+    void* job_ = nullptr;
+#endif
 };
 
 }  // namespace ds

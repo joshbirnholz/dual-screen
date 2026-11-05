@@ -104,7 +104,12 @@ bool safe_path(const std::string& path) {
 
 bool remove_tree(const std::string& path) {
     struct stat status {};
+#if defined(_WIN32)
+    // No symbolic links to keep from following here.
+    if (::stat(path.c_str(), &status) != 0) return errno == ENOENT;
+#else
     if (::lstat(path.c_str(), &status) != 0) return errno == ENOENT;
+#endif
     if (!S_ISDIR(status.st_mode)) return std::remove(path.c_str()) == 0;
     if (DIR* handle = ::opendir(path.c_str())) {
         while (const struct dirent* entry = ::readdir(handle)) {

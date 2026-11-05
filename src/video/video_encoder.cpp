@@ -36,6 +36,12 @@ std::string av_error(int code) {
 // encoding on a Deck and encoding anywhere else.
 AVHWDeviceType hw_device_for(const std::string& backend) {
     if (backend.find("_vaapi") != std::string::npos) return AV_HWDEVICE_TYPE_VAAPI;
+#if defined(_WIN32)
+    // NVENC on Windows takes pictures from memory as they are -- it uploads
+    // them itself -- so there is no CUDA device to open first, and no CUDA
+    // in the FFmpeg built for it.
+    if (backend.find("_nvenc") != std::string::npos) return AV_HWDEVICE_TYPE_NONE;
+#endif
     if (backend.find("_nvenc") != std::string::npos) return AV_HWDEVICE_TYPE_CUDA;
     if (backend.find("_qsv") != std::string::npos) return AV_HWDEVICE_TYPE_QSV;
     return AV_HWDEVICE_TYPE_NONE;
@@ -75,6 +81,14 @@ void ffmpeg_log_callback(void* /*avcl*/, int level, const char* fmt, va_list arg
 
 }  // namespace
 
+// The encoder FFmpeg knows a backend label by. "h264_mf_software" is
+// Media Foundation asked for Windows's own software encoder rather than the
+// GPU's -- one encoder, two ways of opening it.
+std::string ffmpeg_encoder_name(const std::string& backend) {
+    if (backend == "h264_mf_software") return "h264_mf";
+    return backend;
+}
+
 bool have_ffmpeg() { return true; }
 
 bool have_h264_encoder() {
@@ -83,10 +97,27 @@ bool have_h264_encoder() {
     // nothing, and asking whether FFmpeg was there said a Switch hosting a
     // game could send video -- which it then tried, mid-race, and could not.
     static const bool found = [] {
+#if defined(_WIN32)
+        // Every Windows build has all of Windows's encoders in it, and which
+        // of them opens is the machine's business -- a GPU's driver, or
+        // Media Foundation, which an "N" edition of Windows comes without.
+        // So the question is asked of the machine, once, with a small
+        // picture: a host told it can send video that then cannot open an
+        // encoder sends a large screen nowhere while it keeps retrying.
+        EncoderConfig probe;
+        probe.width = 64;
+        probe.height = 64;
+        VideoEncoder encoder;
+        std::string why;
+        const bool opens = encoder.open(probe, &why);
+        if (!opens) log_info("video encoder: none opens on this PC (" + why + "), so screens go as tiles");
+        return opens;
+#else
         for (const std::string& name : EncoderConfig{}.backends) {
-            if (avcodec_find_encoder_by_name(name.c_str()) != nullptr) return true;
+            if (avcodec_find_encoder_by_name(ffmpeg_encoder_name(name).c_str()) != nullptr) return true;
         }
         return false;
+#endif
     }();
     return found;
 }
@@ -174,7 +205,7 @@ bool VideoEncoder::open(const EncoderConfig& config, std::string* error) {
 bool VideoEncoder::open_backend(const std::string& name,
                                 const EncoderConfig& config,
                                 std::string* error) {
-    const AVCodec* codec = avcodec_find_encoder_by_name(name.c_str());
+    const AVCodec* codec = avcodec_find_encoder_by_name(ffmpeg_encoder_name(name).c_str());
     if (codec == nullptr) {
         if (error != nullptr) *error = "this build has no such encoder";
         return false;
@@ -273,8 +304,10 @@ bool VideoEncoder::open_backend(const std::string& name,
     // rejecting it once the actual hardware encode runs, which is what the
     // "invalid VASurfaceID" failure at vaEndPicture actually was. Software
     // encoding has no such constraint, and libx264 wants YUV420P.
+    // Windows's encoders below take NV12 from memory too, with no device.
+    const bool windows_encoder = name == "h264_nvenc" || name == "h264_amf" || name.rfind("h264_mf", 0) == 0;
     const AVPixelFormat software_format =
-        (hw_type != AV_HWDEVICE_TYPE_NONE) ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
+        (hw_type != AV_HWDEVICE_TYPE_NONE || windows_encoder) ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
     if (hw_type != AV_HWDEVICE_TYPE_NONE) {
         context_->pix_fmt = hw_pixel_format(hw_type);
         AVBufferRef* frames = av_hwframe_ctx_alloc(hw_device_);
@@ -320,6 +353,30 @@ bool VideoEncoder::open_backend(const std::string& name,
                 depth = std::max(1, std::atoi(wanted));
             }
             av_opt_set_int(context_->priv_data, "async_depth", depth, 0);
+        }
+    } else if (windows_encoder) {
+        // Windows's encoders, which take pictures straight from memory. NV12
+        // is the one format all three take natively.
+        context_->pix_fmt = AV_PIX_FMT_NV12;
+        if (name == "h264_nvenc") {
+            // The fastest preset, tuned for ultra-low latency, nothing held
+            // back to look ahead: what Sunshine asks NVENC for.
+            av_opt_set(context_->priv_data, "preset", "p1", 0);
+            av_opt_set(context_->priv_data, "tune", "ull", 0);
+            av_opt_set_int(context_->priv_data, "zerolatency", 1, 0);
+            av_opt_set_int(context_->priv_data, "delay", 0, 0);
+            av_opt_set(context_->priv_data, "rc", "cbr", 0);
+        } else if (name == "h264_amf") {
+            av_opt_set(context_->priv_data, "usage", "ultralowlatency", 0);
+            av_opt_set(context_->priv_data, "quality", "speed", 0);
+            av_opt_set(context_->priv_data, "rc", "cbr", 0);
+        } else {
+            // Media Foundation's "display remoting" scenario is the one meant
+            // for exactly this: a desktop's picture sent live to another
+            // screen. The GPU's encoder unless asked for the software one.
+            av_opt_set(context_->priv_data, "scenario", "display_remoting", 0);
+            av_opt_set(context_->priv_data, "rate_control", "cbr", 0);
+            av_opt_set_int(context_->priv_data, "hw_encoding", name == "h264_mf" ? 1 : 0, 0);
         }
     } else {
         context_->pix_fmt = software_format;

@@ -5,6 +5,15 @@
 
 #include "layout/layout.hpp"
 
+// What a libretro core's file ends in here: a DLL on Windows, a shared
+// object everywhere else (RetroArch names its macOS cores .dylib, but the
+// cores this app looks for by name are its Linux-style ones there too).
+#if defined(_WIN32)
+#define DS_CORE_SUFFIX ".dll"
+#else
+#define DS_CORE_SUFFIX ".so"
+#endif
+
 namespace ds {
 
 // Which console a game belongs to. Everything that differs between them -- the

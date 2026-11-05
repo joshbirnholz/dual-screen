@@ -9,6 +9,7 @@
 // packet out, every single time", and it is the first thing below.
 
 #include "test_support.hpp"
+#include "video_support.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -74,7 +75,11 @@ video::EncoderConfig software_config() {
     config.height = kHeight;
     config.fps = kFps;
     config.bitrate_kbps = 4000;
+#if defined(_WIN32)
+    // Whichever of Windows's own opens; see EncoderConfig.
+#else
     config.backends = {"libx264", "h264_v4l2m2m"};
+#endif
     return config;
 }
 
@@ -441,7 +446,12 @@ void test_anything_that_can_encode_can_also_decode() {
     // And the FFmpeg question is not the decode question. On this machine
     // they happen to agree; the point is that they are asked separately, so
     // that a platform where they differ has somewhere to say so.
+#if defined(_WIN32)
+    // Windows's answer is whether one opens, which under Wine none does.
+    CHECK(video::can_encode() == test::video_encodes_here());
+#else
     CHECK(video::can_encode() == video::have_ffmpeg());
+#endif
 }
 
 int main() {
@@ -456,6 +466,14 @@ int main() {
         test::skip("this build has no video codec, so there was nothing to test");
         return test::finish("video-codec");
     }
+#if defined(_WIN32)
+    // Windows's encoders are the GPU's and Media Foundation's; under Wine
+    // there are none to open, and nothing below can be tested.
+    if (!test::video_encodes_here()) {
+        test::skip("no H.264 encoder opens on this machine");
+        return test::finish("video-codec");
+    }
+#endif
     test_every_frame_comes_straight_back_out();
     test_the_first_frame_stands_alone_and_more_can_be_asked_for();
     test_the_picture_survives_the_round_trip();

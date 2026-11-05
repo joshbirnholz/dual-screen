@@ -48,21 +48,25 @@ target_link_libraries(dualscreen_companion_local_play PRIVATE dualscreen_core)
 target_compile_options(dualscreen_companion_local_play PRIVATE -Wall -Wextra)
 dualscreen_add_mock_core(mock_core_3ds mock_3ds_libretro MOCK_CORE_3DS)
 
-set(MOCK_CORE_PATH "${CMAKE_BINARY_DIR}/tests/mock_ds_libretro.so")
-set(MOCK_CORE_3DS_PATH "${CMAKE_BINARY_DIR}/tests/mock_3ds_libretro.so")
+set(MOCK_CORE_PATH "${CMAKE_BINARY_DIR}/tests/mock_ds_libretro${CMAKE_SHARED_MODULE_SUFFIX}")
+set(MOCK_CORE_3DS_PATH "${CMAKE_BINARY_DIR}/tests/mock_3ds_libretro${CMAKE_SHARED_MODULE_SUFFIX}")
 
 function(dualscreen_add_test name)
     add_executable(${name} ${name}.cpp)
     target_link_libraries(${name} PRIVATE dualscreen_core)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(${name} PRIVATE -Wall -Wextra)
+    if(WIN32)
+        # mkdtemp(), setenv() and friends -- see the header.
+        target_compile_options(${name} PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/win_compat.hpp)
+    endif()
     # Most tests need no display, and pinning the dummy driver keeps them
     # independent of whatever SDL_VIDEODRIVER is set in the caller's
     # environment. NEEDS_GL marks the ones that do need a real context -- a
     # core rendering on the GPU cannot be tested without one -- and those run
     # under Xvfb where it is available.
     cmake_parse_arguments(ARG "NEEDS_GL" "" "" ${ARGN})
-    if(ARG_NEEDS_GL AND XVFB_RUN_EXECUTABLE)
+    if(ARG_NEEDS_GL AND XVFB_RUN_EXECUTABLE AND NOT WIN32)
         add_test(NAME ${name} COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 320x240x24" $<TARGET_FILE:${name}>)
         set(driver "x11")
     else()
@@ -129,6 +133,10 @@ dualscreen_add_test(test_protocol)
 dualscreen_add_test(test_audio)
 dualscreen_add_test(test_dsu)
 
+# The Switch's halves, compiled by this machine's compiler against stubs of
+# libnx -- meaningful for a compiler like the Switch's (LP64), which a
+# Windows one (LLP64) is not.
+if(NOT WIN32)
 # The Switch build cannot run here, so at least hold its libnx calls to the
 # right signatures -- see run_switch_typecheck.cmake for what that is and is
 # not worth.
@@ -167,6 +175,7 @@ add_test(NAME switch_local_play_typecheck
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party;${CMAKE_SOURCE_DIR}/companion/source;${DUALSCREEN_JSON_INCLUDES}"
         "-DDEFINES=DS_STATIC_LIBRETRO_CORE=1;DS_LOCAL_PLAY=1;DS_HAVE_VIDEO_CODEC=0"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+endif()
 
 # And whether switch/Makefile still lists everything the companion is built
 # from. See the script for the two times it did not.
@@ -302,7 +311,7 @@ add_dependencies(test_core_host mock_core mock_core_3ds)
 
 # End-to-end smoke test: runs the real binary against the mock core under a
 # headless X server and checks the composited output pixel by pixel.
-if(XVFB_RUN_EXECUTABLE)
+if(XVFB_RUN_EXECUTABLE AND NOT WIN32)
     add_test(NAME smoke_headless
         COMMAND ${CMAKE_COMMAND}
             -DXVFB_RUN=${XVFB_RUN_EXECUTABLE}

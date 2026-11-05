@@ -5,7 +5,12 @@
 
 #include <SDL.h>
 #if !DS_STATIC_LIBRETRO_CORE
+#if defined(_WIN32)
+#include "config/paths.hpp"
+#include "util/win_text.hpp"
+#else
 #include <dlfcn.h>
+#endif
 #endif
 
 #include <algorithm>
@@ -94,6 +99,24 @@ void* open_core_library(const std::string& core_path, std::string* error) {
         path = DS_BUNDLED_LIBRETRO_CORE;
     }
 #endif
+#if defined(_WIN32)
+    // A core's own DLLs (Azahar's, say) are looked for beside the core
+    // rather than beside this program: LOAD_WITH_ALTERED_SEARCH_PATH.
+    void* handle = reinterpret_cast<void*>(
+        ::LoadLibraryExW(widen(generic_to_native_path(path)).c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH));
+    if (handle == nullptr && error != nullptr) {
+        log_warn("could not load the core at " + path + ": " + windows_error_text(::GetLastError()));
+        *error = "The emulator at " + path + " couldn't be loaded.";
+    }
+    return handle;
+}
+
+void* find_core_symbol(void* handle, const char* name) {
+    return reinterpret_cast<void*>(::GetProcAddress(static_cast<HMODULE>(handle), name));
+}
+
+void close_core_library(void* handle) { ::FreeLibrary(static_cast<HMODULE>(handle)); }
+#else
     // RTLD_LOCAL keeps the core's symbols out of the global namespace; cores
     // routinely bundle their own copies of zlib and friends.
     void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
@@ -108,6 +131,7 @@ void* open_core_library(const std::string& core_path, std::string* error) {
 void* find_core_symbol(void* handle, const char* name) { return dlsym(handle, name); }
 
 void close_core_library(void* handle) { dlclose(handle); }
+#endif
 #endif
 
 // The libretro callback surface is plain C function pointers with no user-data

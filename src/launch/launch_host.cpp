@@ -30,6 +30,12 @@
 #define DUALSCREEN_CAN_SPAWN 1
 #endif
 
+#if defined(_WIN32)
+#include <shellapi.h>
+
+#include "util/win_process.hpp"
+#endif
+
 namespace ds {
 
 namespace {
@@ -41,9 +47,100 @@ std::atomic<bool> g_stop{false};
 void on_stop_signal(int) { g_stop = true; }
 
 std::string home_dir() {
+#if defined(_WIN32)
+    const char* home = std::getenv("USERPROFILE");
+    return home != nullptr ? native_to_generic_path(home) : "";
+#else
     const char* home = std::getenv("HOME");
     return home != nullptr ? home : "";
+#endif
 }
+
+#if defined(_WIN32)
+// Remote Start on Windows: a per-user "Run" entry starts the service at every
+// sign-in, as systemd's user unit does elsewhere, and a named event tells a
+// running one to stop. Nothing here needs administrator rights.
+constexpr const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr const wchar_t* kRunValue = L"Dualscreen Remote Start";
+constexpr const wchar_t* kStopEvent = L"Local\\DualscreenRemoteStartStop";
+constexpr const wchar_t* kServiceMutex = L"Local\\DualscreenRemoteStartService";
+
+std::wstring service_command() {
+    return quote_windows_argument(widen(generic_to_native_path(windows_self_path()))) + L" --service";
+}
+
+bool read_run_entry(std::wstring& out) {
+    wchar_t value[2048] = {0};
+    DWORD bytes = sizeof(value);
+    if (::RegGetValueW(HKEY_CURRENT_USER, kRunKey, kRunValue, RRF_RT_REG_SZ, nullptr, value, &bytes) != ERROR_SUCCESS) {
+        return false;
+    }
+    out = value;
+    return true;
+}
+
+bool write_run_entry(const std::wstring& command, std::string* error) {
+    HKEY key = nullptr;
+    LSTATUS status = ::RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (status == ERROR_SUCCESS) {
+        status = ::RegSetValueExW(key, kRunValue, 0, REG_SZ, reinterpret_cast<const BYTE*>(command.c_str()),
+                                  static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+        ::RegCloseKey(key);
+    }
+    if (status != ERROR_SUCCESS && error != nullptr) {
+        *error = "could not add it to the programs Windows starts: " + windows_error_text(static_cast<DWORD>(status));
+    }
+    return status == ERROR_SUCCESS;
+}
+
+void remove_run_entry() {
+    HKEY key = nullptr;
+    if (::RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        ::RegDeleteValueW(key, kRunValue);
+        ::RegCloseKey(key);
+    }
+}
+
+// Tells a running service to stop, and waits a little for it to.
+void stop_running_service() {
+    HANDLE stop = ::OpenEventW(EVENT_MODIFY_STATE, FALSE, kStopEvent);
+    if (stop == nullptr) return;
+    ::SetEvent(stop);
+    ::CloseHandle(stop);
+    for (int waited = 0; waited < 3000; waited += 100) {
+        HANDLE running = ::OpenMutexW(SYNCHRONIZE, FALSE, kServiceMutex);
+        if (running == nullptr) return;
+        ::CloseHandle(running);
+        ::Sleep(100);
+    }
+}
+
+bool start_service_now(std::string* error) {
+    WindowsLaunch launch;
+    launch.detached = true;
+    HANDLE process = nullptr;
+    if (!start_windows_process(windows_self_path(), {"--service"}, launch, process, nullptr, error)) return false;
+    ::CloseHandle(process);
+    return true;
+}
+
+// The windows of a process, asked to close as clicking their X would.
+BOOL CALLBACK close_windows_of(HWND window, LPARAM process_id) {
+    DWORD owner = 0;
+    ::GetWindowThreadProcessId(window, &owner);
+    if (owner == static_cast<DWORD>(process_id)) ::PostMessageW(window, WM_CLOSE, 0, 0);
+    return TRUE;
+}
+
+bool process_alive(int pid) {
+    HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (process == nullptr) return false;
+    DWORD code = 0;
+    const bool alive = ::GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+    ::CloseHandle(process);
+    return alive;
+}
+#endif
 
 std::string unit_path() {
     const char* config = std::getenv("XDG_CONFIG_HOME");
@@ -65,6 +162,12 @@ std::vector<std::string> rom_folders(const Settings& settings) {
             folders.push_back(home + "/Emulation/roms/" + console);
         }
     }
+#if defined(_WIN32)
+    // EmuDeck for Windows puts its Emulation folder at a drive's root.
+    for (const char* console : {"nds", "n3ds", "3ds"}) {
+        folders.push_back(std::string("C:/Emulation/roms/") + console);
+    }
+#endif
     return folders;
 }
 
@@ -99,7 +202,19 @@ bool run_and_wait(const std::string& program, const std::vector<std::string>& ar
 // Starts a program on its own, so it lives on after this process: forked
 // twice, the middle one gone at once, so nothing is left to reap.
 bool spawn_detached(const std::string& program, const std::vector<std::string>& arguments, std::string* error) {
-#ifdef DUALSCREEN_CAN_SPAWN
+#if defined(_WIN32)
+    WindowsLaunch launch;
+    launch.detached = true;
+    launch.hidden = false;
+    HANDLE process = nullptr;
+    std::string why;
+    if (!start_windows_process(program, arguments, launch, process, nullptr, &why)) {
+        if (error != nullptr) *error = "could not start " + program + ": " + why;
+        return false;
+    }
+    ::CloseHandle(process);
+    return true;
+#elif defined(DUALSCREEN_CAN_SPAWN)
     const pid_t pid = fork();
     if (pid < 0) {
         if (error != nullptr) *error = "could not start " + program;
@@ -159,6 +274,9 @@ bool launchable_game_icon(const LaunchableGame& game, int& width, int& height, s
 }
 
 std::string this_program() {
+#if defined(_WIN32)
+    return windows_self_path();
+#endif
     // An AppImage runs from a mount that is gone once it stops; it says where
     // it really is.
     if (const char* image = std::getenv("APPIMAGE"); image != nullptr && *image != '\0') return image;
@@ -171,10 +289,10 @@ std::string this_program() {
 }
 
 void note_running_game(const std::string& record_path, const std::string& rom_path, const std::string& title) {
-#ifdef DUALSCREEN_CAN_SPAWN
+#if defined(DUALSCREEN_CAN_SPAWN) || defined(_WIN32)
     std::error_code error;
     std::filesystem::create_directories(std::filesystem::path(record_path).parent_path(), error);
-    std::ofstream out(record_path, std::ios::trunc);
+    std::ofstream out(std::filesystem::u8path(record_path), std::ios::trunc);
     out << nlohmann::json{{"path", rom_path}, {"title", title}, {"pid", static_cast<int>(getpid())}}.dump();
 #else
     (void)record_path;
@@ -184,7 +302,7 @@ void note_running_game(const std::string& record_path, const std::string& rom_pa
 }
 
 void clear_running_game(const std::string& record_path) {
-#ifdef DUALSCREEN_CAN_SPAWN
+#if defined(DUALSCREEN_CAN_SPAWN) || defined(_WIN32)
     RunningGame running;
     if (!running_game(record_path, running) || running.pid != static_cast<int>(getpid())) return;
     std::error_code error;
@@ -195,8 +313,8 @@ void clear_running_game(const std::string& record_path) {
 }
 
 bool running_game(const std::string& record_path, RunningGame& out) {
-#ifdef DUALSCREEN_CAN_SPAWN
-    std::ifstream in(record_path);
+#if defined(DUALSCREEN_CAN_SPAWN) || defined(_WIN32)
+    std::ifstream in(std::filesystem::u8path(record_path));
     if (!in) return false;
     try {
         const nlohmann::json record = nlohmann::json::parse(in);
@@ -208,7 +326,11 @@ bool running_game(const std::string& record_path, RunningGame& out) {
     }
     // A record left by one that ended without clearing it -- killed -- is no
     // game running.
+#if defined(_WIN32)
+    return out.pid > 0 && !out.path.empty() && process_alive(out.pid);
+#else
     return out.pid > 0 && !out.path.empty() && kill(out.pid, 0) == 0;
+#endif
 #else
     (void)record_path;
     (void)out;
@@ -217,7 +339,18 @@ bool running_game(const std::string& record_path, RunningGame& out) {
 }
 
 bool close_running_game(const RunningGame& game, int timeout_ms) {
-#ifdef DUALSCREEN_CAN_SPAWN
+#if defined(_WIN32)
+    if (game.pid <= 0 || !process_alive(game.pid)) return false;
+    log_info("closing " + game.title + " for a connected device");
+    // Its window closed as its X would: Dualscreen leaves the game the way
+    // quitting does, saving on the way out.
+    ::EnumWindows(close_windows_of, static_cast<LPARAM>(game.pid));
+    for (int waited = 0; waited < timeout_ms; waited += 100) {
+        if (!process_alive(game.pid)) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return !process_alive(game.pid);
+#elif defined(DUALSCREEN_CAN_SPAWN)
     if (game.pid <= 0) return false;
     if (kill(game.pid, SIGTERM) != 0) return false;
     log_info("closing " + game.title + " for a connected device");
@@ -248,6 +381,13 @@ bool launch_game_here(const LaunchableGame& game, std::string* error) {
         // Handed to the Steam already running, which starts the shortcut as
         // if it had been chosen in Steam.
         const std::string url = "steam://rungameid/" + std::to_string(game.steam_run_id);
+#if defined(_WIN32)
+        // Whatever handles steam:// links -- Steam, which registers it.
+        const HINSTANCE opened = ::ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        if (reinterpret_cast<INT_PTR>(opened) > 32) return true;
+        if (error != nullptr) *error = "Steam did not answer " + url;
+        return false;
+#endif
         if (on_path("steam")) return spawn_detached("steam", {url}, error);
         if (on_path("flatpak")) return spawn_detached("flatpak", {"run", "com.valvesoftware.Steam", url}, error);
         return spawn_detached("xdg-open", {url}, error);
@@ -256,6 +396,10 @@ bool launch_game_here(const LaunchableGame& game, std::string* error) {
 }
 
 bool service_starts_at_login() {
+#if defined(_WIN32)
+    std::wstring command;
+    return read_run_entry(command);
+#endif
     std::error_code error;
     return std::filesystem::exists(unit_path(), error) &&
            std::filesystem::exists(std::filesystem::path(unit_path()).parent_path() / "default.target.wants" / kUnitName,
@@ -292,6 +436,16 @@ std::string read_whole(const std::string& path) {
 
 bool refresh_service() {
     if (!service_starts_at_login()) return true;
+#if defined(_WIN32)
+    std::wstring command;
+    if (read_run_entry(command) && command == service_command()) return true;
+    // Written for this program somewhere else -- moved since -- so put
+    // right, and the service started again from here.
+    if (!write_run_entry(service_command(), nullptr)) return false;
+    stop_running_service();
+    log_info("the Remote Start service was updated to this version");
+    return start_service_now(nullptr);
+#endif
     if (read_whole(unit_path()) == unit_text()) return true;
     // Written by an older build, or for this program somewhere else: put
     // right, and the service started again from here.
@@ -306,6 +460,19 @@ bool refresh_service() {
 }
 
 bool set_service_starts_at_login(bool on, std::string* error) {
+#if defined(_WIN32)
+    if (!on) {
+        remove_run_entry();
+        stop_running_service();
+        log_info("other devices can no longer start games here");
+        return true;
+    }
+    if (!write_run_entry(service_command(), error)) return false;
+    stop_running_service();
+    if (!start_service_now(error)) return false;
+    log_info("other devices can start games here, from now on and after every sign-in");
+    return true;
+#endif
     if (!on) {
         run_and_wait("systemctl", {"--user", "disable", "--now", kUnitName}, nullptr);
         std::error_code ignored;
@@ -335,6 +502,17 @@ int run_launch_service() {
     set_log_file(paths.data_dir + "/dualscreen-service.log");
     std::signal(SIGTERM, on_stop_signal);
     std::signal(SIGINT, on_stop_signal);
+#if defined(_WIN32)
+    // One at a time: a second one started (at sign-in, and again from
+    // Settings) leaves the first to it.
+    HANDLE only_one = ::CreateMutexW(nullptr, TRUE, kServiceMutex);
+    if (only_one == nullptr || ::GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (only_one != nullptr) ::CloseHandle(only_one);
+        log_info("the Remote Start service is already running");
+        return 0;
+    }
+    HANDLE stop_event = ::CreateEventW(nullptr, TRUE, FALSE, kStopEvent);
+#endif
 
     net::LaunchService::Config config;
     {
@@ -378,21 +556,37 @@ int run_launch_service() {
     // old build would answer until the next login.
     const std::string program = this_program();
     std::error_code time_error;
-    const auto built = std::filesystem::last_write_time(program, time_error);
+    const auto built = std::filesystem::last_write_time(std::filesystem::u8path(program), time_error);
     const bool watching = !time_error;
     int waited = 0;
+    bool updated = false;
     while (!g_stop) {
+#if defined(_WIN32)
+        if (stop_event != nullptr && ::WaitForSingleObject(stop_event, 200) == WAIT_OBJECT_0) break;
+#else
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+#endif
         if (!watching || (waited += 200) < 5000) continue;
         waited = 0;
         std::error_code error;
-        const auto now = std::filesystem::last_write_time(program, error);
+        const auto now = std::filesystem::last_write_time(std::filesystem::u8path(program), error);
         if (!error && now != built) {
             log_info("Dualscreen was updated; the Remote Start service will restart");
+            updated = true;
             break;
         }
     }
     service.stop();
+#if defined(_WIN32)
+    if (stop_event != nullptr) ::CloseHandle(stop_event);
+    ::ReleaseMutex(only_one);
+    ::CloseHandle(only_one);
+    // Nothing restarts it here as systemd does: the new build is started by
+    // the old one on its way out.
+    if (updated) start_service_now(nullptr);
+#else
+    (void)updated;
+#endif
     return 0;
 }
 

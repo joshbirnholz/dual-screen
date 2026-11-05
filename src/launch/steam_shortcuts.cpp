@@ -4,6 +4,12 @@
 #include <cctype>
 #include <filesystem>
 
+#if defined(_WIN32)
+#include "config/paths.hpp"
+#include "util/win_text.hpp"
+#include <cstdlib>
+#endif
+
 namespace ds {
 
 namespace {
@@ -195,15 +201,40 @@ std::vector<uint8_t> write_steam_shortcuts(const std::vector<SteamShortcut>& sho
     return out;
 }
 
+#if defined(_WIN32)
+namespace {
+// Where Steam is installed on this PC, as Steam itself records it.
+std::string windows_steam_folder() {
+    // Named outright, for the tests, which cannot move the registry's.
+    if (const char* named = std::getenv("DUALSCREEN_STEAM_FOLDER"); named != nullptr && *named != '\0') {
+        return native_to_generic_path(named);
+    }
+    wchar_t value[MAX_PATH] = {0};
+    DWORD bytes = sizeof(value);
+    if (::RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", RRF_RT_REG_SZ, nullptr, value,
+                       &bytes) == ERROR_SUCCESS) {
+        return native_to_generic_path(narrow(value));
+    }
+    return "C:/Program Files (x86)/Steam";
+}
+}  // namespace
+#endif
+
 std::vector<std::string> steam_shortcut_files(const std::string& home) {
     std::vector<std::string> files;
     if (home.empty()) return files;
     const std::filesystem::path base(home);
+#if defined(_WIN32)
+    const std::filesystem::path roots[] = {
+        std::filesystem::u8path(windows_steam_folder()) / "userdata",
+    };
+#else
     const std::filesystem::path roots[] = {
         base / ".local/share/Steam/userdata",
         base / ".steam/steam/userdata",
         base / ".var/app/com.valvesoftware.Steam/.local/share/Steam/userdata",
     };
+#endif
     std::vector<std::filesystem::path> seen;
     for (const std::filesystem::path& root : roots) {
         std::error_code error;

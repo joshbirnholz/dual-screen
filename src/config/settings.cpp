@@ -4,6 +4,10 @@
 
 #include <unistd.h>
 
+#if defined(_WIN32)
+#include "util/win_text.hpp"
+#endif
+
 #if defined(__ANDROID__)
 #include <SDL_system.h>
 #include <jni.h>
@@ -100,6 +104,14 @@ std::string default_device_name() {
     // What the console is, the same name the companion gives itself -- a
     // Switch has no host name worth showing.
     return switch_console_name();
+#elif defined(_WIN32)
+    // The PC's name as Settings > System > About shows it, in its own case.
+    wchar_t name[256] = {0};
+    DWORD length = static_cast<DWORD>(sizeof(name) / sizeof(name[0]));
+    if (::GetComputerNameExW(ComputerNameDnsHostname, name, &length) && length > 0) {
+        return narrow(std::wstring(name, length));
+    }
+    return std::string("Dualscreen");
 #else
     char hostname[256] = {0};
     if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
@@ -305,12 +317,22 @@ std::vector<std::string> core_search_paths(SystemId system) {
     // first, then RetroArch's, then the distribution's.
     static const char* const kDirectories[] = {
         nullptr,  // stands in for this app's config directory, filled in below
+#if defined(_WIN32)
+        // RetroArch on Windows: its installer's folder, and the roaming
+        // profile the Microsoft Store and Steam builds keep cores in.
+        "%APPDATA%/RetroArch/cores",
+        "C:/RetroArch-Win64/cores",
+        "C:/RetroArch/cores",
+        "C:/Program Files/RetroArch/cores",
+        "C:/Program Files (x86)/Steam/steamapps/common/RetroArch/cores",
+#else
         "~/.config/retroarch/cores",
         "~/.var/app/org.libretro.RetroArch/config/retroarch/cores",
         "~/.local/share/retroarch/cores",
         "/usr/lib/libretro",
         "/usr/lib64/libretro",
         "/usr/lib/x86_64-linux-gnu/libretro",
+#endif
     };
 
     const AppPaths app_paths = AppPaths::resolve();
@@ -319,8 +341,14 @@ std::vector<std::string> core_search_paths(SystemId system) {
     std::vector<std::string> paths;
     for (const std::string& filename : system_profile(system).core_filenames) {
         for (const char* directory : kDirectories) {
-            const std::string folder =
-                (directory == nullptr) ? own_cores : expand_user_path(directory);
+            std::string folder = (directory == nullptr) ? own_cores : expand_user_path(directory);
+#if defined(_WIN32)
+            if (folder.rfind("%APPDATA%", 0) == 0) {
+                const char* appdata = std::getenv("APPDATA");
+                if (appdata == nullptr) continue;
+                folder = native_to_generic_path(appdata) + folder.substr(9);
+            }
+#endif
             paths.push_back(path_join(folder, filename));
         }
     }

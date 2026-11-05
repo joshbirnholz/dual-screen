@@ -59,6 +59,13 @@ enum class Source { GitHubNightly, Buildbot };
 // The buildbot's folder of x86-64 Linux cores, and its index of them: a line
 // per core, "<date> <hash> <file>".
 inline constexpr const char* kBuildbotLinux = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/";
+inline constexpr const char* kBuildbotWindows = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/";
+// The buildbot folder whose cores run on this machine.
+#if defined(_WIN32)
+inline constexpr const char* kBuildbotNative = kBuildbotWindows;
+#else
+inline constexpr const char* kBuildbotNative = kBuildbotLinux;
+#endif
 std::string buildbot_index_url(const std::string& folder);
 // Reads that index: for the first of `candidates` it lists, its file, and its
 // date and hash as the version. False when it lists none of them.
@@ -242,7 +249,15 @@ std::vector<ComponentSpec> components_for(const std::string& platform_asset, int
 // Where the repositories are.
 inline constexpr const char* kDualscreenRepository = "joshbirnholz/dual-screen";
 inline constexpr const char* kCemuRepository = "joshbirnholz/cemu-dualscreen";
-inline constexpr const char* kCemuAsset = "Cemu-dualscreen-x86_64.AppImage";
+inline constexpr const char* kCemuLinuxAsset = "Cemu-dualscreen-x86_64.AppImage";
+// Windows's is a zip -- Cemu.exe and the folders it reads beside it --
+// unpacked into Dualscreen's own cemu folder.
+inline constexpr const char* kCemuWindowsAsset = "Cemu-dualscreen-windows-x64.zip";
+#if defined(_WIN32)
+inline constexpr const char* kCemuAsset = kCemuWindowsAsset;
+#else
+inline constexpr const char* kCemuAsset = kCemuLinuxAsset;
+#endif
 
 // Where Dualscreen keeps a Cemu it downloaded, under the app's data folder
 // (`data_dir`, AppPaths::data_dir), and the file beside it that says which

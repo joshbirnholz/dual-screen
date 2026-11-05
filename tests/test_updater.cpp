@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "config/paths.hpp"
+#include "core/system.hpp"
 #include "ui/update_prompt.hpp"
 #include "update/updater.hpp"
 #include "update/zip_extract.hpp"
@@ -546,7 +547,7 @@ void test_reads_the_buildbot_index() {
     CHECK(!parse_buildbot_index("2026-10-10 5e6f7a8b xmelondsds_libretro.so.zip\n", {"melondsds_libretro.so.zip"},
                                 release));
     CHECK_STR_EQ(download_url(core_component(Component::DsCore, "/nowhere", false), release),
-                 std::string(kBuildbotLinux) + "citra_libretro.so.zip");
+                 std::string(kBuildbotNative) + "citra_libretro.so.zip");
 }
 
 // A core is offered when it is a different build from the one here, and --
@@ -575,7 +576,7 @@ void test_a_core_is_downloaded_when_asked() {
     auto backend = std::make_unique<FakeBackend>();
     FakeBackend* fake = backend.get();
     fake->staging = make_temp_dir();
-    fake->pages[buildbot_index_url(kBuildbotLinux)] = "2026-10-09 1a2b3c4d citra_libretro.so.zip\n";
+    fake->pages[buildbot_index_url(kBuildbotNative)] = "2026-10-09 1a2b3c4d citra_libretro" DS_CORE_SUFFIX ".zip\n";
     std::vector<ComponentSpec> components = components_for("dualscreen-steamos.tar.gz", 12, true, kNotInstalled, false);
     components.push_back(core_component(Component::ThreeDsCore, make_temp_dir(), false));
     Updater updater(std::move(backend), components);
@@ -598,11 +599,11 @@ void test_a_core_is_downloaded_when_asked() {
     status = updater.status();
     CHECK(status.phase == Phase::Installed);
     CHECK(!status.restart);
-    CHECK_STR_EQ(fake->downloaded.front(), std::string(kBuildbotLinux) + "citra_libretro.so.zip");
+    CHECK_STR_EQ(fake->downloaded.front(), std::string(kBuildbotNative) + "citra_libretro" DS_CORE_SUFFIX ".zip");
     for (const ComponentSpec& component : updater.components()) {
         if (component.id != Component::ThreeDsCore) continue;
         CHECK_STR_EQ(component.installed_version, std::string("2026-10-09 1a2b3c4d"));
-        CHECK_STR_EQ(component.asset, std::string("citra_libretro.so.zip"));
+        CHECK_STR_EQ(component.asset, std::string("citra_libretro" DS_CORE_SUFFIX ".zip"));
     }
 }
 
@@ -615,16 +616,16 @@ void test_finds_the_cores_here() {
         std::fputs(text.c_str(), file);
         std::fclose(file);
     };
-    touch(ds::path_join(cores, "citra_libretro.so"), "x");
+    touch(ds::path_join(cores, "citra_libretro" DS_CORE_SUFFIX), "x");
     ComponentSpec three = core_component(Component::ThreeDsCore, cores, true);
     CHECK_EQ(three.installed, kLocalBuild);
     CHECK_STR_EQ(three.name, std::string("Citra"));
     CHECK_STR_EQ(three.installed_version, std::string("unknown"));
-    touch(core_version_file(cores, "citra_libretro.so"), "2026-10-09 1a2b3c4d\n");
+    touch(core_version_file(cores, "citra_libretro" DS_CORE_SUFFIX), "2026-10-09 1a2b3c4d\n");
     three = core_component(Component::ThreeDsCore, cores, true);
     CHECK_STR_EQ(three.installed_version, std::string("2026-10-09 1a2b3c4d"));
     // Azahar, once it is there, ahead of Citra.
-    touch(ds::path_join(cores, "azahar_libretro.so"), "x");
+    touch(ds::path_join(cores, "azahar_libretro" DS_CORE_SUFFIX), "x");
     CHECK_STR_EQ(core_component(Component::ThreeDsCore, cores, true).name, std::string("Azahar"));
     CHECK_STR_EQ(core_library_name("melondsds_libretro.so.zip"), std::string("melondsds_libretro.so"));
 }

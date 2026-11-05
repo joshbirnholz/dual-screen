@@ -24,6 +24,13 @@ bool desktop_updates_supported();
 
 // The file in Dualscreen's release this platform installs.
 inline constexpr const char* kSteamOsAsset = "dualscreen-steamos.tar.gz";
+inline constexpr const char* kWindowsAsset = "dualscreen-windows.zip";
+// This machine's own build on the nightly release.
+#if defined(_WIN32)
+inline constexpr const char* kDesktopAsset = kWindowsAsset;
+#else
+inline constexpr const char* kDesktopAsset = kSteamOsAsset;
+#endif
 
 // `data_dir` is AppPaths::data_dir: downloads are staged under it, and Cemu
 // kept in it. `cores_dir` is where the DS and 3DS cores go -- see
@@ -40,5 +47,10 @@ std::string install_dir();
 void request_restart();
 bool restart_requested();
 void restart_if_requested(char** argv);
+
+// Clears away what an earlier update could not delete while it was running:
+// on Windows, the programs and DLLs it renamed to *.old to replace them.
+// Nothing elsewhere, where a running file can be replaced outright.
+void remove_left_behind();
 
 }  // namespace ds::update

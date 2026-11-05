@@ -10,3 +10,5 @@ compile_commands.json
 switch/cores/
 switch/melonds_deko/build/
 __pycache__/
+.deps-windows/
+dualscreen-windows.zip

@@ -35,8 +35,9 @@
 
 // Whether other devices can start games on this one through its background
 // service -- see launch/launch_host.hpp: a Linux PC or a Steam Deck, where it
-// runs as a systemd user unit.
-#if defined(__linux__) && !defined(__ANDROID__) && !defined(__SWITCH__)
+// runs as a systemd user unit, and a Windows PC, where Windows starts it at
+// sign-in.
+#if (defined(__linux__) && !defined(__ANDROID__) && !defined(__SWITCH__)) || defined(_WIN32)
 #define DS_REMOTE_START_HOST 1
 #else
 #define DS_REMOTE_START_HOST 0
