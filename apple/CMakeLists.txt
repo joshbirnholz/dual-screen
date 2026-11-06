@@ -309,8 +309,18 @@ else()
     target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2 SDL2::SDL2main)
 endif()
 
-find_package(ZLIB REQUIRED)
-target_link_libraries(dualscreen_companion PRIVATE ZLIB::ZLIB)
+if(DUALSCREEN_EMBEDDED)
+    # Every iOS and tvOS SDK ships zlib, and the compiler already finds its
+    # header through the sysroot. FindZLIB's imported target is not used here
+    # because it bakes an absolute "<SDK>/usr/include" into the target, and
+    # with the Xcode generator and a device SDK (Xcode 27, iPhoneOS27.0.sdk)
+    # that path does not exist, so generation fails with "Imported target
+    # ZLIB::ZLIB includes non-existent path". Linking libz by name sidesteps it.
+    target_link_libraries(dualscreen_companion PRIVATE z)
+else()
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE ZLIB::ZLIB)
+endif()
 
 # Threads, and not REQUIRED on a device.
 #
