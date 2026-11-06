@@ -62,9 +62,10 @@ enum class PromptStyle {
     // A controller with a face-button cluster. Every prompt, drawn as the
     // console's own symbol.
     Pad,
-    // A touchscreen and nothing else. Capsule chips with words in them,
-    // because a phone has no B button and "B Back" is an instruction that
-    // cannot be followed.
+    // A touchscreen and nothing else. The same row as a pad's, words and all,
+    // with no button symbol beside them, because a phone has no B button and
+    // "B Back" is an instruction that cannot be followed. Each prompt still
+    // lights up behind itself while a finger is held on it.
     Touch,
     // A Siri Remote on an Apple TV. Glyphs, because it does have buttons --
     // but not for select or for back, which are the two it is most obviously

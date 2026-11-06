@@ -19,19 +19,6 @@ constexpr float kSpacingScale = 1.4f;
 
 float glyph_height(float scale) { return TextRenderer::line_height(scale) * kGlyphScale; }
 
-// A touch chip's padding either side of its label, and how tall it is. The
-// height is deliberately not the whole row: the row is tall enough for the
-// arrow that stands above a stick-click glyph, and a chip drawn that tall
-// would look like a different component rather than the same prompt.
-// Wider than a square box wanted. A capsule's rounded ends take room from
-// the label without looking like they have, so the same padding reads tighter
-// than it did with corners.
-constexpr float kChipPadScale = 0.85f;
-constexpr float kChipHeightScale = 1.7f;
-
-float chip_height(float scale) { return TextRenderer::line_height(scale) * kChipHeightScale; }
-float chip_pad(float scale) { return TextRenderer::line_height(scale) * kChipPadScale; }
-
 PromptStyle g_prompt_style = PromptStyle::Pad;
 ConfirmButton g_confirm_button = ConfirmButton::East;
 
@@ -171,8 +158,10 @@ float draw_control_guide(QuadRenderer& quads,
     const float glyph_width = glyphs.width_for(height);
     const float gap = TextRenderer::line_height(scale) * kGapScale;
     const float spacing = TextRenderer::line_height(scale) * kSpacingScale;
+    // A touchscreen and nothing else: the same row, the same words in the same
+    // places, with no button drawn beside them -- a phone has no B button to
+    // name. The words are still pressed the same way a pad's prompt is.
     const bool touch = touch_hints();
-    const float pad = chip_pad(scale);
 
     // Between the two buttons of a pair.
     const float slash_width = TextRenderer::measure_width("/", scale);
@@ -182,10 +171,10 @@ float draw_control_guide(QuadRenderer& quads,
                    ? glyph_width
                    : glyph_width * 2.0f + slash_width + pair_gap * 2.0f;
     };
-    // One prompt's width: its glyphs and its words, or a chip around the words.
+    // One prompt's width: its glyphs, if any, and its words.
     const auto prompt_width = [&](const GuidePrompt& prompt) {
         const float label = TextRenderer::measure_width(prompt.action, scale);
-        return touch ? label + pad * 2.0f : glyphs_width(prompt) + gap + label;
+        return touch ? label : glyphs_width(prompt) + gap + label;
     };
 
     float total = 0.0f;
@@ -203,63 +192,43 @@ float draw_control_guide(QuadRenderer& quads,
     for (std::size_t index = 0; index < prompts.size(); ++index) {
         if (index > 0) pen_x += spacing;
         const float width = prompt_width(prompts[index]);
+        // Held down on, by a finger or the mouse, and still there: the
+        // prompt lights up behind itself, the way a Switch's own footer
+        // does, for exactly as long as letting go would press it. Only a
+        // press that began on it counts -- see tapped(). Only where the
+        // row can be pressed at all, which is where its hits are kept.
+        const float pad_x = std::round(TextRenderer::line_height(scale) * 0.45f);
+        const float pad_y = std::round(height * 0.12f);
+        const PixelRect lit{pen_x - pad_x, y - pad_y, width + pad_x * 2.0f, height + pad_y * 2.0f};
+        // With no button drawn, the words alone are a small target, so a
+        // finger gets the whole of what lights up.
+        const PixelRect hit = touch ? lit : PixelRect{pen_x, y, width, height};
+        const LivePointer& pointer = live_pointer();
+        if (out_hits != nullptr && pointer.down && hit.contains(pointer.press_x, pointer.press_y) &&
+            hit.contains(pointer.x, pointer.y)) {
+            Color glow = ui_theme().accent;
+            glow.a = 0.22f;
+            quads.draw_rounded_rect(lit, std::round(scale * 3.0f), glow);
+        }
         if (touch) {
-            // A chip: the words in a box that looks like it can be pressed,
-            // because here it is the only thing that can be. Centred on the
-            // same line the glyph's button sits on, so a row of these lands
-            // exactly where a row of glyphs would have.
-            const float box_height = chip_height(scale);
-            const PixelRect box{pen_x, label_y + TextRenderer::line_height(scale) * 0.5f -
-                                           box_height * 0.5f,
-                                width, box_height};
-            // The line and the fill are two capsules, the second drawn inside
-            // the first -- there is no stroked capsule, and an outline built
-            // from four straight quads would cut the corners off the thing it
-            // is meant to be following.
-            const float line = std::max(1.0f, std::round(menu_border(scale) * 0.5f));
-            quads.draw_capsule(box, color);
-            quads.draw_capsule(PixelRect{box.x + line, box.y + line, box.w - line * 2.0f,
-                                         box.h - line * 2.0f},
-                               ui_theme().panel);
-            text.draw(quads, prompts[index].action, pen_x + width * 0.5f, label_y, scale, color,
-                      TextAlign::Center);
-            if (out_hits != nullptr) {
-                // The chip itself, which is the whole of what is on screen.
-                out_hits->push_back(GuideHit{prompts[index].glyph, box});
-            }
-        } else {
-            // Held down on, by a finger or the mouse, and still there: the
-            // prompt lights up behind itself, the way a Switch's own footer
-            // does, for exactly as long as letting go would press it. Only a
-            // press that began on it counts -- see tapped(). Only where the
-            // row can be pressed at all, which is where its hits are kept.
-            const PixelRect hit{pen_x, y, width, height};
-            const LivePointer& pointer = live_pointer();
-            if (out_hits != nullptr && pointer.down && hit.contains(pointer.press_x, pointer.press_y) &&
-                hit.contains(pointer.x, pointer.y)) {
-                const float pad_x = std::round(TextRenderer::line_height(scale) * 0.45f);
-                const float pad_y = std::round(height * 0.12f);
-                Color glow = ui_theme().accent;
-                glow.a = 0.22f;
-                quads.draw_rounded_rect(PixelRect{hit.x - pad_x, hit.y - pad_y, hit.w + pad_x * 2.0f,
-                                                  hit.h + pad_y * 2.0f},
-                                        std::round(scale * 3.0f), glow);
-            }
-            glyphs.draw(quads, glyph_as_drawn(prompts[index].glyph), pen_x, y, height, color);
-            if (prompts[index].pair != ButtonGlyph::Count) {
-                const float slash_x = pen_x + glyph_width + pair_gap;
-                text.draw(quads, "/", slash_x, label_y, scale, color);
-                glyphs.draw(quads, glyph_as_drawn(prompts[index].pair),
-                            slash_x + slash_width + pair_gap, y, height, color);
-            }
-            text.draw(quads, prompts[index].action, pen_x + glyphs_width(prompts[index]) + gap,
-                      label_y, scale, color);
-            if (out_hits != nullptr) {
-                // The glyph and its words together: a finger aims at the
-                // prompt, not at the picture inside it.
-                out_hits->push_back(
-                    GuideHit{prompts[index].glyph, PixelRect{pen_x, y, width, height}});
-            }
+            text.draw(quads, prompts[index].action, pen_x, label_y, scale, color);
+            if (out_hits != nullptr) out_hits->push_back(GuideHit{prompts[index].glyph, hit});
+            pen_x += width;
+            continue;
+        }
+        glyphs.draw(quads, glyph_as_drawn(prompts[index].glyph), pen_x, y, height, color);
+        if (prompts[index].pair != ButtonGlyph::Count) {
+            const float slash_x = pen_x + glyph_width + pair_gap;
+            text.draw(quads, "/", slash_x, label_y, scale, color);
+            glyphs.draw(quads, glyph_as_drawn(prompts[index].pair),
+                        slash_x + slash_width + pair_gap, y, height, color);
+        }
+        text.draw(quads, prompts[index].action, pen_x + glyphs_width(prompts[index]) + gap,
+                  label_y, scale, color);
+        if (out_hits != nullptr) {
+            // The glyph and its words together: a finger aims at the
+            // prompt, not at the picture inside it.
+            out_hits->push_back(GuideHit{prompts[index].glyph, hit});
         }
         pen_x += width;
     }
