@@ -106,6 +106,16 @@ add_test(NAME apple_build_flags
         ${CMAKE_SOURCE_DIR}/apple/build-all.sh
         ${CMAKE_BINARY_DIR}/apple-build-flags)
 
+# The iOS and Apple TV app icons. actool, which compiles them, is Mac-only, and
+# a catalog naming a missing picture or the wrong size fails the Apple build
+# outright -- see the script.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME apple_asset_catalogs
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check_apple_asset_catalogs.py
+                     ${CMAKE_SOURCE_DIR}/apple)
+endif()
+
 add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 

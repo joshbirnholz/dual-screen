@@ -680,6 +680,8 @@ Almost nothing here is Apple's:
 | | |
 | --- | --- |
 | `CMakeLists.txt` | the build, the bundles, and the Mac's icon |
+| `Assets-iOS.xcassets`, `Assets-tvOS.xcassets` | the icon on iPhone, iPad and Apple TV |
+| `compile_asset_catalog.sh` | compiling those without Xcode |
 | `Info.plist.in` | what macOS needs told about the app |
 | `Info-iOS.plist.in` | and what iOS and iPadOS do |
 | `Info-tvOS.plist.in` | and tvOS |
@@ -745,18 +747,27 @@ picture is the app icon (`assets/app_icon.svg`) drawn on the Mac's rounded-squar
 grid. A machine without those two tools builds a bundle with the generic icon
 on it rather than failing.
 
-**On iOS and tvOS there is no icon**, and that is deliberate. Those platforms
-want an asset catalog rather than an `.icns`, built by a different tool, and a
-malformed one *fails the build* rather than degrading to a blank square — so
-generating one from here, where it cannot be compiled even once, would be
-trading a missing icon for a broken build. tvOS wants more again: a layered
-"Brand Assets" stack, which is several images and is genuinely a design job.
+**On iPhone, iPad and Apple TV**, from an asset catalog: `Assets-iOS.xcassets`
+and `Assets-tvOS.xcassets`, both drawn from the app icon by
+`tools/make_apple_icons.py` and committed, so a Mac needs nothing extra. iOS
+takes one 1024 x 1024 picture, opaque and uncornered, and Xcode makes every
+other size from it. An Apple TV takes a "brand assets" set: the icon as two
+layers, the navy field behind and the two screens in front, which tvOS tilts
+against each other when the icon is focused; and the Top Shelf pictures (the
+logo on navy) shown behind the app's row on the home screen.
 
-Adding one is a couple of minutes in Xcode, at the point where somebody is
-looking at the app on a device anyway: **File → New → Asset Catalog**, add an
-**App Icon** set, drop the artwork in, and set the target's `ASSETCATALOG_COMPILER_APPICON_NAME`.
-An app with no icon builds, installs and runs; it only fails App Store
-validation, and neither of these is going to the App Store today.
+Under the Xcode generator the catalog is one of the target's resources and
+`ASSETCATALOG_COMPILER_APPICON_NAME` is `AppIcon`, so Xcode compiles it the way
+it would in a project made by hand. A Ninja build has no such step, so
+`compile_asset_catalog.sh` runs after the link and does what Xcode does: `actool`
+into the bundle, then the keys it writes (`CFBundleIcons`, `TVTopShelfImage`)
+merged into the bundle's `Info.plist`.
+
+Change the icon in `assets/app_icon.svg` and the numbers at the top of
+`tools/make_apple_icons.py` together, then run the script. The
+`apple_asset_catalogs` test checks from Linux what actool would refuse: every
+picture a catalog names is there, the size its slot wants, and opaque where it
+has to be.
 
 ## What has actually been verified
 

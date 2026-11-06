@@ -467,10 +467,7 @@ endif()
 # failing a build over, so a missing tool means a bundle with the generic icon
 # on it.
 #
-# iOS and tvOS want an asset catalog instead, which is a different shape and a
-# different tool, and a malformed one fails the build rather than degrading to
-# a blank square. See apple/README.md: adding one in Xcode is a two-minute job
-# and is the point at which somebody is looking at the app on a device anyway.
+# iOS and tvOS take theirs from an asset catalog instead -- see below.
 set(DUALSCREEN_ICON_FILE "")
 if(NOT DUALSCREEN_EMBEDDED)
     set(ICON_NAME "Dualscreen")
@@ -504,6 +501,57 @@ if(NOT DUALSCREEN_EMBEDDED)
         set(DUALSCREEN_ICON_FILE "${ICON_NAME}")
     else()
         message(STATUS "icon: sips/iconutil not found, building without one")
+    endif()
+endif()
+
+# An icon on iPhone, iPad and Apple TV, from an asset catalog: the one app icon,
+# drawn for each by tools/make_apple_icons.py and committed. iOS takes a single
+# 1024 x 1024 picture and makes the rest itself; an Apple TV takes a "brand
+# assets" set -- the icon as layers the system tilts against each other when it
+# is focused, plus the Top Shelf pictures behind the app's row.
+#
+# Xcode compiles a catalog it finds among a target's resources, and is told
+# which set in it is the icon. Ninja has no such step, so after the link
+# compile_asset_catalog.sh does what Xcode would: actool into the bundle, then
+# the keys it writes merged into the bundle's Info.plist.
+if(DUALSCREEN_EMBEDDED)
+    if(DUALSCREEN_PLATFORM STREQUAL "tvos")
+        set(ASSET_CATALOG "${CMAKE_CURRENT_SOURCE_DIR}/Assets-tvOS.xcassets")
+        set(ACTOOL_DEVICES --target-device tv)
+        set(ACTOOL_PLATFORM "appletv")
+    else()
+        set(ASSET_CATALOG "${CMAKE_CURRENT_SOURCE_DIR}/Assets-iOS.xcassets")
+        set(ACTOOL_DEVICES --target-device iphone --target-device ipad)
+        set(ACTOOL_PLATFORM "iphone")
+    endif()
+    if(CMAKE_GENERATOR STREQUAL "Xcode")
+        target_sources(dualscreen_companion PRIVATE "${ASSET_CATALOG}")
+        set_source_files_properties("${ASSET_CATALOG}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+        set_target_properties(dualscreen_companion PROPERTIES
+            XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon")
+    else()
+        string(TOLOWER "${CMAKE_OSX_SYSROOT}" SYSROOT_LOWER)
+        if(SYSROOT_LOWER MATCHES "simulator")
+            string(APPEND ACTOOL_PLATFORM "simulator")
+        else()
+            string(APPEND ACTOOL_PLATFORM "os")
+        endif()
+        find_program(XCRUN_TOOL xcrun)
+        if(XCRUN_TOOL AND EXISTS /usr/libexec/PlistBuddy)
+            add_custom_command(TARGET dualscreen_companion POST_BUILD
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/compile_asset_catalog.sh"
+                        "${ASSET_CATALOG}"
+                        "$<TARGET_BUNDLE_DIR:dualscreen_companion>"
+                        "${CMAKE_CURRENT_BINARY_DIR}/asset-catalog"
+                        --platform ${ACTOOL_PLATFORM}
+                        --minimum-deployment-target ${CMAKE_OSX_DEPLOYMENT_TARGET}
+                        ${ACTOOL_DEVICES}
+                COMMENT "Compiling the app icon"
+                VERBATIM)
+        else()
+            message(STATUS "icon: xcrun/PlistBuddy not found, building without one")
+        endif()
     endif()
 endif()
 
