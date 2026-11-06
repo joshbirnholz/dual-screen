@@ -191,6 +191,53 @@
 
 #pragma clang diagnostic pop
 
+// --- the picture is the window's shape, whatever SDL thinks ------------------
+//
+// SDL 2 sizes its view with UIKit_ComputeViewFrame(), and that function has an
+// old iOS 10 workaround in it: when the app supports only landscape and the
+// window covers the whole screen, any frame taller than it is wide is taken to
+// be a mistake and turned on its side. This app supports only landscape, so on
+// a phone that rotates as it is told the rule never fires.
+//
+// The iPhone Duo does not rotate as it is told. Its inner display gives an app
+// a portrait window whatever the app says it supports -- Apple says outright
+// that the full-screen and orientation settings do not stop the fold from
+// resizing an app -- and SDL then turned
+// the honest portrait frame into a landscape one: a view as wide as the window
+// is tall, hanging off the right-hand edge, with the bottom of the window left
+// black. That is exactly what the screenshot of the bug showed.
+//
+// So the view is given back the window's size every time UIKit lays it out.
+// Only the size: SDL moves the origin up out of the way of the software
+// keyboard, and that is left alone. SDL's own viewDidLayoutSubviews runs
+// after this and reports the corrected size as SDL_WINDOWEVENT_RESIZED, so the
+// GL drawable and the app's layout both follow without any change of theirs.
+//
+// SDL does not implement viewWillLayoutSubviews, so this adds a method rather
+// than replacing one; it calls UIViewController's.
+@interface SDL_uikitviewcontroller : UIViewController
+@end
+
+@implementation SDL_uikitviewcontroller (DualscreenFillTheWindow)
+
+- (void)viewWillLayoutSubviews
+{
+    [super viewWillLayoutSubviews];
+    UIView *view = self.view;
+    UIView *container = view.superview;
+    if (container == nil) {
+        return;
+    }
+    CGSize want = container.bounds.size;
+    CGRect frame = view.frame;
+    if (frame.size.width != want.width || frame.size.height != want.height) {
+        frame.size = want;
+        view.frame = frame;
+    }
+}
+
+@end
+
 // --- which way up the person is holding it -----------------------------------
 //
 // Returns one of the ds::DisplayTurn values, as an int, because this file is
@@ -259,6 +306,12 @@ void ds_attach_sdl_window_to_scene(SDL_Window *window)
             continue;
         }
         uiwindow.windowScene = (UIWindowScene *)scene;
+        // SDL made the window the size of the screen, which is not the size of
+        // the scene on a display that gives this app less than all of itself,
+        // or gives it a portrait window it never asked for -- see the view
+        // controller category above. From here on UIKit keeps a scene's window
+        // the scene's size; this is the one time it has to be told.
+        uiwindow.frame = ((UIWindowScene *)scene).coordinateSpace.bounds;
         // SDL already called this once, before the window could be shown on
         // anything. It is idempotent and now it can do something.
         [uiwindow makeKeyAndVisible];

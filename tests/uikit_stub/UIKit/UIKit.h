@@ -99,7 +99,12 @@ typedef long UIInterfaceOrientation;
 #define UIInterfaceOrientationLandscapeRight ((UIInterfaceOrientation)3)
 #endif
 
+@protocol UICoordinateSpace
+@property (nonatomic, readonly) CGRect bounds;
+@end
+
 @interface UIWindowScene : UIScene
+@property (nonatomic, readonly) id<UICoordinateSpace> coordinateSpace;
 #if !TARGET_OS_TV
 @property (nonatomic, readonly) UIInterfaceOrientation interfaceOrientation;
 #endif
@@ -114,6 +119,8 @@ typedef unsigned long UIInterfaceOrientationMask;
 @interface UIView : UIResponder
 @property (nonatomic, readonly) CALayer *layer;
 @property (nonatomic) CGRect bounds;
+@property (nonatomic) CGRect frame;
+@property (nonatomic, readonly) UIView *superview;
 @end
 
 @interface UIColor : NSObject
@@ -123,6 +130,7 @@ typedef unsigned long UIInterfaceOrientationMask;
 
 @interface UIViewController : UIResponder
 @property (nonatomic, strong) UIView *view;
+- (void)viewWillLayoutSubviews;
 #if !TARGET_OS_TV
 - (void)setNeedsUpdateOfSupportedInterfaceOrientations;
 #endif
