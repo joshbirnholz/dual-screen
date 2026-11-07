@@ -298,7 +298,7 @@ tvOS, which makes the probes compile without linking. If you still see it:
    ```sh
    cmake -S apple -B build-ios-sim -G Xcode \
          -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
-         -DDUALSCREEN_SDL2_TAG=release-2.32.8
+         -DDUALSCREEN_SDL2_TAG=release-2.32.10
    ```
 
    Any SDL2 tag works; `git ls-remote --tags https://github.com/libsdl-org/SDL.git 'release-2.3*'`
@@ -334,9 +334,14 @@ So build SDL once, with the generator that works, and hand it over. Then there
 is nothing left in the configure that compiles anything, and the Xcode
 generator has almost nothing to trip over.
 
+Use SDL 2.30.12 or newer. Older ones crash when iOS takes a display away
+(folding an iPhone Duo does), and `ios_scene_lifecycle.m` refuses to compile
+against them. If `~/src/SDL` is an older checkout, delete it and the install
+folder and build again from the tag below.
+
 ```sh
 # Once, per platform+SDK. This is the simulator; see below for a device.
-git clone --depth 1 -b release-2.30.9 https://github.com/libsdl-org/SDL.git ~/src/SDL
+git clone --depth 1 -b release-2.32.10 https://github.com/libsdl-org/SDL.git ~/src/SDL
 cmake -S ~/src/SDL -B ~/src/sdl-ios-sim -G Ninja \
       -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
       -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -419,7 +424,7 @@ There is no Homebrew for iOS and no system copy, so SDL is built here as a
 subproject. By default it is fetched:
 
 ```sh
--DDUALSCREEN_SDL2_TAG=release-2.30.9      # which tag to fetch
+-DDUALSCREEN_SDL2_TAG=release-2.32.10     # which tag to fetch
 -DDUALSCREEN_SDL2_SOURCE_DIR=~/src/SDL    # or build a checkout you already have
 ```
 

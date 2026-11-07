@@ -184,7 +184,7 @@ dualscreen_stamp_build("${DUALSCREEN_ROOT}/src/util/build_stamp.cpp")
 #
 # Build it once, with the generator that works, and point this at it:
 #
-#   git clone --depth 1 -b release-2.30.9 https://github.com/libsdl-org/SDL.git
+#   git clone --depth 1 -b release-2.32.10 https://github.com/libsdl-org/SDL.git
 #   cmake -S SDL -B sdl-ios -G Ninja \
 #         -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
 #         -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -198,7 +198,7 @@ set(DUALSCREEN_SDL2_PREFIX "" CACHE PATH
     "An installed SDL2 to link, rather than building one (iOS/tvOS)")
 set(DUALSCREEN_SDL2_SOURCE_DIR "" CACHE PATH
     "A local SDL2 checkout to build against, instead of fetching one (iOS/tvOS)")
-set(DUALSCREEN_SDL2_TAG "release-2.30.9" CACHE STRING
+set(DUALSCREEN_SDL2_TAG "release-2.32.10" CACHE STRING
     "The SDL2 tag to fetch when no checkout is given (iOS/tvOS)")
 
 if(DUALSCREEN_EMBEDDED AND DUALSCREEN_SDL2_PREFIX)
