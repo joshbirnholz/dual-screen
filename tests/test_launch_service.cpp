@@ -337,6 +337,16 @@ void test_a_computer_is_remembered_and_woken() {
     CHECK_EQ(remembered.size(), 1u);
     CHECK(!remembered.empty() && remembered[0].name == "Study PC" && remembered[0].macs == config.macs);
     CHECK_STR_EQ(remote_start_token(tokens, hosts[0].id), "abc");
+    // A search told of the tokens file asks that computer directly, at the
+    // address it last answered from -- how an iPhone, which may not
+    // broadcast, finds it again.
+    CHECK(!remembered.empty() && remembered[0].address == "127.0.0.1");
+    LaunchSearch remembering;
+    remembering.query_port = kWakeQueryPort;
+    remembering.remembered_in = tokens;
+    remembering.timeout_ms = 500;
+    const std::vector<LaunchHost> found_again = search_launch_hosts(remembering);
+    CHECK(found_again.size() == 1u && found_again[0].id == hosts[0].id);
 
     LaunchHost asleep = remembered.empty() ? hosts[0] : remembered[0];
     asleep.address = "127.0.0.1";
