@@ -673,6 +673,40 @@ void test_change_order_lets_go_and_takes_each_in_turn() {
     CHECK_EQ(held.unused.size(), static_cast<std::size_t>(3));
 }
 
+// A phone showing the GamePad's screen, its buttons a controller on the host:
+// Change Order lets go of every pad, the GamePad's too, and a host pad taken
+// for it stays it -- as the phone's screen stays the GamePad's -- with the
+// phone's own pad a player. Skipped, the GamePad has no controller, and a
+// host pad arriving does not take it.
+void test_a_host_controller_can_be_a_gamepad_shown_on_the_companion() {
+    const std::vector<KnownPad> pads{pad(true, 0), pad(false, 0)};
+    PadLineup lineup = ds::line_up_pads(pads, PadOrder(), false);
+    CHECK_EQ(lineup.gamepad, 1);
+    ds::unassign_all(lineup, false);
+    CHECK_EQ(lineup.gamepad, -1);
+    CHECK(ds::put_in_slot(lineup, 0, PadSlot::gamepad()));
+    CHECK(ds::assign_player(lineup, 1, 0));
+    const PadOrder order = ds::order_of(pads, lineup, false);
+    PadLineup again = ds::line_up_pads(pads, order, false);
+    CHECK_EQ(again.gamepad, 0);
+    CHECK(again.players == (std::vector<int>{1}));
+    // Its presses are the GamePad's.
+    const std::vector<PadSlot> slots = ds::slots_of(pads, again);
+    CHECK(slots[0] == PadSlot::gamepad());
+    CHECK(ds::route_pads(pads, slots).gamepad_fed);
+
+    // Skipped: the screen alone, the host's pad Player 1.
+    const std::vector<KnownPad> host_only{pad(true, 0)};
+    PadLineup skipped = ds::line_up_pads(host_only, PadOrder(), false);
+    ds::unassign_all(skipped, false);
+    CHECK(ds::assign_player(skipped, 0, 0));
+    const PadOrder kept = ds::order_of(host_only, skipped, false);
+    const std::vector<KnownPad> more{pad(true, 0), pad(true, 1)};
+    const PadLineup later = ds::line_up_pads(more, kept, false);
+    CHECK_EQ(later.gamepad, -1);
+    CHECK(later.players == (std::vector<int>{0, 1}));
+}
+
 // The GamePad disconnected: the controller that was it is Player 1 -- or the
 // first empty player -- whether the line was chosen or not, and the GamePad's
 // again once it is connected.
@@ -870,6 +904,7 @@ int main() {
     test_a_players_page_chooses_a_type_and_removes_it();
     test_a_new_players_page_says_what_it_will_be_first();
     test_change_order_lets_go_and_takes_each_in_turn();
+    test_a_host_controller_can_be_a_gamepad_shown_on_the_companion();
     test_a_disconnected_gamepad_has_no_controller();
     test_removing_a_player_moves_the_rest_up();
     test_a_held_button_switches_and_a_tap_still_presses();

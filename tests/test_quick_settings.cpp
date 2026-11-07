@@ -1315,7 +1315,14 @@ void test_wii_u_controls_list_every_controller() {
     CHECK(!result.change_order_done && result.controller_opened == -1);
     picker.set_ordering(0, false);
     CHECK_EQ(picker.confirm_focus_wire(), 1);
+    // X skips the GamePad while it is the one waiting -- and only then.
+    CHECK(picker.ordering_gamepad());
+    result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK(result.change_order_skipped && result.controller_identified == -1);
     picker.set_ordering(2, true);
+    CHECK(!picker.ordering_gamepad());
+    result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK(!result.change_order_skipped);
     CHECK_EQ(picker.confirm_focus_wire(), 3 | LayoutPicker::kOrderingAssigned);
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.change_order_done && picker.ordering_controllers());

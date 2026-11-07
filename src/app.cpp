@@ -613,6 +613,9 @@ struct App::Impl {
         bool asked = false;
         bool asked_done = false;
         uint32_t asked_at = 0;
+        // X, Skip, on the GamePad: answered as A and B are, a moment later.
+        bool skip_asked = false;
+        uint32_t skip_asked_at = 0;
     };
     ChangeOrder change_order;
     // Cemu's own options, as it last said: shown in a Wii U menu's Options,
@@ -3116,6 +3119,10 @@ void App::Impl::apply_controls_result(const LayoutPickerResult& result) {
         if (pad >= 0) identify_pad(pads[static_cast<std::size_t>(pad)]);
     }
     if (result.change_order_started) start_change_order();
+    if (result.change_order_skipped && change_order.going && change_order.next == 0) {
+        change_order.skip_asked = true;
+        change_order.skip_asked_at = SDL_GetTicks();
+    }
     if (result.change_order_done || result.change_order_cancelled) {
         if (!change_order.going) {
             picker->end_ordering();
@@ -3141,11 +3148,13 @@ void App::Impl::start_change_order() {
     change_order.going = true;
     change_order.before = pad_order;
     change_order.players_before = wii_u_player_count(lineup);
-    // A GamePad the other device is holding stays with it: the order starts
-    // at Player 1.
-    // So does a disconnected one.
-    change_order.next = holds_gamepad() && !gamepad_disconnected() ? 0 : 1;
-    unassign_all(lineup, !holds_gamepad());
+    // The GamePad first, whichever device is showing its screen: any
+    // controller, on either, can be it -- a phone showing the GamePad's
+    // screen with a controller on this device as its buttons. X skips it,
+    // leaving it the screen alone. A disconnected one has no place to take:
+    // the order starts at Player 1.
+    change_order.next = gamepad_disconnected() ? 1 : 0;
+    unassign_all(lineup, false);
     pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
     for (const KnownPad& pad : pads) change_order.pressing[pad_identity(pad)] = pad.pressing;
     log_info("controllers: press a button on each controller to choose the order");
@@ -3218,6 +3227,19 @@ void App::Impl::tick_change_order() {
     }
     picker->set_ordering(waiting_row, change_order.taken);
     picker->set_wii_u_controllers(rows);
+    // X on the GamePad: no controller is it, unless the press was one taking
+    // a controller for it.
+    if (change_order.skip_asked) {
+        const bool near_a_take = change_order.taken && static_cast<int32_t>(change_order.taken_at -
+                                                                            (change_order.skip_asked_at - kSamePress)) >= 0;
+        if (near_a_take || change_order.next != 0) {
+            change_order.skip_asked = false;
+        } else if (now - change_order.skip_asked_at >= kSamePress) {
+            change_order.skip_asked = false;
+            change_order.next = 1;
+            log_info("controllers: no controller is the GamePad");
+        }
+    }
     // A or B, from a controller already taken -- not one being taken just
     // then, whose press might have reached the menu as well.
     if (change_order.asked) {

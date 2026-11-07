@@ -99,6 +99,10 @@ struct LayoutPickerResult {
     bool change_order_started = false;
     bool change_order_done = false;
     bool change_order_cancelled = false;
+    // X, Skip, while the GamePad is waiting for a press: no controller is the
+    // GamePad -- its screen alone plays it, a phone's touch screen with a
+    // controller on the host as Player 1 -- and the next press is Player 1's.
+    bool change_order_skipped = false;
     // One of Cemu's own options in a Wii U's Options, stepped on: its index
     // in LayoutPickerState::producer_options. -1 for none.
     int producer_option = -1;
@@ -484,6 +488,8 @@ public:
         ordering_assigned_ = assigned;
     }
     int ordering_waiting() const { return ordering_waiting_; }
+    // Whether the row waiting for a press is the GamePad's -- X skips it.
+    bool ordering_gamepad() const;
     bool ordering_assigned() const { return ordering_assigned_; }
     // Change Order over: the list as it was, the cursor where it was.
     void end_ordering();
