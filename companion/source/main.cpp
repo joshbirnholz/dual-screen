@@ -631,6 +631,8 @@ private:
     // function rather than an object, so it has nowhere of its own to keep
     // them.
     std::vector<GuideHit> connecting_hits_;
+    // Back on "Look at the other screen.", while the host's Settings are up.
+    std::vector<GuideHit> other_screen_hits_;
 
     // The panel size last acted on, so a change is noticed rather than
     // re-announced every frame.
@@ -1389,6 +1391,9 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
                 session_.host_wii_u_player_view().open) {
                 return mirrored_wii_u_player_.guide_hits();
             }
+            // The host's Settings or Save Data Management, not drawn here:
+            // its Back is the way out on a phone, and goes over as B.
+            if (!menu_open_ && session_.host_settings_open()) return other_screen_hits_;
             return none;
         // Its prompts are its own, and so are taps on them.
         case State::RemoteStart:
@@ -2598,7 +2603,7 @@ void Client::draw_scene() {
                                               /*over_game=*/true);
             }
         } else {
-            render_centred_message(quads_, text_, width, height, "Look at the other screen.");
+            render_look_at_other_screen(quads_, text_, button_glyphs_, width, height, &other_screen_hits_);
         }
         return;
     }
