@@ -672,6 +672,8 @@ struct App::Impl {
     std::unique_ptr<HostPickerScreen> host_picker;
     // Where the Connecting screen's Stop waiting was drawn, for a click or tap.
     std::vector<GuideHit> connecting_hits;
+    // Back on "Look at the other screen.", while the host's Settings are up.
+    std::vector<GuideHit> other_screen_hits;
     // Computers that can start a game, looked for while the launcher is up
     // -- see net::LaunchHostFinder -- the games recently played on them, for
     // the launcher's foot, and the one being started.
@@ -7191,7 +7193,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 // Taps on the prompts of a Controller Order drawn here too,
                 // which press what they name, over there.
                 std::vector<UiAction> forwarded = actions;
-                if (companion_session->host_controllers_view().open) {
+                const bool host_page_drawn_here =
+                    companion_session->host_controllers_view().open ||
+                    companion_session->host_amiibo_browser_view().open ||
+                    companion_session->host_graphic_packs_view().open ||
+                    companion_session->host_wii_u_player_view().open ||
+                    companion_session->host_button_mapping_view().open;
+                if (!host_page_drawn_here) {
+                    // "Look at the other screen.": its Back is B pressed,
+                    // over there.
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(other_screen_hits, forwarded, rest);
+                } else if (companion_session->host_controllers_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_controllers.guide_hits(), forwarded, rest);
                     // Scrolled here, as this device's own view of the list;
@@ -7813,7 +7826,7 @@ void App::Impl::render() {
                 draw_page(/*over_game=*/false);
             }
         } else {
-            render_centred_message(quads, text, width, height, "Look at the other screen.");
+            render_look_at_other_screen(quads, text, button_glyphs, width, height, &other_screen_hits);
         }
         // An update the host asked for here, going.
         update_prompt.render(quads, text, button_glyphs, width, height);

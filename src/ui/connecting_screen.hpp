@@ -19,6 +19,28 @@ void render_centred_message(QuadRenderer& quads,
                             float output_height,
                             const std::string& message);
 
+// The same, with a row of prompts along the foot -- for "Look at the other
+// screen." while the host's Settings are up, whose Back is the only way out
+// on a device with nothing but a touchscreen.
+void render_centred_message(QuadRenderer& quads,
+                            TextRenderer& text,
+                            const ButtonGlyphSheet& glyphs,
+                            float output_width,
+                            float output_height,
+                            const std::string& message,
+                            const std::vector<GuidePrompt>& prompts,
+                            std::vector<GuideHit>* out_hits);
+
+// What a device shows while the host has a page of its own up that is not
+// drawn here (Settings, Save Data Management): the message, and Back, which
+// goes over as B pressed. The hits are where Back went, for take_guide_taps().
+void render_look_at_other_screen(QuadRenderer& quads,
+                                 TextRenderer& text,
+                                 const ButtonGlyphSheet& glyphs,
+                                 float output_width,
+                                 float output_height,
+                                 std::vector<GuideHit>* out_hits);
+
 // A device with nothing to draw yet, because what it is waiting for has not
 // arrived. A heading, some lines under it, and whatever way out there is.
 //

@@ -22,6 +22,31 @@ void render_centred_message(QuadRenderer& quads,
               theme.text, TextAlign::Center);
 }
 
+void render_centred_message(QuadRenderer& quads,
+                            TextRenderer& text,
+                            const ButtonGlyphSheet& glyphs,
+                            float output_width,
+                            float output_height,
+                            const std::string& message,
+                            const std::vector<GuidePrompt>& prompts,
+                            std::vector<GuideHit>* out_hits) {
+    render_centred_message(quads, text, output_width, output_height, message);
+    if (out_hits != nullptr) out_hits->clear();
+    if (prompts.empty()) return;
+    const PageFrame frame = page_frame(output_width, output_height);
+    draw_page_guide(quads, text, glyphs, frame, prompts, out_hits);
+}
+
+void render_look_at_other_screen(QuadRenderer& quads,
+                                 TextRenderer& text,
+                                 const ButtonGlyphSheet& glyphs,
+                                 float output_width,
+                                 float output_height,
+                                 std::vector<GuideHit>* out_hits) {
+    render_centred_message(quads, text, glyphs, output_width, output_height, "Look at the other screen.",
+                           {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}}, out_hits);
+}
+
 void render_waiting_screen(QuadRenderer& quads,
                            TextRenderer& text,
                            const ButtonGlyphSheet& glyphs,
