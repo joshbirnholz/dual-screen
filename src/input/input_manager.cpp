@@ -773,7 +773,26 @@ std::vector<PadReading> InputManager::pad_readings() const {
         }
         readings.push_back(std::move(reading));
     }
+    // The touch controller, last: a pad of its own, so a Wii U game can make
+    // it the GamePad or a player like any other.
+    if (touch_.shown()) {
+        PadReading reading;
+        reading.id = kTouchControllerId;
+        reading.name = "Touch Controls";
+        const RawPadState raw = touch_.raw();
+        reading.pressing = held_state_from(raw).buttons;
+        if (game_input_enabled_) {
+            reading.held = gated(held_state_from(raw));
+            reading.controls = controls_held_in(raw) & pad_controls_from_ds_buttons(held_input_gate_.buttons());
+        }
+        readings.push_back(std::move(reading));
+    }
     return readings;
+}
+
+void InputManager::set_touch_controls(bool shown, const TouchController::Set& set) {
+    touch_set_ = set;
+    touch_.set_shown(shown);
 }
 
 void InputManager::set_pad_rumble(SDL_JoystickID id, bool active, float strength) {
@@ -868,6 +887,7 @@ void InputManager::begin_frame() {
 
 void InputManager::forget_touches() {
     fingers_.clear();
+    touch_.release_all();
     has_primary_finger_ = false;
     two_finger_tap_live_ = false;
     mouse_down_ = false;
@@ -1104,6 +1124,13 @@ void InputManager::handle_event(const SDL_Event& event) {
             // mouse events are handled below, and taking both would count every
             // click twice.
             if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
+            // One that lands on the touch controller is that control's, and
+            // nothing else hears of it -- not the game's touch screen, not a
+            // menu, not the two-finger tap.
+            if (touch_.finger_down(event.tfinger.fingerId, event.tfinger.x * touch_width_,
+                                   event.tfinger.y * touch_height_)) {
+                break;
+            }
             FingerState state;
             state.x = event.tfinger.x;
             state.y = event.tfinger.y;
@@ -1148,6 +1175,10 @@ void InputManager::handle_event(const SDL_Event& event) {
 
         case SDL_FINGERMOTION: {
             if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
+            if (touch_.finger_motion(event.tfinger.fingerId, event.tfinger.x * touch_width_,
+                                     event.tfinger.y * touch_height_)) {
+                break;
+            }
             const auto it = fingers_.find(event.tfinger.fingerId);
             if (it != fingers_.end()) {
                 it->second.x = event.tfinger.x;
@@ -1166,6 +1197,7 @@ void InputManager::handle_event(const SDL_Event& event) {
 
         case SDL_FINGERUP: {
             if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
+            if (touch_.finger_up(event.tfinger.fingerId)) break;
             const auto lifted = fingers_.find(event.tfinger.fingerId);
             const bool known = lifted != fingers_.end();
             const float press_x = known ? lifted->second.press_x : event.tfinger.x;
@@ -1202,6 +1234,12 @@ void InputManager::handle_event(const SDL_Event& event) {
         // dropped rather than counted a second time in the other's units.
         case SDL_MOUSEBUTTONDOWN:
             if (event.button.which == SDL_TOUCH_MOUSEID) break;
+            // The mouse presses the touch controller as a finger would.
+            if (event.button.button == SDL_BUTTON_LEFT &&
+                touch_.finger_down(kMouseFinger, static_cast<float>(event.button.x),
+                                   static_cast<float>(event.button.y))) {
+                break;
+            }
             if (event.button.button == SDL_BUTTON_LEFT) {
                 mouse_down_ = true;
                 mouse_x_ = static_cast<float>(event.button.x);
@@ -1221,6 +1259,7 @@ void InputManager::handle_event(const SDL_Event& event) {
 
         case SDL_MOUSEBUTTONUP:
             if (event.button.which == SDL_TOUCH_MOUSEID) break;
+            if (event.button.button == SDL_BUTTON_LEFT && touch_.finger_up(kMouseFinger)) break;
             if (event.button.button == SDL_BUTTON_LEFT) {
                 mouse_down_ = false;
                 mouse_x_ = static_cast<float>(event.button.x);
@@ -1237,6 +1276,11 @@ void InputManager::handle_event(const SDL_Event& event) {
             break;
 
         case SDL_MOUSEMOTION:
+            if (event.motion.which != SDL_TOUCH_MOUSEID &&
+                touch_.finger_motion(kMouseFinger, static_cast<float>(event.motion.x),
+                                     static_cast<float>(event.motion.y))) {
+                break;
+            }
             mouse_x_ = static_cast<float>(event.motion.x);
             mouse_y_ = static_cast<float>(event.motion.y);
             break;
@@ -1667,6 +1711,7 @@ DsInputState InputManager::poll_held_state() const {
         if (controller == nullptr || !reads_pad(entry.first)) continue;
         merge_held(held, held_state_of(controller));
     }
+    if (touch_.shown()) merge_held(held, held_state_from(touch_.raw()));
 
     merge_held(held, keyboard_held_state());
     return held;
@@ -1716,6 +1761,13 @@ void InputManager::end_frame(const Layout& layout,
         }
     }
 
+    // Laid out for this frame's size, for the fingers that land before the
+    // next one; and its menu control, tapped, opens the menu.
+    touch_width_ = output_width;
+    touch_height_ = output_height;
+    touch_.arrange(output_width, output_height, touch_set_);
+    if (touch_.take_menu_press()) push_action(UiAction::ToggleMenu);
+
     emit_navigation_from_axes();
 
     // Once per frame, alongside the buttons, so that the reading sent with a
@@ -1739,6 +1791,7 @@ void InputManager::end_frame(const Layout& layout,
             controls |= controls_held_in(raw_state_of(entry.second));
         }
     }
+    if (touch_.shown()) controls |= controls_held_in(touch_.raw());
     const bool left = (controls & control_bit(PadControl::LeftStick)) != 0;
     const bool right = (controls & control_bit(PadControl::RightStick)) != 0;
     if (left && right && !stick_chord_used_) {

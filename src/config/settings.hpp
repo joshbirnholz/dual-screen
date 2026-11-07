@@ -3,6 +3,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include "config/ds_profile.hpp"
 #include "config/paths.hpp"
 #include "core/system.hpp"
@@ -11,6 +15,17 @@
 #include "input/cursor_visibility.hpp"
 #include "layout/layout.hpp"
 #include "video/video_codec.hpp"
+
+// Whether this device is a phone or tablet, played by touch when no pad is
+// connected: Android, and an iPhone or iPad. Only there is Touch Controls
+// offered -- see Settings::touch_controls.
+#ifndef DS_TOUCH_DEVICE
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_TV)
+#define DS_TOUCH_DEVICE 1
+#else
+#define DS_TOUCH_DEVICE 0
+#endif
+#endif
 
 namespace ds {
 
@@ -316,6 +331,12 @@ struct Settings {
     // of the first screen, each started there when chosen. Off, the first
     // screen shows none and looks for no computers.
     bool quick_start = true;
+
+    // Touch Controls: a controller drawn over the game -- d-pad, buttons,
+    // and the sticks a console has -- while no pad is connected, on a phone
+    // or tablet. See TouchController. Off unless chosen; a pad connected
+    // takes it away again.
+    bool touch_controls = false;
 
     // The DS's owner, as its own settings have them: the name games greet
     // the player by, the favorite color -- an index into kDsFavoriteColors

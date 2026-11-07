@@ -17,6 +17,8 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/audio/audio_stretch.cpp
     src/audio/ui_sounds.cpp
     src/config/paths.cpp
+    src/config/settings.cpp
+    src/config/melonds_tuning.cpp
     src/video/color_convert.cpp
     src/video/h264_bitstream.cpp
     src/video/videotoolbox_decoder.cpp
@@ -36,6 +38,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/input/switch_motion.cpp
     src/input/motion_compare.cpp
     src/input/pad_routing.cpp
+    src/input/touch_controller.cpp
     src/layout/layout.cpp
     src/layout/layout_registry.cpp
     src/net/companion_session.cpp
@@ -74,6 +77,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/mirrored_game_dialog.cpp
     src/ui/menu_state.cpp
     src/ui/notice_popup.cpp
+    src/ui/settings_screen.cpp
     src/util/battery.cpp
     src/util/build_stamp.cpp
     src/util/log.cpp
@@ -92,8 +96,6 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/config/game_config.cpp
     src/config/mapping_json.cpp
     src/config/mapping_profiles.cpp
-    src/config/settings.cpp
-    src/config/melonds_tuning.cpp
     src/config/sha1.cpp
     src/core/ds_rom_info.cpp
     src/core/game_title.cpp
@@ -114,7 +116,6 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/launch/steam_shortcuts.cpp
     src/launch/launch_host.cpp
     src/ui/message_screen.cpp
-    src/ui/settings_screen.cpp
     src/ui/data_management_screen.cpp
     src/forwarder/forwarder_icon.cpp
     src/forwarder/steamgriddb.cpp

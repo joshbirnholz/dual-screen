@@ -254,6 +254,7 @@ Settings Settings::load(const AppPaths& paths) {
     settings.ui_sounds = get_or<bool>(document, "ui_sounds", settings.ui_sounds);
     settings.discord_status = get_or<bool>(document, "discord_status", settings.discord_status);
     settings.quick_start = get_or<bool>(document, "quick_start", settings.quick_start);
+    settings.touch_controls = get_or<bool>(document, "touch_controls", settings.touch_controls);
 
     if (settings.system_dir.empty()) {
         settings.system_dir = paths.default_system_dir;
@@ -310,6 +311,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["ui_sounds"] = ui_sounds;
     document["discord_status"] = discord_status;
     document["quick_start"] = quick_start;
+    document["touch_controls"] = touch_controls;
 
     const std::string temporary = paths.settings_file + ".tmp";
     {

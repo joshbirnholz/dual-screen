@@ -157,6 +157,7 @@ add_library(dualscreen_core STATIC
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp
     src/input/pad_routing.cpp
+    src/input/touch_controller.cpp
     src/input/dsu_client.cpp
     src/input/input_manager.cpp
     src/input/motion.cpp
@@ -322,6 +323,9 @@ add_executable(dualscreen-companion
     ${BEZEL_SOURCES}
     ${DUALSCREEN_COMPANION_SOURCES}
 )
+# It plays nothing here, so it has no Remote Start service to offer in its
+# Settings -- see settings_screen.hpp.
+target_compile_definitions(dualscreen-companion PRIVATE DS_REMOTE_START_HOST=0)
 target_include_directories(dualscreen-companion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/companion/source

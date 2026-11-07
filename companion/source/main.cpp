@@ -102,6 +102,7 @@ extern "C" {
 #include "ui/menu_cursor_sync.hpp"
 #include "ui/menu_scroll_sync.hpp"
 #include "ui/stylus_cursor_view.hpp"
+#include "ui/touch_controls_view.hpp"
 #include "ui/menu_entrance.hpp"
 #include "ui/game_browser.hpp"
 #include "render/compositor.hpp"
@@ -124,6 +125,7 @@ extern "C" {
 #include "util/log.hpp"
 
 #include "local_play.hpp"
+#include "ui/settings_screen.hpp"
 
 #if DS_LOCAL_PLAY
 #include "core/save_store.hpp"
@@ -131,7 +133,6 @@ extern "C" {
 #include "config/melonds_tuning.hpp"
 #include "core/libretro_core.hpp"
 #include "ui/data_management_screen.hpp"
-#include "ui/settings_screen.hpp"
 #include "ui/update_prompt.hpp"
 #include "update/updater.hpp"
 #include "android_updater.hpp"
@@ -147,6 +148,19 @@ extern "C" {
 #if TARGET_OS_TV
 // A television: no touch screen, and a remote that is a controller.
 #define DS_APPLE_TELEVISION 1
+#endif
+#endif
+
+// Whether this device has Settings of its own: one that plays games here,
+// and an iPhone or iPad, whose own menus and touch controls have settings
+// although it only joins games played elsewhere -- see
+// SettingsScreen::set_plays_games(). DS_COMPANION_SETTINGS=1 gives a
+// desktop build them too, to try them there.
+#ifndef DS_COMPANION_SETTINGS
+#if DS_LOCAL_PLAY || defined(DS_APPLE_HANDHELD)
+#define DS_COMPANION_SETTINGS 1
+#else
+#define DS_COMPANION_SETTINGS 0
 #endif
 #endif
 
@@ -425,8 +439,10 @@ private:
 #if DS_LOCAL_PLAY
     void start_updater(const AppPaths& paths);
     void poll_updates();
-    void open_settings();
     void open_data_management();
+#endif
+#if DS_COMPANION_SETTINGS
+    void open_settings();
 #endif
     void begin_search(ScreenId wanted);
     void join(const net::DiscoveredHost& host);
@@ -567,6 +583,20 @@ private:
         return menu_closing_ && !menu_open_ && picker_.is_open() && menu_entrance_.leaving();
     }
     void sync_scroll();
+    // Whether the touch controller is to be over the game this frame -- see
+    // TouchController: chosen in Settings, nothing connected to play with,
+    // and the game itself on screen.
+    bool touch_controls_wanted() const {
+#if DS_COMPANION_SETTINGS
+        const bool chosen = settings_.touch_controls;
+#else
+        const bool chosen = false;
+#endif
+        if (!DS_TOUCH_DEVICE && !touch_controls_forced()) return false;
+        if (!chosen && !touch_controls_forced()) return false;
+        return state_ == State::Playing && !menu_open_ && !menu_leaving() && !session_.host_settings_open() &&
+               !session_.host_resume_notice() && input_.connected_gamepads() == 0;
+    }
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -628,6 +658,12 @@ private:
     // Whether there is a surface to draw on. Only ever false on a device that
     // can take the app off screen without ending it.
     bool foreground_ = true;
+#if DS_COMPANION_SETTINGS
+    // The same Settings a game's menu opens, from the main menu, kept in the
+    // same settings.json; Data Management is in it where games are played.
+    std::unique_ptr<SettingsScreen> settings_screen_;
+    Settings settings_;
+#endif
 #if DS_LOCAL_PLAY
     // This device plays games too, so it keeps their saves, and answers other
     // devices about them from its menu as well as while a game is going --
@@ -635,10 +671,6 @@ private:
     std::unique_ptr<SaveStore> save_store_;
     std::unique_ptr<net::SaveExchangeService> save_service_;
     std::unique_ptr<DataManagementScreen> data_screen_;
-    // The same Settings a game's menu opens, from the main menu, kept in the
-    // same settings.json; Data Management is its first row.
-    std::unique_ptr<SettingsScreen> settings_screen_;
-    Settings settings_;
     // Updating this app from the nightly builds, on a Switch or an Android
     // device built by CI: offered on the opening screen when a check at
     // start finds one, and from Settings. See update/updater.hpp.
@@ -804,6 +836,10 @@ bool Client::start() {
         }
         start_updater(paths);
     }
+#elif DS_COMPANION_SETTINGS
+    // Read now: its button prompts, Confirm/Cancel and Touch Controls apply
+    // from the start.
+    settings_ = Settings::load(AppPaths::resolve());
 #endif
 
     // Straight in when the command line said which screen to be; otherwise
@@ -824,8 +860,10 @@ void Client::stop() {
     // Before a game here starts answering in its place. The screen first: it
     // may be waiting on a search, and holds textures the context below owns.
     data_screen_.reset();
-    settings_screen_.reset();
     save_service_.reset();
+#endif
+#if DS_COMPANION_SETTINGS
+    settings_screen_.reset();
 #endif
     session_.disconnect();
     audio_.close();
@@ -883,7 +921,7 @@ void Client::open_launcher() {
     // Looking for computers to start a game on from here too, for the
     // recently played games along the foot -- unless Quick Start is off, when
     // there are none.
-#if DS_LOCAL_PLAY
+#if DS_COMPANION_SETTINGS
     const bool quick_start = settings_.quick_start;
 #else
     const bool quick_start = true;
@@ -929,6 +967,7 @@ void Client::open_launcher() {
     // Unless this build carries its own emulator, in which case it can play a
     // game here too -- see local_play.hpp.
     launcher_.set_offers_load_game(can_play_here());
+    launcher_.set_offers_settings(DS_COMPANION_SETTINGS != 0);
     launcher_.open(/*runs_games=*/false);
 }
 
@@ -1014,6 +1053,9 @@ void Client::poll_updates() {
     if (settings_screen_) settings_screen_->set_updates_value(update_prompt_.row_value());
 }
 
+#endif
+
+#if DS_COMPANION_SETTINGS
 void Client::open_settings() {
     const AppPaths paths = AppPaths::resolve();
     settings_ = Settings::load(paths);
@@ -1021,6 +1063,7 @@ void Client::open_settings() {
     if (!settings_screen_) {
         settings_screen_.reset(new SettingsScreen(paths));
         if (system_keyboard_available()) settings_screen_->set_text_editor(&edit_with_system_keyboard);
+#if DS_LOCAL_PLAY
         settings_screen_->set_offers_data_management(save_store_ != nullptr);
         settings_screen_->set_offers_updates(updater_ != nullptr);
         settings_screen_->set_updates_value(update_prompt_.row_value());
@@ -1031,13 +1074,24 @@ void Client::open_settings() {
         settings_screen_->set_melonds_page(false, kMelonDsTuningPath);
 #endif
 #endif
+#else
+        // Nothing is played here: only what this device's own menus and
+        // controls follow.
+        settings_screen_->set_plays_games(false);
+#endif
     }
+#if DS_LOCAL_PLAY
     // The one emulator this build has, linked in.
     settings_screen_->open(settings_, {{"Nintendo DS", kBuiltInCorePath, SystemId::Ds, "melonDS"}});
+#else
+    settings_screen_->open(settings_, {});
+#endif
     state_ = State::Settings;
     log_info("the settings screen is up");
 }
+#endif
 
+#if DS_LOCAL_PLAY
 void Client::open_data_management() {
     if (!save_store_) return;
     if (!data_screen_) {
@@ -1566,7 +1620,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     }
 
     if (state_ == State::Settings) {
-#if DS_LOCAL_PLAY
+#if DS_COMPANION_SETTINGS
         // A name being typed, from this device's keyboard -- on a phone, the
         // one SDL raises when text input starts.
         settings_screen_->type(input_.typed_text(), input_.backspaces());
@@ -1580,11 +1634,14 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             ui_sounds_.set_enabled(settings_.ui_sounds);
             if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
         }
+#if DS_LOCAL_PLAY
         if (result.open_updates) {
             update_prompt_.choose();
         } else if (result.open_data_management) {
             open_data_management();
-        } else if (result.close_requested) {
+        } else
+#endif
+        if (result.close_requested) {
             open_launcher();
         }
 #endif
@@ -1629,7 +1686,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
             }
             case LauncherChoice::Settings:
-#if DS_LOCAL_PLAY
+#if DS_COMPANION_SETTINGS
                 open_settings();
 #endif
                 break;
@@ -1900,6 +1957,8 @@ UiSoundView Client::sound_view() const {
         case State::DataManagement:
             if (data_screen_) data_screen_->describe_for_sound(view);
             break;
+#endif
+#if DS_COMPANION_SETTINGS
         case State::Settings:
             if (settings_screen_) settings_screen_->describe_for_sound(view);
             break;
@@ -1916,8 +1975,8 @@ void Client::run() {
     const uint64_t started_ms = net::monotonic_millis();
     bool screenshot_taken = false;
     {
-        // Only a build that plays games here has Settings to turn them off in.
-#if DS_LOCAL_PLAY
+        // Only a build with Settings can have them turned off.
+#if DS_COMPANION_SETTINGS
         const Settings sound_settings = Settings::load(AppPaths::resolve());
         const bool wanted = sound_settings.ui_sounds;
 #else
@@ -1966,6 +2025,7 @@ void Client::run() {
         PassTimes pass;
         pass.began = now;
 
+        input_.set_touch_controls(touch_controls_wanted(), touch_controls_for(session_.system()));
         input_.begin_frame();
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
@@ -2230,7 +2290,7 @@ void Client::run() {
         // apply_button_style().
         button_glyphs_.set_style(input_.single_joycon_in_use() ? PadGlyphStyle::Generic
                                                                : PadGlyphStyle::Nintendo);
-#elif DS_LOCAL_PLAY && !defined(DS_APPLE_TELEVISION)
+#elif DS_COMPANION_SETTINGS && !defined(DS_APPLE_TELEVISION)
         // Everywhere else that has Settings -- an Android device, a desktop --
         // the player's own choice of prompts and of which button says yes,
         // the same two the desktop app follows. Only Settings offered them:
@@ -2247,7 +2307,7 @@ void Client::run() {
         set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());
         set_live_wheel(input_.wheel(), input_.mouse_x(), input_.mouse_y());
         // Connected to another device's game, its menus' color: the host's.
-#if DS_LOCAL_PLAY
+#if DS_COMPANION_SETTINGS
         follow_favorite_color_accent(settings_.ds_favorite_color, session_.host_favorite_color());
 #else
         follow_favorite_color_accent(kDsDefaultFavoriteColor, session_.host_favorite_color());
@@ -2424,8 +2484,10 @@ void Client::draw_scene() {
         return;
     }
     if (state_ == State::Settings) {
-#if DS_LOCAL_PLAY
+#if DS_COMPANION_SETTINGS
         if (settings_screen_) settings_screen_->render(quads_, text_, button_glyphs_, width, height);
+#endif
+#if DS_LOCAL_PLAY
         update_prompt_.render(quads_, text_, button_glyphs_, width, height);
 #endif
         return;
@@ -2565,8 +2627,10 @@ void Client::draw_scene() {
     const bool update_shown = false;
 #endif
     const std::vector<ControllerNotice>& controller_notices = session_.host_controller_notices();
+    // The touch controller is drawn over the screens with GL too.
+    const bool touch_controls = input_.touch_controller().shown();
     router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty() &&
-                   controller_notices.empty() && !update_shown);
+                   controller_notices.empty() && !update_shown && !touch_controls);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2575,6 +2639,7 @@ void Client::draw_scene() {
         draw_stylus_cursor(quads_, session_layout(), width, height, session_.screens_geometry(),
                            static_cast<float>(panel_width_), static_cast<float>(panel_height_),
                            session_.host_stylus_cursor());
+        draw_touch_controls(quads_, text_, input_.touch_controller());
     }
 
     if (menu_open_ && session_.system() == SystemId::WiiU && !session_.host_paused()) {

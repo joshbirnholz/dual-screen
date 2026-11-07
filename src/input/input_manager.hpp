@@ -14,6 +14,8 @@
 #include "input/ds_input.hpp"
 #include "input/motion.hpp"
 #include "input/held_input_gate.hpp"
+#include "input/raw_pad_state.hpp"
+#include "input/touch_controller.hpp"
 #include "layout/layout.hpp"
 
 namespace ds {
@@ -129,14 +131,7 @@ bool controller_is_a_remote(const char* sdl_name);
 // Known by its id, never by its name -- see KnownPad for why. No keyboard:
 // on a Wii U the keys are Cemu's to map directly, and none of this app's
 // controllers carry them.
-// One pad's controls, read raw in SDL's terms: every button SDL has a name
-// for, and every axis. What held_state_from() maps into the console's -- the
-// same whether they came off SDL or, on a Switch, off the console itself.
-struct RawPadState {
-    bool buttons[SDL_CONTROLLER_BUTTON_MAX] = {};
-    int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
-};
-
+// See input/raw_pad_state.hpp for RawPadState.
 struct PadReading {
     SDL_JoystickID id = 0;
     // What SDL calls it -- under Steam Input, the name the player gave it in
@@ -329,6 +324,16 @@ public:
 
     MenuButtonLabels menu_labels() const;
 
+    // The controller drawn over the game for a device with no pad -- see
+    // TouchController and Settings::touch_controls. Asked every frame, before
+    // the events: shown with `set`'s controls, or hidden, which lets go of
+    // whatever it held. Its fingers reach nothing else, and while it is
+    // shown it is one more pad in pad_readings().
+    void set_touch_controls(bool shown, const TouchController::Set& set);
+    const TouchController& touch_controller() const { return touch_; }
+    // The id it is reported under in pad_readings(): no SDL pad's.
+    static constexpr SDL_JoystickID kTouchControllerId = 0x7FFFFFF0;
+
 private:
     void open_controller(int device_index);
     void close_controller(SDL_JoystickID instance_id);
@@ -480,6 +485,15 @@ private:
     // simultaneous finger opens the menu, which is the only way in on a device
     // with no buttons at all.
     std::map<SDL_FingerID, FingerState> fingers_;
+    // The touch controller, and the size it was last laid out for -- what a
+    // finger's normalized position is turned into pixels by when it lands.
+    TouchController touch_;
+    TouchController::Set touch_set_;
+    float touch_width_ = 0.0f;
+    float touch_height_ = 0.0f;
+    // The mouse's button, as the touch controller's fingers know it: no
+    // finger SDL would number.
+    static constexpr SDL_FingerID kMouseFinger = -0x4D4F555345;
     SDL_FingerID primary_finger_ = 0;
     bool has_primary_finger_ = false;
     bool mouse_down_ = false;
