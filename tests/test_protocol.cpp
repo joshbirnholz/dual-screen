@@ -2305,6 +2305,7 @@ void test_button_mapping_view_round_trip() {
     sent.wii_u_mapping[PadControl::Y] = WiiUAction::Turbo;
     sent.wii_u_mapping.turbo(PadControl::Y) = WiiUAction::RemoteA;
     sent.wii_u_mapping.sideways = true;
+    sent.wii_u_mapping.sticks[0] = WiiUStick::Nothing;
     buffer.clear();
     encode_button_mapping_view(sent, buffer);
     CHECK(one_message(buffer, type, payload));

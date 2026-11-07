@@ -580,9 +580,10 @@ int wii_u_choice(WiiUController controller, WiiUAction action) {
 void test_a_wii_u_controller_is_mapped_on_the_same_page() {
     ButtonMappingScreen screen = open_wii_u(WiiUController::Pro);
     CHECK(screen.wii_u());
-    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls));
+    // Its buttons, then its two sticks.
+    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls) + 2);
     for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
-    CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) - 1);
+    CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) + 1);
     screen = open_wii_u(WiiUController::Remote);
     CHECK(screen.action_label(PadControl::X) == "1 Button");
     CHECK(screen.action_label(PadControl::A) == "A Button");
@@ -640,7 +641,7 @@ void test_a_wii_u_controller_is_mapped_on_the_same_page() {
 // page to the other device.
 void test_a_wii_remote_can_be_held_sideways() {
     ButtonMappingScreen screen = open_wii_u(WiiUController::Remote);
-    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls) + 1);
+    CHECK_EQ(screen.row_count(), static_cast<int>(kPadControls) + 3);
     for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
     CHECK(screen.on_sideways());
     // Not a button: no turbo, no picker.
@@ -654,7 +655,7 @@ void test_a_wii_remote_can_be_held_sideways() {
     }
     CHECK(screen.action_label(PadControl::Up) == "Up Button");
     CHECK(button_mapping_view_of(screen).wii_u_mapping.sideways);
-    const ButtonMappingScreenResult off = tap_entry(screen, ButtonMappingScreen::kRightStickRow);
+    const ButtonMappingScreenResult off = tap_entry(screen, ButtonMappingScreen::kSidewaysRow);
     CHECK(off.wii_u_changed.has_value() && !off.wii_u_changed->sideways);
 
     // Reset to Default keeps how it is held, as a DS game's keeps its right
@@ -670,7 +671,41 @@ void test_a_wii_remote_can_be_held_sideways() {
           reverted.wii_u_changed->is_standard(WiiUController::Remote));
 
     // Only a Wii Remote alone is held so.
-    CHECK_EQ(open_wii_u(WiiUController::RemoteNunchuk).row_count(), static_cast<int>(kPadControls));
+    CHECK_EQ(open_wii_u(WiiUController::RemoteNunchuk).row_count(), static_cast<int>(kPadControls) + 2);
+}
+
+// Each stick has a row after the buttons: what it moves on the controller
+// the game has -- a Wii Remote alone's left stick its D-Pad -- chosen from
+// the controller's own sticks, the D-Pad and Disabled.
+void test_a_wii_u_controllers_sticks_are_mapped() {
+    ButtonMappingScreen remote = open_wii_u(WiiUController::Remote);
+    for (int step = 0; step < static_cast<int>(kPadControls); ++step) press(remote, UiAction::Down);
+    CHECK_EQ(remote.wii_u_stick(), 0);
+    // Not a button: no turbo.
+    CHECK(!press(remote, UiAction::MenuReset).wii_u_changed.has_value());
+    press(remote, UiAction::Confirm);
+    CHECK(remote.choosing() && remote.choice_focus() == 0);
+    press(remote, UiAction::Down);
+    ButtonMappingScreenResult chosen = press(remote, UiAction::Confirm);
+    CHECK(chosen.wii_u_changed.has_value() &&
+          chosen.wii_u_changed->resolved_stick(0, WiiUController::Remote) == ds::WiiUStick::Nothing);
+    // Back to the D-Pad, which is the standard mapping's.
+    press(remote, UiAction::Confirm);
+    press(remote, UiAction::Up);
+    chosen = press(remote, UiAction::Confirm);
+    CHECK(chosen.wii_u_changed.has_value() && chosen.wii_u_changed->is_standard(WiiUController::Remote));
+
+    ButtonMappingScreen pro = open_wii_u(WiiUController::Pro);
+    for (int step = 0; step <= static_cast<int>(kPadControls); ++step) press(pro, UiAction::Down);
+    CHECK_EQ(pro.wii_u_stick(), 1);
+    press(pro, UiAction::Confirm);
+    CHECK(pro.choosing() && pro.choice_focus() == 1);
+    press(pro, UiAction::Down);
+    chosen = press(pro, UiAction::Confirm);
+    CHECK(chosen.wii_u_changed.has_value() &&
+          chosen.wii_u_changed->sticks[1] == ds::WiiUStick::DPad);
+    // Drawn the same on the other device.
+    CHECK(button_mapping_view_of(pro).wii_u_mapping.sticks[1] == ds::WiiUStick::DPad);
 }
 
 // Save Profile... and Load Profile..., over the console: Right from the list
@@ -865,6 +900,7 @@ int main() {
     test_the_other_device_places_a_touch_point();
     test_a_wii_u_controller_is_mapped_on_the_same_page();
     test_a_wii_remote_can_be_held_sideways();
+    test_a_wii_u_controllers_sticks_are_mapped();
     test_the_other_device_shows_a_wii_u_controllers_page();
     test_save_and_load_are_beside_the_list();
     test_profiles_are_loaded_saved_and_deleted();

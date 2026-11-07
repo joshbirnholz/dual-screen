@@ -1,6 +1,7 @@
 #include "input/wii_u_mapping.hpp"
 
 #include <algorithm>
+#include <iterator>
 
 #include "core/external_frame_link.hpp"
 #include "input/ds_input.hpp"
@@ -197,8 +198,36 @@ bool WiiUMapping::is_standard(WiiUController controller) const {
         const PadControl control = static_cast<PadControl>(index);
         if (resolved(control, controller) != standard_wii_u_action(control, controller)) return false;
     }
+    for (int which = 0; which < 2; ++which) {
+        if (resolved_stick(which, controller) != standard_wii_u_stick(which, controller)) return false;
+    }
     return true;
 }
+
+namespace {
+
+// A Wii Remote held sideways, turned a quarter left, its top to the left:
+// what points up held so is the remote's Right, and so round.
+uint32_t turned_sideways(uint32_t buttons) {
+    const auto bit = [](WiiUAction direction) {
+        unsigned button = 0;
+        wii_u_action_button(direction, button);
+        return 1u << button;
+    };
+    const uint32_t up = bit(WiiUAction::RemoteUp);
+    const uint32_t down = bit(WiiUAction::RemoteDown);
+    const uint32_t left = bit(WiiUAction::RemoteLeft);
+    const uint32_t right = bit(WiiUAction::RemoteRight);
+    const uint32_t held = buttons;
+    buttons &= ~(up | down | left | right);
+    if (held & up) buttons |= right;
+    if (held & right) buttons |= down;
+    if (held & down) buttons |= left;
+    if (held & left) buttons |= up;
+    return buttons;
+}
+
+}  // namespace
 
 uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUController controller, uint32_t ms) {
     uint32_t buttons = 0;
@@ -213,25 +242,102 @@ uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUContro
         unsigned button = 0;
         if (wii_u_action_button(action, button)) buttons |= 1u << button;
     }
-    if (mapping.sideways && controller == WiiUController::Remote) {
-        // Turned a quarter left, its top to the left: what points up held so
-        // is the remote's Right, and so round.
-        const auto bit = [](WiiUAction direction) {
-            unsigned button = 0;
-            wii_u_action_button(direction, button);
-            return 1u << button;
-        };
-        const uint32_t up = bit(WiiUAction::RemoteUp);
-        const uint32_t down = bit(WiiUAction::RemoteDown);
-        const uint32_t left = bit(WiiUAction::RemoteLeft);
-        const uint32_t right = bit(WiiUAction::RemoteRight);
-        const uint32_t held = buttons;
-        buttons &= ~(up | down | left | right);
-        if (held & up) buttons |= right;
-        if (held & right) buttons |= down;
-        if (held & down) buttons |= left;
-        if (held & left) buttons |= up;
+    if (mapping.sideways && controller == WiiUController::Remote) buttons = turned_sideways(buttons);
+    return buttons;
+}
+
+WiiUStick standard_wii_u_stick(int which, WiiUController controller) {
+    switch (controller) {
+        case WiiUController::Remote: return which == 0 ? WiiUStick::DPad : WiiUStick::Nothing;
+        case WiiUController::RemoteNunchuk: return which == 0 ? WiiUStick::LeftStick : WiiUStick::Nothing;
+        default: return which == 0 ? WiiUStick::LeftStick : WiiUStick::RightStick;
     }
+}
+
+std::vector<WiiUStick> wii_u_stick_choices(WiiUController controller) {
+    switch (controller) {
+        case WiiUController::Remote: return {WiiUStick::DPad, WiiUStick::Nothing};
+        case WiiUController::RemoteNunchuk: return {WiiUStick::LeftStick, WiiUStick::DPad, WiiUStick::Nothing};
+        default: return {WiiUStick::LeftStick, WiiUStick::RightStick, WiiUStick::DPad, WiiUStick::Nothing};
+    }
+}
+
+std::string wii_u_stick_name(WiiUStick stick, WiiUController controller) {
+    switch (stick) {
+        case WiiUStick::LeftStick:
+            return controller == WiiUController::RemoteNunchuk ? "Nunchuk Stick" : "Left Stick";
+        case WiiUStick::RightStick: return "Right Stick";
+        case WiiUStick::DPad: return "D-Pad";
+        case WiiUStick::Nothing: return "Disabled";
+        case WiiUStick::Standard:
+        case WiiUStick::Count: break;
+    }
+    return "Standard";
+}
+
+namespace {
+constexpr const char* kStickKeys[] = {"standard", "left_stick", "right_stick", "d_pad", "nothing"};
+}  // namespace
+
+const char* wii_u_stick_key(WiiUStick stick) {
+    const auto index = static_cast<std::size_t>(stick);
+    return index < std::size(kStickKeys) ? kStickKeys[index] : kStickKeys[0];
+}
+
+WiiUStick wii_u_stick_from_key(const std::string& key) {
+    for (std::size_t index = 0; index < std::size(kStickKeys); ++index) {
+        if (key == kStickKeys[index]) return static_cast<WiiUStick>(index);
+    }
+    return WiiUStick::Standard;
+}
+
+WiiUStick WiiUMapping::resolved_stick(int which, WiiUController controller) const {
+    const WiiUStick stick = sticks[static_cast<std::size_t>(std::clamp(which, 0, 1))];
+    if (stick == WiiUStick::Standard) return standard_wii_u_stick(which, controller);
+    // One the controller has no such stick for moves nothing.
+    const std::vector<WiiUStick> offered = wii_u_stick_choices(controller);
+    return std::find(offered.begin(), offered.end(), stick) != offered.end() ? stick : WiiUStick::Nothing;
+}
+
+uint32_t wii_u_sticks(int16_t left[2], int16_t right[2], const WiiUMapping& mapping, WiiUController controller) {
+    const int16_t pad[2][2] = {{left[0], left[1]}, {right[0], right[1]}};
+    int16_t* const out[2] = {left, right};
+    for (int16_t* each : out) each[0] = each[1] = 0;
+    const auto reach = [](const int16_t* stick) {
+        return static_cast<int>(stick[0]) * stick[0] + static_cast<int>(stick[1]) * stick[1];
+    };
+    const bool remote = controller == WiiUController::Remote || controller == WiiUController::RemoteNunchuk;
+    const auto bit = [&](WiiUAction direction) {
+        unsigned button = 0;
+        wii_u_action_button(direction, button);
+        return 1u << button;
+    };
+    uint32_t buttons = 0;
+    for (int which = 0; which < 2; ++which) {
+        const int16_t* stick = pad[which];
+        switch (mapping.resolved_stick(which, controller)) {
+            case WiiUStick::LeftStick:
+            case WiiUStick::RightStick: {
+                int16_t* to = out[mapping.resolved_stick(which, controller) == WiiUStick::LeftStick ? 0 : 1];
+                if (reach(stick) > reach(to)) {
+                    to[0] = stick[0];
+                    to[1] = stick[1];
+                }
+                break;
+            }
+            case WiiUStick::DPad: {
+                // Past half way, each way on its own: a diagonal presses two.
+                constexpr int kHalf = 0x7fff / 2;
+                if (stick[1] < -kHalf) buttons |= bit(remote ? WiiUAction::RemoteUp : WiiUAction::Up);
+                if (stick[1] > kHalf) buttons |= bit(remote ? WiiUAction::RemoteDown : WiiUAction::Down);
+                if (stick[0] < -kHalf) buttons |= bit(remote ? WiiUAction::RemoteLeft : WiiUAction::Left);
+                if (stick[0] > kHalf) buttons |= bit(remote ? WiiUAction::RemoteRight : WiiUAction::Right);
+                break;
+            }
+            default: break;
+        }
+    }
+    if (mapping.sideways && controller == WiiUController::Remote) buttons = turned_sideways(buttons);
     return buttons;
 }
 

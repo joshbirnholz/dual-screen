@@ -990,6 +990,10 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     const std::size_t names = std::min<std::size_t>(message.profile_names.size(), 255);
     put_u8(out, static_cast<uint8_t>(names));
     for (std::size_t index = 0; index < names; ++index) put_string(out, message.profile_names[index].substr(0, 255));
+    // And a Wii U controller's sticks, last.
+    if (message.wii_u) {
+        for (const WiiUStick stick : message.wii_u_mapping.sticks) put_u8(out, static_cast<uint8_t>(stick));
+    }
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -1073,6 +1077,15 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
             view.naming_on_companion = (flags & 8u) != 0;
             view.asking_profile = static_cast<int>(asking_profile) - 1;
             view.profile_current = static_cast<int>(current) - 1;
+        }
+        // From a host new enough to map a Wii U controller's sticks.
+        if (view.wii_u && reader.remaining() >= 2) {
+            for (WiiUStick& stick : view.wii_u_mapping.sticks) {
+                uint8_t value = 0;
+                reader.u8(value);
+                stick = value < static_cast<uint8_t>(WiiUStick::Count) ? static_cast<WiiUStick>(value)
+                                                                       : WiiUStick::Standard;
+            }
         }
     }
     out = view;

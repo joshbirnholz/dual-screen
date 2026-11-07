@@ -166,11 +166,18 @@ public:
     int focus() const { return focus_; }
     static constexpr int kRightStickRow = static_cast<int>(kPadControls);
     static constexpr int kRows = kRightStickRow + 1;
-    // How many rows this page has: a Wii U controller's has no right stick's,
-    // but a Wii Remote alone has Sideways Wii Remote's in its place.
-    int row_count() const { return wii_u_ && !has_sideways_row() ? kRightStickRow : kRows; }
+    // A Wii U controller's page has each stick's row in place of the right
+    // stick's -- what it moves -- and a Wii Remote alone Sideways Wii
+    // Remote's after them.
+    static constexpr int kWiiUStickRow = kRightStickRow;
+    static constexpr int kSidewaysRow = kWiiUStickRow + 2;
+    int row_count() const { return !wii_u_ ? kRows : has_sideways_row() ? kSidewaysRow + 1 : kSidewaysRow; }
     bool has_sideways_row() const { return wii_u_ && wii_u_controller_ == WiiUController::Remote; }
-    bool on_sideways() const { return has_sideways_row() && focus_ == kRightStickRow; }
+    bool on_sideways() const { return has_sideways_row() && focus_ == kSidewaysRow; }
+    // The stick whose row the cursor is on -- 0 the left, 1 the right -- or -1.
+    int wii_u_stick() const {
+        return wii_u_ && (focus_ == kWiiUStickRow || focus_ == kWiiUStickRow + 1) ? focus_ - kWiiUStickRow : -1;
+    }
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
@@ -352,6 +359,7 @@ private:
     WiiUController wii_u_controller_ = WiiUController::Pro;
     std::string detail_;
     std::vector<WiiUAction> choice_wii_u_;
+    std::vector<WiiUStick> choice_sticks_;
     // Profiles, and the page of them up, its cursor and how far it is
     // scrolled; the cursor on a button over the console.
     std::vector<std::string> profile_names_;

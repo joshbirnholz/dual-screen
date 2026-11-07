@@ -339,6 +339,7 @@ void test_game_config_round_trip() {
     remote[PadControl::X] = WiiUAction::Turbo;
     remote.turbo(PadControl::X) = WiiUAction::Two;
     remote.sideways = true;
+    remote.sticks[1] = WiiUStick::DPad;
     fresh.wii_u_mappings[wii_u_mapping_key(0, WiiUController::Remote)] = remote;
     ProfileSwitching switching;
     switching.button = PadControl::Minus;

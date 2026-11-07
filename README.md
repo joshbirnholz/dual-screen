@@ -595,7 +595,11 @@ straight across. **A** picks another button for one, or one of
 Dualscreen's own -- **Open Menu**, **Swap Screens** (as the menu's), or
 **Peek**, which shows each device the other screen while it is held and
 changes nothing else -- or Disabled; HOME is not offered, as a pad's own
-reaches the menu; **Y** puts it on turbo; **X** puts every button back. Each player
+reaches the menu; **Y** puts it on turbo; **X** puts every button back.
+After the buttons come **Left Stick** and **Right Stick**: what each of the
+pad's sticks moves -- the controller's own sticks (a Nunchuk's one), its
+D-Pad, or nothing. A Wii Remote alone's left stick is its D-Pad, turned
+with it when it is held sideways. Each player
 keeps a mapping for each controller type, with the game, so changing a
 player's type and back keeps what it had. Dualscreen does the mapping and
 hands Cemu the controller's own buttons, so Cemu's own input settings for

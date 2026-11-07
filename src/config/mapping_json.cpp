@@ -81,6 +81,10 @@ json wii_u_mapping_json(const WiiUMapping& mapping) {
         }
     }
     if (mapping.sideways) kept["sideways"] = true;
+    for (int which = 0; which < 2; ++which) {
+        const WiiUStick stick = mapping.sticks[static_cast<std::size_t>(which)];
+        if (stick != WiiUStick::Standard) kept[which == 0 ? "left_stick" : "right_stick"] = wii_u_stick_key(stick);
+    }
     return kept;
 }
 
@@ -103,6 +107,12 @@ WiiUMapping wii_u_mapping_from_json(const json& kept) {
     }
     if (const auto sideways = kept.find("sideways"); sideways != kept.end() && sideways->is_boolean()) {
         mapping.sideways = sideways->get<bool>();
+    }
+    for (int which = 0; which < 2; ++which) {
+        const auto stick = kept.find(which == 0 ? "left_stick" : "right_stick");
+        if (stick != kept.end() && stick->is_string()) {
+            mapping.sticks[static_cast<std::size_t>(which)] = wii_u_stick_from_key(stick->get<std::string>());
+        }
     }
     return mapping;
 }

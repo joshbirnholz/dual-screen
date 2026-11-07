@@ -91,6 +91,32 @@ bool wii_u_action_button(WiiUAction action, unsigned& button);
 // nothing: a pad's own is Steam's.
 WiiUAction standard_wii_u_action(PadControl control, WiiUController controller);
 
+// What a pad's stick moves: the controller's own left or right stick -- a
+// Nunchuk's one is its left -- or its D-Pad, pushed past half way, or
+// nothing. Saved by key and sent by number: new ones go at the end.
+enum class WiiUStick : uint8_t {
+    // The controller's standard mapping's -- see standard_wii_u_stick().
+    Standard = 0,
+    LeftStick,
+    RightStick,
+    DPad,
+    Nothing,
+    Count,
+};
+
+// The pad's left stick (`which` 0) or right (1), as the standard mapping has
+// it: each the controller's own, where it has one -- a Nunchuk's on the left
+// -- and a Wii Remote alone's left stick its D-Pad, which is all it has to
+// steer by.
+WiiUStick standard_wii_u_stick(int which, WiiUController controller);
+// What a stick's picker offers for `controller`: its sticks, the D-Pad, then
+// Disabled.
+std::vector<WiiUStick> wii_u_stick_choices(WiiUController controller);
+// "Left Stick", "Nunchuk Stick", "D-Pad", "Disabled".
+std::string wii_u_stick_name(WiiUStick stick, WiiUController controller);
+const char* wii_u_stick_key(WiiUStick stick);
+WiiUStick wii_u_stick_from_key(const std::string& key);
+
 // One controller's mapping: Standard for each button never changed.
 struct WiiUMapping {
     std::array<WiiUAction, kPadControls> actions{};
@@ -102,6 +128,8 @@ struct WiiUMapping {
     // player holds it, so a button on Up presses the remote's Right, which
     // points up held so. What each button is chosen as is the same either way.
     bool sideways = false;
+    // The pad's left and right sticks.
+    std::array<WiiUStick, 2> sticks{};
 
     WiiUAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     WiiUAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
@@ -109,12 +137,14 @@ struct WiiUMapping {
     WiiUAction turbo(PadControl control) const { return turbo_of[static_cast<std::size_t>(control)]; }
     // What `control` does, Standard looked up.
     WiiUAction resolved(PadControl control, WiiUController controller) const;
+    WiiUStick resolved_stick(int which, WiiUController controller) const;
     // Whether every button does what the standard mapping has it do, held
     // sideways or not.
     bool is_standard(WiiUController controller) const;
 
     bool operator==(const WiiUMapping& other) const {
-        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways;
+        return actions == other.actions && turbo_of == other.turbo_of && sideways == other.sideways &&
+               sticks == other.sticks;
     }
     bool operator!=(const WiiUMapping& other) const { return !(*this == other); }
 };
@@ -175,6 +205,13 @@ private:
 // bits) press on `controller` under `mapping`, at `ms` milliseconds for a
 // Turbo's beat -- a Wii Remote held sideways, its D-Pad turned.
 uint32_t wii_u_buttons(uint32_t controls, const WiiUMapping& mapping, WiiUController controller, uint32_t ms);
+
+// The pad's sticks -- `left` and `right`, x then y, in libretro's range, up
+// negative -- made the controller's under `mapping`: written back as its own
+// left and right stick, either one pushed further winning where both move
+// the same, and the D-Pad's directions a stick on it presses returned as
+// ExternalButton bits, a Wii Remote held sideways turned as its D-Pad is.
+uint32_t wii_u_sticks(int16_t left[2], int16_t right[2], const WiiUMapping& mapping, WiiUController controller);
 
 // Whether `controls` (PadControl bits) hold `function` -- OpenMenu,
 // SwapScreens or Peek -- under `mapping`.

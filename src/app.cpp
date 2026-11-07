@@ -2409,12 +2409,26 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     }
     // Each controller's buttons as the game has it, through this game's
     // mapping for it -- see WiiUMapping.
+    // And its sticks: each the controller's own, or its D-Pad.
+    const auto map_sticks = [](DsInputState& state, const WiiUMapping& mapping, WiiUController controller) {
+        int16_t left[2] = {state.circle_x, state.circle_y};
+        int16_t right[2] = {state.c_stick_x, state.c_stick_y};
+        const uint32_t buttons = wii_u_sticks(left, right, mapping, controller);
+        state.circle_x = left[0];
+        state.circle_y = left[1];
+        state.c_stick_x = right[0];
+        state.c_stick_y = right[1];
+        return buttons;
+    };
     wii_u_gamepad_buttons =
-        wii_u_buttons(routed.gamepad_controls, wii_u_mapping_of(-1), WiiUController::GamePad, now_ms);
+        wii_u_buttons(routed.gamepad_controls, wii_u_mapping_of(-1), WiiUController::GamePad, now_ms) |
+        map_sticks(routed.gamepad, wii_u_mapping_of(-1), WiiUController::GamePad);
     if (external_source) {
         for (int player = 0; player < kPadPlayers; ++player) {
-            const uint32_t buttons = wii_u_buttons(routed.player_controls[player], wii_u_mapping_of(player),
-                                                   wii_u_controller_of(player), now_ms);
+            const WiiUMapping mapping = wii_u_mapping_of(player);
+            const WiiUController controller = wii_u_controller_of(player);
+            const uint32_t buttons = wii_u_buttons(routed.player_controls[player], mapping, controller, now_ms) |
+                                     map_sticks(routed.players[player], mapping, controller);
             external_source->submit_player_input(player, routed.player_fed[player], routed.players[player],
                                                  buttons);
         }

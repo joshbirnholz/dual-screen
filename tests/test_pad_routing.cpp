@@ -808,6 +808,44 @@ uint32_t bit(ds::ExternalButton button) { return 1u << static_cast<unsigned>(but
 // Controller's buttons straight across, a Wii Remote's held upright with 1 on X
 // and 2 on Y, a Nunchuk's C and Z on L and ZL, and a Classic Controller's
 // apart from the remote it is plugged into.
+// A stick moves the controller's own -- or its D-Pad, past half way, a Wii
+// Remote held sideways turned -- or nothing.
+void test_a_wii_u_controllers_sticks_move_what_they_are_mapped_to() {
+    using ds::ExternalButton;
+    using ds::WiiUController;
+    using ds::WiiUStick;
+    ds::WiiUMapping mapping;
+    int16_t left[2] = {0, -30000};
+    int16_t right[2] = {12000, 0};
+    CHECK_EQ(ds::wii_u_sticks(left, right, mapping, WiiUController::Pro), 0u);
+    CHECK(left[1] == -30000 && right[0] == 12000);
+    // A Wii Remote alone: the left stick is its D-Pad, the right nothing.
+    left[0] = 0;
+    left[1] = -30000;
+    right[0] = 12000;
+    CHECK_EQ(ds::wii_u_sticks(left, right, mapping, WiiUController::Remote), bit(ExternalButton::RemoteUp));
+    CHECK(left[1] == 0 && right[0] == 0);
+    mapping.sideways = true;
+    left[1] = -30000;
+    CHECK_EQ(ds::wii_u_sticks(left, right, mapping, WiiUController::Remote), bit(ExternalButton::RemoteRight));
+    // Both on one stick: the one pushed further.
+    mapping = ds::WiiUMapping();
+    mapping.sticks[1] = WiiUStick::LeftStick;
+    left[0] = 5000;
+    left[1] = 0;
+    right[0] = -20000;
+    right[1] = 0;
+    CHECK_EQ(ds::wii_u_sticks(left, right, mapping, WiiUController::GamePad), 0u);
+    CHECK(left[0] == -20000 && right[0] == 0);
+    // A stick the controller has none of moves nothing.
+    mapping.sticks[0] = WiiUStick::RightStick;
+    CHECK(mapping.resolved_stick(0, WiiUController::RemoteNunchuk) == WiiUStick::Nothing);
+    mapping.sticks[0] = WiiUStick::DPad;
+    left[0] = 0;
+    left[1] = 30000;
+    CHECK_EQ(ds::wii_u_sticks(left, right, mapping, WiiUController::Pro), bit(ExternalButton::Down));
+}
+
 void test_a_wii_u_controller_is_mapped_as_itself() {
     using ds::PadControl;
     using ds::ExternalButton;
@@ -912,5 +950,6 @@ int main() {
     test_profile_switching_goes_round_the_profiles_it_includes();
     test_the_gamepads_page_disconnects_it();
     test_a_wii_u_controller_is_mapped_as_itself();
+    test_a_wii_u_controllers_sticks_move_what_they_are_mapped_to();
     return test::finish("pad-routing");
 }
