@@ -44,8 +44,8 @@ constexpr const char* kQuickStartDescription =
     "device. Remote Start must be enabled on the other device.";
 #if DS_TOUCH_DEVICE
 constexpr const char* kTouchControlsDescription =
-    "Buttons will be shown over the game while no controller is connected. Connecting a controller "
-    "hides them.";
+    "Buttons will be shown below the game while the device is held upright in portrait orientation and no "
+    "controller is connected.";
 #endif
 
 }  // namespace

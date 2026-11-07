@@ -1,5 +1,6 @@
 #include "render/compositor.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 
@@ -133,15 +134,16 @@ void Compositor::render(QuadRenderer& quads,
     quads.clear(draws_console && screens.console.has_art ? style_.bezel_background
                                                          : style_.background);
 
+    const float game_height = game_height_ > 0.0f ? std::min(game_height_, output_height) : output_height;
     if (draws_console) {
         draw_ds_shell(quads,
-                      layout_frame(layout, PixelRect{0.0f, 0.0f, output_width, output_height},
+                      layout_frame(layout, PixelRect{0.0f, 0.0f, output_width, game_height},
                                    screens, display_width_, display_height_),
                       screens.console.has_art ? bezel_art_ : nullptr);
     }
 
     const std::vector<PlacedScreen> placements =
-        place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
+        place_screens(layout, PixelRect{0.0f, 0.0f, output_width, game_height}, screens,
                       display_width_, display_height_);
     composition_key_ = key_for_composition(placements, draws_console, textures);
 

@@ -3,6 +3,7 @@
 
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <string>
 
 #include "input/touch_controller.hpp"
@@ -51,7 +52,9 @@ void test_no_two_controls_overlap_and_all_are_on_screen() {
             CHECK(controls.size() >= 10);
             for (std::size_t i = 0; i < controls.size(); ++i) {
                 const ds::PixelRect& a = controls[i].rect;
-                CHECK_MSG(a.x >= 0.0f && a.y >= 0.0f && a.x + a.w <= size[0] && a.y + a.h <= size[1],
+                // All of it under the game, which has the top half.
+                CHECK_MSG(a.x >= 0.0f && a.y >= TouchController::game_height(size[1]) && a.x + a.w <= size[0] &&
+                              a.y + a.h <= size[1],
                           std::string(controls[i].label) + " off screen at " + std::to_string(size[0]) + "x" +
                               std::to_string(size[1]));
                 for (std::size_t j = i + 1; j < controls.size(); ++j) {
@@ -67,18 +70,18 @@ void test_no_two_controls_overlap_and_all_are_on_screen() {
 
 void test_each_console_gets_its_own_controls() {
     TouchController ds_touch;
-    ds_touch.arrange(1170, 540, ds::touch_controls_for(SystemId::Ds));
+    ds_touch.arrange(540, 1170, ds::touch_controls_for(SystemId::Ds));
     CHECK(find(ds_touch, "Start") != nullptr);
     CHECK(find(ds_touch, "ZL") == nullptr);
     CHECK(find_kind(ds_touch, TouchController::Kind::Stick) == nullptr);
 
     TouchController three_ds;
-    three_ds.arrange(1170, 540, ds::touch_controls_for(SystemId::ThreeDs));
+    three_ds.arrange(540, 1170, ds::touch_controls_for(SystemId::ThreeDs));
     CHECK(find_kind(three_ds, TouchController::Kind::Stick) != nullptr);
     CHECK(find_kind(three_ds, TouchController::Kind::Stick, true) == nullptr);
 
     TouchController wii_u;
-    wii_u.arrange(1170, 540, ds::touch_controls_for(SystemId::WiiU));
+    wii_u.arrange(540, 1170, ds::touch_controls_for(SystemId::WiiU));
     CHECK(find(wii_u, "ZR") != nullptr);
     CHECK(find(wii_u, "+") != nullptr);
     CHECK(find_kind(wii_u, TouchController::Kind::Stick, true) != nullptr);
@@ -86,7 +89,7 @@ void test_each_console_gets_its_own_controls() {
 
 void test_a_finger_on_a_button_presses_it_and_nothing_else_hears_it() {
     TouchController touch;
-    touch.arrange(1170, 540, ds::touch_controls_for(SystemId::Ds));
+    touch.arrange(540, 1170, ds::touch_controls_for(SystemId::Ds));
     const TouchController::Control* a = find(touch, "A");
     CHECK(a != nullptr);
     if (a == nullptr) return;
@@ -97,8 +100,8 @@ void test_a_finger_on_a_button_presses_it_and_nothing_else_hears_it() {
     // A is the east button, which SDL calls B.
     CHECK(touch.raw().buttons[SDL_CONTROLLER_BUTTON_B]);
     CHECK(!touch.raw().buttons[SDL_CONTROLLER_BUTTON_A]);
-    // A finger in the middle of the screen is the game's.
-    CHECK(!touch.finger_down(2, 585.0f, 270.0f));
+    // A finger on the game, in the top half, is the game's.
+    CHECK(!touch.finger_down(2, 270.0f, 300.0f));
     CHECK(touch.finger_up(1));
     CHECK(!touch.raw().buttons[SDL_CONTROLLER_BUTTON_B]);
     CHECK(!touch.finger_up(2));
@@ -106,7 +109,7 @@ void test_a_finger_on_a_button_presses_it_and_nothing_else_hears_it() {
 
 void test_a_thumb_slides_from_one_face_button_to_the_next() {
     TouchController touch;
-    touch.arrange(1170, 540, ds::touch_controls_for(SystemId::Ds));
+    touch.arrange(540, 1170, ds::touch_controls_for(SystemId::Ds));
     touch.set_shown(true);
     const TouchController::Control* b = find(touch, "B");
     const TouchController::Control* a = find(touch, "A");
@@ -116,7 +119,7 @@ void test_a_thumb_slides_from_one_face_button_to_the_next() {
     CHECK(touch.raw().buttons[SDL_CONTROLLER_BUTTON_B]);
     CHECK(!touch.raw().buttons[SDL_CONTROLLER_BUTTON_A]);
     // Off the cluster altogether, nothing, until it comes back.
-    touch.finger_motion(1, 10.0f, 530.0f);
+    touch.finger_motion(1, 10.0f, 300.0f);
     CHECK(!touch.raw().buttons[SDL_CONTROLLER_BUTTON_B]);
     touch.finger_motion(1, a->centre_x(), a->centre_y());
     CHECK(touch.raw().buttons[SDL_CONTROLLER_BUTTON_B]);
@@ -131,7 +134,7 @@ void test_the_dpad_reads_directions_and_diagonals() {
     CHECK_EQ(TouchController::dpad_directions(60.0f, -60.0f, 100.0f), 1u | 8u);
 
     TouchController touch;
-    touch.arrange(1170, 540, ds::touch_controls_for(SystemId::Ds));
+    touch.arrange(540, 1170, ds::touch_controls_for(SystemId::Ds));
     touch.set_shown(true);
     const TouchController::Control* dpad = find_kind(touch, TouchController::Kind::DPad);
     CHECK(touch.finger_down(1, dpad->centre_x(), dpad->centre_y() - dpad->radius() * 0.7f));
@@ -144,7 +147,7 @@ void test_the_dpad_reads_directions_and_diagonals() {
 
 void test_a_stick_is_pushed_as_far_as_the_finger_goes() {
     TouchController touch;
-    touch.arrange(1170, 540, ds::touch_controls_for(SystemId::WiiU));
+    touch.arrange(540, 1170, ds::touch_controls_for(SystemId::WiiU));
     touch.set_shown(true);
     const TouchController::Control* left = find_kind(touch, TouchController::Kind::Stick);
     const TouchController::Control* right = find_kind(touch, TouchController::Kind::Stick, true);
@@ -174,9 +177,22 @@ void test_the_menu_control_asks_once_on_release() {
     CHECK(!touch.take_menu_press());
 }
 
+void test_zl_and_zr_sit_over_l_and_r() {
+    TouchController touch;
+    touch.arrange(1170, 2532, ds::touch_controls_for(SystemId::WiiU));
+    CHECK(find(touch, "ZL")->rect.y < find(touch, "L")->rect.y);
+    CHECK(find(touch, "ZR")->rect.y < find(touch, "R")->rect.y);
+    // Under the game, and no smaller than they need to be: a phone's bottom
+    // half has room for a GamePad's controls at nearly full size.
+    float top = 2532.0f;
+    for (const TouchController::Control& control : touch.controls()) top = std::min(top, control.rect.y);
+    CHECK(top >= TouchController::game_height(2532.0f));
+    CHECK(top < TouchController::game_height(2532.0f) + 1170.0f * 0.05f);
+}
+
 void test_hiding_it_lets_go_of_everything() {
     TouchController touch;
-    touch.arrange(1170, 540, ds::touch_controls_for(SystemId::Ds));
+    touch.arrange(540, 1170, ds::touch_controls_for(SystemId::Ds));
     touch.set_shown(true);
     const TouchController::Control* l = find(touch, "L");
     CHECK(touch.finger_down(1, l->centre_x(), l->centre_y()));
@@ -198,6 +214,7 @@ int main() {
     test_the_dpad_reads_directions_and_diagonals();
     test_a_stick_is_pushed_as_far_as_the_finger_goes();
     test_the_menu_control_asks_once_on_release();
+    test_zl_and_zr_sit_over_l_and_r();
     test_hiding_it_lets_go_of_everything();
     return test::finish("touch-controller");
 }

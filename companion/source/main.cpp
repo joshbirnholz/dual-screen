@@ -594,8 +594,11 @@ private:
 #endif
         if (!DS_TOUCH_DEVICE && !touch_controls_forced()) return false;
         if (!chosen && !touch_controls_forced()) return false;
-        return state_ == State::Playing && !menu_open_ && !menu_leaving() && !session_.host_settings_open() &&
-               !session_.host_resume_notice() && input_.connected_gamepads() == 0;
+        // Only held upright, with the game in the top half and the
+        // controls in the bottom one.
+        return output_height_ > output_width_ && state_ == State::Playing && !menu_open_ && !menu_leaving() &&
+               !session_.host_settings_open() && !session_.host_resume_notice() &&
+               input_.connected_gamepads() == 0;
     }
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
@@ -2479,6 +2482,10 @@ void Client::draw() {
 void Client::draw_scene() {
     const float width = static_cast<float>(output_width_);
     const float height = static_cast<float>(output_height_);
+    // The touch controller has the bottom half, when it is up.
+    const bool touch_controls = input_.touch_controller().shown();
+    const float game_height = touch_controls ? TouchController::game_height(height) : height;
+    compositor_.set_game_height(touch_controls ? game_height : 0.0f);
     gl::log_error_once("something in the last frame was rejected by OpenGL");
     gl::bind_window_framebuffer();
 
@@ -2632,8 +2639,7 @@ void Client::draw_scene() {
     const bool update_shown = false;
 #endif
     const std::vector<ControllerNotice>& controller_notices = session_.host_controller_notices();
-    // The touch controller is drawn over the screens with GL too.
-    const bool touch_controls = input_.touch_controller().shown();
+    // The touch controller is drawn with GL too.
     router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty() &&
                    controller_notices.empty() && !update_shown && !touch_controls);
     const ScreenTextures& textures = session_.screens();
@@ -2641,7 +2647,7 @@ void Client::draw_scene() {
                        height, router_);
     // The stylus on the right stick, where the host has it.
     if (!menu_open_) {
-        draw_stylus_cursor(quads_, session_layout(), width, height, session_.screens_geometry(),
+        draw_stylus_cursor(quads_, session_layout(), width, game_height, session_.screens_geometry(),
                            static_cast<float>(panel_width_), static_cast<float>(panel_height_),
                            session_.host_stylus_cursor());
         draw_touch_controls(quads_, text_, input_.touch_controller());

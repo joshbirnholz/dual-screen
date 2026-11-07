@@ -83,6 +83,9 @@ public:
         float radius() const { return (rect.w < rect.h ? rect.w : rect.h) * 0.5f; }
     };
 
+    // Shown only on a device held upright, with the game in the top half of
+    // the window and these in the bottom half -- see game_height().
+    //
     // Lays the controls out for a window `width` by `height`. Fingers already
     // down keep the controls they have, which a turned phone cannot move out
     // from under them in any way that matters.
@@ -122,6 +125,10 @@ public:
     // the middle, and a diagonal only across the 45 degrees around one.
     static unsigned dpad_directions(float dx, float dy, float radius);
 
+    // How much of a window `height` tall, from the top, the game is drawn in
+    // while these are shown: the top half. The controls keep to the rest.
+    static float game_height(float height);
+
 private:
     struct Finger {
         std::size_t control = 0;
@@ -130,6 +137,8 @@ private:
     };
     // The control under (x, y), if any, as an index into controls_.
     bool control_at(float x, float y, std::size_t& index) const;
+    // Places every control for a thumb span of `s` pixels.
+    void lay_out(float s);
     // The face button nearest (x, y) while a finger slides over them --
     // within reach of the cluster, or none.
     bool face_at(float x, float y, std::size_t& index) const;
