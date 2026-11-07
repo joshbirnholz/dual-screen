@@ -600,6 +600,19 @@ private:
                !session_.host_settings_open() && !session_.host_resume_notice() &&
                input_.connected_gamepads() == 0;
     }
+    // Whether it is one of this device's pads even while the host's quick
+    // menu hides it: so a Wii U host's Controls lists it, and its Change
+    // Order can take it, with a tap on the row waiting.
+    bool touch_controls_listed() const {
+#if DS_COMPANION_SETTINGS
+        const bool chosen = settings_.touch_controls;
+#else
+        const bool chosen = false;
+#endif
+        if (!DS_TOUCH_DEVICE && !touch_controls_forced()) return false;
+        if (!chosen && !touch_controls_forced()) return false;
+        return output_height_ > output_width_ && state_ == State::Playing && input_.connected_gamepads() == 0;
+    }
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -2044,7 +2057,8 @@ void Client::run() {
         PassTimes pass;
         pass.began = now;
 
-        input_.set_touch_controls(touch_controls_wanted(), touch_controls_for(session_.system()));
+        input_.set_touch_controls(touch_controls_wanted(), touch_controls_for(session_.system()),
+                                  touch_controls_listed());
         input_.begin_frame();
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
@@ -2332,6 +2346,19 @@ void Client::run() {
         follow_favorite_color_accent(kDsDefaultFavoriteColor, session_.host_favorite_color());
 #endif
         route_guide_taps(actions, pointers);
+        // The host's Change Order waiting for a press, and this device's
+        // touch controller hidden under its menu: a tap on the row waiting
+        // is that controller's press.
+        {
+            const bool tap_offered = menu_open_ && !input_.touch_controller().shown() && touch_controls_listed() &&
+                                     picker_.ordering_controllers();
+            picker_.set_ordering_tap(tap_offered);
+            if (tap_offered && picker_.ordering_row_tapped(pointers, static_cast<float>(output_width_),
+                                                           static_cast<float>(output_height_))) {
+                input_.press_touch_controller();
+                log_info("controllers: Touch Controls pressed for Change Order");
+            }
+        }
         // A finger going down hides the cursor, and the pad's next press in
         // a menu only brings it back -- see menu_cursor_input(). Playing,
         // with nothing of the host's up, every press is the game's.

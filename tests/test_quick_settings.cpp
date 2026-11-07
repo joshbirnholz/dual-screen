@@ -1319,6 +1319,29 @@ void test_wii_u_controls_list_every_controller() {
     CHECK(picker.ordering_gamepad());
     result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
     CHECK(result.change_order_skipped && result.controller_identified == -1);
+    // A tap on the row waiting, and only there, is what a hidden touch
+    // controller presses with.
+    {
+        int hits = 0;
+        float hit_y = -1.0f;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                if (picker.ordering_row_tapped({tap(x, y)}, kWidth, kHeight)) {
+                    ++hits;
+                    hit_y = y;
+                }
+            }
+        }
+        CHECK(hits > 0);
+        CHECK(!picker.ordering_row_tapped({tap(2.0f, 2.0f)}, kWidth, kHeight));
+        picker.set_ordering(1, false);
+        bool same_row = false;
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            same_row = same_row || picker.ordering_row_tapped({tap(x, hit_y)}, kWidth, kHeight);
+        }
+        CHECK(!same_row);
+        picker.set_ordering(0, false);
+    }
     picker.set_ordering(2, true);
     CHECK(!picker.ordering_gamepad());
     result = picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
