@@ -156,13 +156,63 @@ void test_a_stick_is_pushed_as_far_as_the_finger_goes() {
     touch.finger_motion(1, left->centre_x() + left->radius() * 3.0f, left->centre_y());
     CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_LEFTX], 32767);
     CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_LEFTY], 0);
+    // Wherever a finger lands on a stick is its middle; half the way to
+    // full is half pushed.
     CHECK(touch.finger_down(2, right->centre_x(), right->centre_y() - right->radius() * 0.375f));
+    CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_RIGHTY], 0);
+    touch.finger_motion(2, right->centre_x(), right->centre_y() - right->radius() * 0.75f);
     CHECK(touch.raw().axes[SDL_CONTROLLER_AXIS_RIGHTY] < -15000);
     CHECK(touch.raw().axes[SDL_CONTROLLER_AXIS_RIGHTY] > -17500);
     // ZR is a trigger, all the way.
     const TouchController::Control* zr = find(touch, "ZR");
     CHECK(touch.finger_down(3, zr->centre_x(), zr->centre_y()));
     CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_TRIGGERRIGHT], 32767);
+}
+
+void test_a_stick_starts_wherever_the_thumb_lands_on_its_side() {
+    const float w = 1170.0f;
+    const float h = 2532.0f;
+    TouchController touch;
+    touch.arrange(w, h, ds::touch_controls_for(SystemId::WiiU));
+    touch.set_shown(true);
+    std::size_t left_index = 0;
+    for (std::size_t i = 0; i < touch.controls().size(); ++i) {
+        const TouchController::Control& control = touch.controls()[i];
+        if (control.kind == TouchController::Kind::Stick && !control.right) left_index = i;
+    }
+    const TouchController::Control& left = touch.controls()[left_index];
+    // Open space on the left, away from the stick itself and every button.
+    const float x = w * 0.04f;
+    const float y = h - 40.0f;
+    CHECK(touch.finger_down(1, x, y));
+    CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_LEFTX], 0);
+    CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_LEFTY], 0);
+    CHECK(touch.pressed(left_index));
+    touch.finger_motion(1, x + left.radius(), y);
+    CHECK_EQ(touch.raw().axes[SDL_CONTROLLER_AXIS_LEFTX], 32767);
+    // Drawn where the thumb is, on screen.
+    float cx = 0.0f;
+    float cy = 0.0f;
+    touch.stick_centre(left_index, cx, cy);
+    CHECK(cx - left.radius() >= 0.0f && cy + left.radius() <= h);
+    CHECK(cy > left.centre_y());
+    CHECK(touch.finger_up(1));
+    touch.stick_centre(left_index, cx, cy);
+    CHECK_EQ(cx, left.centre_x());
+
+    // The game's half is still the game's, and a DS, with no stick, leaves
+    // open space alone.
+    CHECK(!touch.finger_down(2, x, TouchController::game_height(h) - 10.0f));
+    TouchController ds_touch;
+    ds_touch.arrange(w, h, ds::touch_controls_for(SystemId::Ds));
+    ds_touch.set_shown(true);
+    CHECK(!ds_touch.finger_down(3, x, y));
+    // A 3DS's right side has no stick to give.
+    TouchController three_ds;
+    three_ds.arrange(w, h, ds::touch_controls_for(SystemId::ThreeDs));
+    three_ds.set_shown(true);
+    CHECK(three_ds.finger_down(4, x, y));
+    CHECK(!three_ds.finger_down(5, w * 0.55f, TouchController::game_height(h) + 20.0f));
 }
 
 void test_the_menu_control_asks_once_on_release() {
@@ -183,11 +233,11 @@ void test_zl_and_zr_sit_over_l_and_r() {
     CHECK(find(touch, "ZL")->rect.y < find(touch, "L")->rect.y);
     CHECK(find(touch, "ZR")->rect.y < find(touch, "R")->rect.y);
     // Under the game, and no smaller than they need to be: a phone's bottom
-    // half has room for a GamePad's controls at nearly full size.
+    // half has room for a GamePad's controls at full size.
     float top = 2532.0f;
     for (const TouchController::Control& control : touch.controls()) top = std::min(top, control.rect.y);
     CHECK(top >= TouchController::game_height(2532.0f));
-    CHECK(top < TouchController::game_height(2532.0f) + 1170.0f * 0.05f);
+    CHECK(find_kind(touch, TouchController::Kind::Stick)->radius() > 1170.0f * 0.13f);
 }
 
 void test_hiding_it_lets_go_of_everything() {
@@ -213,6 +263,7 @@ int main() {
     test_a_thumb_slides_from_one_face_button_to_the_next();
     test_the_dpad_reads_directions_and_diagonals();
     test_a_stick_is_pushed_as_far_as_the_finger_goes();
+    test_a_stick_starts_wherever_the_thumb_lands_on_its_side();
     test_the_menu_control_asks_once_on_release();
     test_zl_and_zr_sit_over_l_and_r();
     test_hiding_it_lets_go_of_everything();
