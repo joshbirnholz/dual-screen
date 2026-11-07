@@ -775,13 +775,17 @@ std::vector<PadReading> InputManager::pad_readings() const {
     }
     // The touch controller, last: a pad of its own, so a Wii U game can make
     // it the GamePad or a player like any other.
-    if (touch_.shown()) {
+    if (touch_.shown() || touch_listed_) {
         PadReading reading;
         reading.id = kTouchControllerId;
         reading.name = "Touch Controls";
         const RawPadState raw = touch_.raw();
         reading.pressing = held_state_from(raw).buttons;
-        if (game_input_enabled_) {
+        if (!touch_.shown()) {
+            // Hidden under a menu: only the tap that stands in for a press.
+            reading.pressing =
+                SDL_GetTicks64() < touch_tap_until_ ? 1u << static_cast<unsigned>(DsButton::A) : 0u;
+        } else if (game_input_enabled_) {
             reading.held = gated(held_state_from(raw));
             reading.controls = controls_held_in(raw) & pad_controls_from_ds_buttons(held_input_gate_.buttons());
         }
@@ -790,9 +794,16 @@ std::vector<PadReading> InputManager::pad_readings() const {
     return readings;
 }
 
-void InputManager::set_touch_controls(bool shown, const TouchController::Set& set) {
+void InputManager::set_touch_controls(bool shown, const TouchController::Set& set, bool listed) {
     touch_set_ = set;
     touch_.set_shown(shown);
+    touch_listed_ = shown || listed;
+}
+
+void InputManager::press_touch_controller() {
+    // Long enough for the host to hear it down, and up again after.
+    constexpr uint64_t kTapMs = 150;
+    touch_tap_until_ = SDL_GetTicks64() + kTapMs;
 }
 
 void InputManager::set_pad_rumble(SDL_JoystickID id, bool active, float strength) {

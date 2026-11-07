@@ -416,6 +416,20 @@ bool LayoutPicker::ordering_gamepad() const {
            state_.wii_u_controllers[static_cast<std::size_t>(ordering_waiting_)].slot.kind == PadSlot::Kind::GamePad;
 }
 
+bool LayoutPicker::ordering_row_tapped(const std::vector<PointerEvent>& pointers, float output_width,
+                                       float output_height) const {
+    if (!ordering_controllers() || ordering_waiting_ < 0 || section_ != MenuSection::ControllerOrder) return false;
+    const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
+    const std::vector<OptionRow>& list = rows();
+    for (std::size_t index = 0; index < list.size() && index < geometry.items.size(); ++index) {
+        if (list[index].index != ordering_waiting_) continue;
+        for (const PointerEvent& pointer : pointers) {
+            if (tapped(pointer, geometry.items[index])) return true;
+        }
+    }
+    return false;
+}
+
 void LayoutPicker::end_ordering() {
     if (confirm_ != MenuConfirm::Ordering) return;
     confirm_ = MenuConfirm::None;
@@ -2056,7 +2070,7 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const float room =
         std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
     const bool disconnected = view.slot.kind == PadSlot::Kind::GamePad && view.type.empty();
-    const std::string name = waiting        ? std::string("Press a button")
+    const std::string name = waiting        ? std::string(ordering_tap_ ? "Press a button or tap here" : "Press a button")
                              : connected    ? view.name
                              : disconnected ? std::string("Disconnected")
                                             : std::string("Not Connected");

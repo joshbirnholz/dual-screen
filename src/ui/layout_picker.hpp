@@ -490,6 +490,13 @@ public:
     int ordering_waiting() const { return ordering_waiting_; }
     // Whether the row waiting for a press is the GamePad's -- X skips it.
     bool ordering_gamepad() const;
+    // Whether one of `pointers` tapped the row waiting for a press: on a
+    // device whose touch controller is hidden under the menu, that tap is
+    // its press -- see InputManager::press_touch_controller().
+    // Whether this device's waiting row says it can be tapped, as above.
+    void set_ordering_tap(bool tap) { ordering_tap_ = tap; }
+    bool ordering_row_tapped(const std::vector<PointerEvent>& pointers, float output_width,
+                             float output_height) const;
     bool ordering_assigned() const { return ordering_assigned_; }
     // Change Order over: the list as it was, the cursor where it was.
     void end_ordering();
@@ -764,6 +771,7 @@ private:
     // Change Order's -- see set_ordering().
     int ordering_waiting_ = -1;
     bool ordering_assigned_ = false;
+    bool ordering_tap_ = false;
     // Where the cursor was as it began.
     int ordering_item_ = -1;
     // The rows of a list section: Controls', or Options'; and of whichever

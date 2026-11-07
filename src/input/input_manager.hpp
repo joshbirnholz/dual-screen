@@ -329,7 +329,15 @@ public:
     // the events: shown with `set`'s controls, or hidden, which lets go of
     // whatever it held. Its fingers reach nothing else, and while it is
     // shown it is one more pad in pad_readings().
-    void set_touch_controls(bool shown, const TouchController::Set& set);
+    //
+    // `listed` keeps it one of the pads while it is hidden only because a
+    // menu is up -- a companion's, under the host's quick menu -- so a Wii U
+    // host's Controls still has it, and its Change Order can take it: there,
+    // hidden, it presses nothing but press_touch_controller()'s tap.
+    void set_touch_controls(bool shown, const TouchController::Set& set, bool listed = false);
+    // A tap standing in for a press on the hidden touch controller, for a
+    // moment: Change Order's row waiting, tapped on the device it is on.
+    void press_touch_controller();
     const TouchController& touch_controller() const { return touch_; }
     // The id it is reported under in pad_readings(): no SDL pad's.
     static constexpr SDL_JoystickID kTouchControllerId = 0x7FFFFFF0;
@@ -489,6 +497,8 @@ private:
     // finger's normalized position is turned into pixels by when it lands.
     TouchController touch_;
     TouchController::Set touch_set_;
+    bool touch_listed_ = false;
+    uint64_t touch_tap_until_ = 0;
     float touch_width_ = 0.0f;
     float touch_height_ = 0.0f;
     // The mouse's button, as the touch controller's fingers know it: no
