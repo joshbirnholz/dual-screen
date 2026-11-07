@@ -69,7 +69,7 @@ std::vector<PopupButton> GameDialogScreen::buttons() const {
 
 PopupGeometry GameDialogScreen::geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    return popup_geometry(output_width, output_height, popup_text_height(words(), width, output_height),
+    return popup_geometry(output_width, output_height, popup_text_height(words(), width, output_width, output_height),
                           buttons());
 }
 
@@ -125,7 +125,7 @@ void GameDialogScreen::render(QuadRenderer& quads, TextRenderer& text, float out
     const PopupGeometry popup = geometry(output_width, output_height);
     draw_popup(quads, text, output_width, output_height, popup, buttons(), cursor_.focus(),
                cursor_.shown());
-    draw_popup_text(quads, text, words(), popup.body.x, popup.body.y, popup.body.w, output_height);
+    draw_popup_text(quads, text, words(), popup.body.x, popup.body.y, popup.body.w, output_width, output_height);
 }
 
 }  // namespace ds

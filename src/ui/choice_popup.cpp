@@ -128,7 +128,7 @@ void ChoicePopup::keep_focus_in_view(int visible) {
 
 ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_height) const {
     Geometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
+    geometry.scale = UiTheme::base_scale(output_width, output_height);
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
     const float margin = std::round(line);

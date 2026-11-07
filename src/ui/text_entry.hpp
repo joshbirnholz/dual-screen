@@ -49,7 +49,7 @@ public:
 private:
     PopupText words() const;
     PopupGeometry geometry(float output_width, float output_height) const;
-    float field_height(float output_height) const;
+    float field_height(float output_width, float output_height) const;
 
     bool open_ = false;
     std::string title_;

@@ -318,7 +318,7 @@ PopupGeometry LauncherScreen::confirm_geometry(float output_width, float output_
     const std::vector<PopupButton> buttons = confirm_buttons();
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(PopupText{confirm_message(), {}, 0}, width, output_height), buttons);
+                          popup_text_height(PopupText{confirm_message(), {}, 0}, width, output_width, output_height), buttons);
 }
 
 bool LauncherScreen::off_popup(float x, float y, float output_width, float output_height) const {
@@ -439,7 +439,7 @@ void LauncherScreen::render(QuadRenderer& quads,
         draw_popup(quads, text, output_width, output_height, popup, buttons, confirm_cursor_.focus(),
                    confirm_cursor_.shown());
         draw_popup_text(quads, text, PopupText{confirm_message(), {}, 0}, popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
 }
 
@@ -475,7 +475,7 @@ std::string HostPickerScreen::alert_message() const {
 PopupGeometry HostPickerScreen::alert_geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(PopupText{alert_message(), {}, 0}, width, output_height),
+                          popup_text_height(PopupText{alert_message(), {}, 0}, width, output_width, output_height),
                           alert_buttons());
 }
 
@@ -685,7 +685,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
         draw_popup(quads, text, output_width, output_height, popup, buttons, alert_cursor_.focus(),
                    alert_cursor_.shown());
         draw_popup_text(quads, text, PopupText{alert_message(), {}, 0}, popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
 }
 

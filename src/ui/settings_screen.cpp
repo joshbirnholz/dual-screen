@@ -151,14 +151,14 @@ PopupText SettingsScreen::remote_start_text() const {
 
 PopupGeometry SettingsScreen::remote_start_geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    return popup_geometry(output_width, output_height, popup_text_height(remote_start_text(), width, output_height),
+    return popup_geometry(output_width, output_height, popup_text_height(remote_start_text(), width, output_width, output_height),
                           remote_start_buttons());
 }
 
 PopupGeometry SettingsScreen::notice_geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(PopupText{notice_, {}, 0}, width, output_height), {{"OK", ""}});
+                          popup_text_height(PopupText{notice_, {}, 0}, width, output_width, output_height), {{"OK", ""}});
 }
 
 void SettingsScreen::set_melonds_page(bool deko, std::string path) {
@@ -1532,13 +1532,13 @@ void SettingsScreen::render(QuadRenderer& quads,
         const PopupGeometry popup = remote_start_geometry(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, remote_start_buttons(), alert_cursor_.focus(),
                    alert_cursor_.shown());
-        draw_popup_text(quads, text, remote_start_text(), popup.body.x, popup.body.y, popup.body.w, output_height);
+        draw_popup_text(quads, text, remote_start_text(), popup.body.x, popup.body.y, popup.body.w, output_width, output_height);
     } else if (!notice_.empty()) {
         const PopupGeometry popup = notice_geometry(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, {{"OK", ""}}, alert_cursor_.focus(),
                    alert_cursor_.shown());
         draw_popup_text(quads, text, PopupText{notice_, {}, 0}, popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
 }
 
