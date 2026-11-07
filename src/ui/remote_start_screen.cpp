@@ -23,7 +23,7 @@ const std::vector<PopupButton>& close_buttons() {
 PopupGeometry alert_geometry(const std::string& message, const std::vector<PopupButton>& buttons,
                              float output_width, float output_height) {
     const float width = popup_body_width(output_width, output_height);
-    return popup_geometry(output_width, output_height, popup_text_height(PopupText{message, {}, 0}, width, output_height),
+    return popup_geometry(output_width, output_height, popup_text_height(PopupText{message, {}, 0}, width, output_width, output_height),
                           buttons);
 }
 
@@ -305,7 +305,7 @@ void RemoteStartScreen::render(QuadRenderer& quads, TextRenderer& text, const Bu
         draw_popup(quads, text, output_width, output_height, popup, buttons, alert_cursor_.focus(),
                    alert_cursor_.shown());
         draw_popup_text(quads, text, PopupText{alert_, {}, 0}, popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
 }
 

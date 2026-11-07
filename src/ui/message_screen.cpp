@@ -39,7 +39,7 @@ std::vector<PopupButton> MessageScreen::buttons() const {
 PopupGeometry MessageScreen::alert_geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(PopupText{body_, details_, 0}, width, output_height), buttons());
+                          popup_text_height(PopupText{body_, details_, 0}, width, output_width, output_height), buttons());
 }
 
 bool MessageScreen::update(const std::vector<UiAction>& actions,
@@ -97,7 +97,7 @@ void MessageScreen::render(QuadRenderer& quads,
         const PopupGeometry box = alert_geometry(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, box, buttons(), cursor_.focus(), cursor_.shown());
         draw_popup_text(quads, text, PopupText{body_, details_, 0}, box.body.x, box.body.y, box.body.w,
-                        output_height);
+                        output_width, output_height);
         return;
     }
 

@@ -451,7 +451,13 @@ bool LayoutPicker::slot_filled(int slot) const {
            save_slots_[static_cast<std::size_t>(slot)].exists;
 }
 
-int LayoutPicker::layout_columns() const { return tile_count() <= 4 ? 2 : 3; }
+int LayoutPicker::layout_columns() const {
+    // Two across on a screen taller than it is wide -- a phone held upright,
+    // the iPhone Duo's inner display -- where three left each picture of the
+    // screen a thumbnail.
+    if (tile_count() <= 4 || (last_width_ > 0.0f && last_height_ > last_width_)) return 2;
+    return 3;
+}
 
 int LayoutPicker::content_columns(MenuSection section) const {
     switch (section) {
@@ -712,8 +718,11 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             float tile_height =
                 rows > 0 ? (grid_height - gutter * (rows - 1)) / static_cast<float>(rows)
                          : grid_height;
-            // Not taller than a picture of the display and its name need.
-            tile_height = std::min(tile_height, tile_width * 0.75f + line * 1.6f);
+            // Not taller than a picture of the display and its name need --
+            // which, for a display taller than it is wide, is more than its
+            // width.
+            const float picture = std::clamp(1.0f / preview_aspect(output_width, output_height), 0.75f, 1.4f);
+            tile_height = std::min(tile_height, tile_width * picture + line * 1.6f);
             for (int index = 0; index < tiles; ++index) {
                 const int column = index % geometry.columns;
                 const int row = index / geometry.columns;
@@ -1123,7 +1132,7 @@ std::vector<PopupButton> LayoutPicker::confirm_buttons() const {
 PopupGeometry LayoutPicker::confirm_popup(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(confirm_text(), width, output_height),
+                          popup_text_height(confirm_text(), width, output_width, output_height),
                           confirm_buttons());
 }
 
@@ -2176,7 +2185,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         }
     }
 
-    const float scale = UiTheme::base_scale(output_height);
+    const float scale = UiTheme::base_scale(output_width, output_height);
     const bool wii_u = system_ == SystemId::WiiU;
 
     // The game the menu was opened over, where the heading used to say what
@@ -2277,7 +2286,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(),
                    confirm_cursor_.focus(), confirm_cursor_.shown());
         draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
 }
 

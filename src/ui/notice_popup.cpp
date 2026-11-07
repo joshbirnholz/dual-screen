@@ -13,7 +13,7 @@ const std::vector<PopupButton>& ok_button() {
 PopupGeometry geometry_for(float output_width, float output_height, const std::string& message) {
     const float width = popup_body_width(output_width, output_height);
     return popup_geometry(output_width, output_height,
-                          popup_text_height(PopupText{message, {}, 0}, width, output_height),
+                          popup_text_height(PopupText{message, {}, 0}, width, output_width, output_height),
                           ok_button());
 }
 
@@ -52,7 +52,7 @@ void render_notice_popup(QuadRenderer& quads,
     draw_popup(quads, text, output_width, output_height, geometry, ok_button(), 0,
                prompt_style() != PromptStyle::Touch);
     draw_popup_text(quads, text, PopupText{message, {}, 0}, geometry.body.x, geometry.body.y,
-                    geometry.body.w, output_height);
+                    geometry.body.w, output_width, output_height);
 }
 
 }  // namespace ds

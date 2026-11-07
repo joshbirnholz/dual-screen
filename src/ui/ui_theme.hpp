@@ -30,8 +30,18 @@ struct UiTheme {
 
     // Text scales are derived from the output height so the UI is readable on a
     // 7" Deck panel and on a 4K TV without separate layouts.
-    static float base_scale(float output_height) {
-        const float scale = output_height / 320.0f;
+    //
+    // From the height, that is, of a screen at least 4:3 wide. A window taller
+    // than that -- a phone held upright, the iPhone Duo's inner display, which
+    // hands an app a portrait window whatever it asks for -- is sized as if it
+    // were the 4:3 screen its width allows. Going by the height alone, an
+    // upright phone got letters sized for a screen twice as wide as the one it
+    // has, and the quick menu's words ran off the left-hand edge.
+    static float base_scale(float output_width, float output_height) {
+        const float height = output_width > 0.0f
+                                 ? std::min(output_height, output_width * 0.75f)
+                                 : output_height;
+        const float scale = height / 320.0f;
         return scale < 1.0f ? 1.0f : scale;
     }
 };

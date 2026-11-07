@@ -988,14 +988,14 @@ std::vector<PopupButton> DataManagementScreen::dialog_buttons() const {
 
 float DataManagementScreen::dialog_body_height(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    const float line = TextRenderer::line_height(popup_scale(output_height));
+    const float line = TextRenderer::line_height(popup_scale(output_width, output_height));
     switch (overlay_) {
-        case Overlay::Busy: return popup_text_height(PopupText{busy_, {}, 0}, width, output_height);
+        case Overlay::Busy: return popup_text_height(PopupText{busy_, {}, 0}, width, output_width, output_height);
         case Overlay::Choice:
-            return popup_text_height(PopupText{choice_title_, {choice_line_}, 0}, width, output_height);
+            return popup_text_height(PopupText{choice_title_, {choice_line_}, 0}, width, output_width, output_height);
         case Overlay::Confirm:
         case Overlay::ResumeConfirm: {
-            float height = popup_text_height(PopupText{dialog_title_, dialog_lines_, 0}, width, output_height);
+            float height = popup_text_height(PopupText{dialog_title_, dialog_lines_, 0}, width, output_width, output_height);
             if (overlay_ == Overlay::Confirm && !dialog_from_name_.empty()) height += line * 0.8f + line * 3.0f;
             return height;
         }
@@ -1531,13 +1531,13 @@ void DataManagementScreen::render(QuadRenderer& quads,
                    popup_cursor_.focus(), popup_cursor_.shown());
         const PixelRect& body = popup.body;
         if (overlay_ == Overlay::Busy) {
-            draw_popup_text(quads, text, PopupText{busy_, {}, 0}, body.x, body.y, body.w, output_height);
+            draw_popup_text(quads, text, PopupText{busy_, {}, 0}, body.x, body.y, body.w, output_width, output_height);
         } else if (overlay_ == Overlay::Choice) {
             draw_popup_text(quads, text, PopupText{choice_title_, {choice_line_}, 0}, body.x, body.y,
-                            body.w, output_height);
+                            body.w, output_width, output_height);
         } else {
             float pen_y = draw_popup_text(quads, text, PopupText{dialog_title_, {}, 0}, body.x, body.y,
-                                          body.w, output_height);
+                                          body.w, output_width, output_height);
             if (overlay_ == Overlay::Confirm && !dialog_from_name_.empty()) {
                 // From one device to the other: both names and dates, with an
                 // arrow between them.
@@ -1570,7 +1570,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
                 pen_y += strip_h;
             }
             draw_popup_text(quads, text, PopupText{std::string(), dialog_lines_, dialog_plain_lines_}, body.x,
-                            pen_y, body.w, output_height);
+                            pen_y, body.w, output_width, output_height);
         }
     }
 

@@ -713,7 +713,7 @@ PopupGeometry ButtonMappingScreen::confirm_popup(float output_width, float outpu
     const PopupText words = confirm_text();
     return popup_geometry(output_width, output_height,
                           popup_text_height(words, popup_body_width(output_width, output_height),
-                                            output_height),
+                                            output_width, output_height),
                           confirm_buttons());
 }
 
@@ -1321,7 +1321,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(),
                    confirm_cursor_.focus(), confirm_cursor_.shown());
         draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w,
-                        output_height);
+                        output_width, output_height);
     }
     naming_.render(quads, text, output_width, output_height);
 }
@@ -1380,7 +1380,7 @@ void ButtonMappingScreen::render_page(QuadRenderer& quads, TextRenderer& text, c
         const PopupGeometry popup = confirm_popup(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(), confirm_cursor_.focus(),
                    confirm_cursor_.shown());
-        draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w, output_height);
+        draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w, output_width, output_height);
     }
     naming_.render(quads, text, output_width, output_height);
 }

@@ -43,7 +43,7 @@ struct PageFrame {
 
 inline PageFrame page_frame(float output_width, float output_height) {
     PageFrame frame;
-    frame.scale = UiTheme::base_scale(output_height);
+    frame.scale = UiTheme::base_scale(output_width, output_height);
     frame.line = TextRenderer::line_height(frame.scale);
     const float margin_x = std::round(output_width * 0.06f);
     const float margin_y = std::round(output_height * 0.06f);

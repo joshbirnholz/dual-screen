@@ -209,7 +209,7 @@ PopupGeometry ForwarderScreen::game_popup(float output_width, float output_heigh
     const PopupText words{game_choice_text_, {}, 0};
     return popup_geometry(output_width, output_height,
                           popup_text_height(words, popup_body_width(output_width, output_height),
-                                            output_height),
+                                            output_width, output_height),
                           game_buttons());
 }
 
@@ -217,7 +217,7 @@ PopupGeometry ForwarderScreen::source_popup(float output_width, float output_hei
     const PopupText words{"Where should the icon come from?", {}, 0};
     return popup_geometry(output_width, output_height,
                           popup_text_height(words, popup_body_width(output_width, output_height),
-                                            output_height),
+                                            output_width, output_height),
                           source_buttons());
 }
 
@@ -225,7 +225,7 @@ PopupGeometry ForwarderScreen::busy_popup(float output_width, float output_heigh
     const PopupText words{busy_, {}, 0};
     return popup_geometry(output_width, output_height,
                           popup_text_height(words, popup_body_width(output_width, output_height),
-                                            output_height),
+                                            output_width, output_height),
                           {});
 }
 
@@ -857,7 +857,7 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
             draw_popup(quads, text, output_width, output_height, popup, source_buttons(),
                        popup_cursor_.focus(), popup_cursor_.shown());
             draw_popup_text(quads, text, PopupText{"Where should the icon come from?", {}, 0}, popup.body.x,
-                            popup.body.y, popup.body.w, output_height);
+                            popup.body.y, popup.body.w, output_width, output_height);
             break;
         }
         case Overlay::GameChoice: {
@@ -865,14 +865,14 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
             draw_popup(quads, text, output_width, output_height, popup, game_buttons(), popup_cursor_.focus(),
                        popup_cursor_.shown());
             draw_popup_text(quads, text, PopupText{game_choice_text_, {}, 0}, popup.body.x, popup.body.y,
-                            popup.body.w, output_height);
+                            popup.body.w, output_width, output_height);
             break;
         }
         case Overlay::Busy: {
             const PopupGeometry popup = busy_popup(output_width, output_height);
             draw_popup(quads, text, output_width, output_height, popup, {}, 0, false);
             draw_popup_text(quads, text, PopupText{busy_, {}, 0}, popup.body.x, popup.body.y, popup.body.w,
-                            output_height);
+                            output_width, output_height);
             break;
         }
         case Overlay::Notice:

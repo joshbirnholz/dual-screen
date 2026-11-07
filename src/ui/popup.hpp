@@ -43,12 +43,14 @@ struct PopupGeometry {
 inline Color popup_fill() { return Color{0.145f, 0.149f, 0.157f, 1.0f}; }
 inline Color popup_rule() { return Color{0.30f, 0.31f, 0.32f, 1.0f}; }
 
-inline float popup_scale(float output_height) { return UiTheme::base_scale(output_height); }
+inline float popup_scale(float output_width, float output_height) {
+    return UiTheme::base_scale(output_width, output_height);
+}
 inline float popup_radius(float scale) { return std::round(scale * 6.0f); }
 
 // How wide the words can run, for wrapping them before the box is laid out.
 inline float popup_body_width(float output_width, float output_height) {
-    const float line = TextRenderer::line_height(popup_scale(output_height));
+    const float line = TextRenderer::line_height(popup_scale(output_width, output_height));
     const float width = std::round(std::min(output_width * 0.62f, line * 36.0f));
     return width - std::round(line * 2.6f) * 2.0f;
 }
@@ -64,7 +66,7 @@ inline bool popup_stacks(const std::vector<PopupButton>& buttons) {
 // Centred on the screen, as tall as the words need plus the row of buttons.
 inline PopupGeometry popup_geometry(float output_width, float output_height, float body_height,
                                     const std::vector<PopupButton>& buttons) {
-    const float line = TextRenderer::line_height(popup_scale(output_height));
+    const float line = TextRenderer::line_height(popup_scale(output_width, output_height));
     const float width = std::round(std::min(output_width * 0.62f, line * 36.0f));
     const float inset = std::round(line * 2.6f);
     const float pad_top = std::round(line * 2.2f);
@@ -121,7 +123,7 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
                        float output_height, const PopupGeometry& geometry,
                        const std::vector<PopupButton>& buttons, int focus, bool show_focus) {
     const UiTheme& theme = ui_theme();
-    const float scale = popup_scale(output_height);
+    const float scale = popup_scale(output_width, output_height);
     const float line = TextRenderer::line_height(scale);
     note_popup_drawn();
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
@@ -210,8 +212,9 @@ struct PopupText {
     std::size_t plain = 0;
 };
 
-inline float popup_text_height(const PopupText& words, float width, float output_height) {
-    const float scale = popup_scale(output_height);
+inline float popup_text_height(const PopupText& words, float width, float output_width,
+                               float output_height) {
+    const float scale = popup_scale(output_width, output_height);
     const float line = TextRenderer::line_height(scale);
     const float message_scale = scale * 1.05f;
     const float body_scale = scale * 0.85f;
@@ -228,9 +231,10 @@ inline float popup_text_height(const PopupText& words, float width, float output
 
 // Returns where it stopped.
 inline float draw_popup_text(QuadRenderer& quads, TextRenderer& text, const PopupText& words,
-                             float x, float y, float width, float output_height) {
+                             float x, float y, float width, float output_width,
+                             float output_height) {
     const UiTheme& theme = ui_theme();
-    const float scale = popup_scale(output_height);
+    const float scale = popup_scale(output_width, output_height);
     const float line = TextRenderer::line_height(scale);
     if (!words.message.empty()) {
         y += text.draw_wrapped(quads, words.message, x, y, width, scale * 1.05f, theme.text);

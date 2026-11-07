@@ -53,15 +53,15 @@ PopupText TextEntryPopup::words() const {
     return words;
 }
 
-float TextEntryPopup::field_height(float output_height) const {
-    return std::round(TextRenderer::line_height(popup_scale(output_height)) * 2.4f);
+float TextEntryPopup::field_height(float output_width, float output_height) const {
+    return std::round(TextRenderer::line_height(popup_scale(output_width, output_height)) * 2.4f);
 }
 
 PopupGeometry TextEntryPopup::geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    const float line = TextRenderer::line_height(popup_scale(output_height));
-    const float body = popup_text_height(words(), width, output_height) + line * 0.8f +
-                       field_height(output_height);
+    const float line = TextRenderer::line_height(popup_scale(output_width, output_height));
+    const float body = popup_text_height(words(), width, output_width, output_height) + line * 0.8f +
+                       field_height(output_width, output_height);
     // In the top of the screen, where the on-screen keyboard -- a phone's,
     // Steam's -- does not cover it.
     return popup_at_top(popup_geometry(output_width, output_height, body, buttons()),
@@ -129,11 +129,11 @@ void TextEntryPopup::render(QuadRenderer& quads, TextRenderer& text, float outpu
     draw_popup(quads, text, output_width, output_height, shape, buttons(), cursor_.focus(),
                cursor_.shown());
     const float bottom = draw_popup_text(quads, text, words(), shape.body.x, shape.body.y,
-                                         shape.body.w, output_height);
-    const float scale = popup_scale(output_height);
+                                         shape.body.w, output_width, output_height);
+    const float scale = popup_scale(output_width, output_height);
     const float line = TextRenderer::line_height(scale);
     const PixelRect field{shape.body.x, std::round(bottom + line * 0.8f), shape.body.w,
-                          field_height(output_height)};
+                          field_height(output_width, output_height)};
     quads.draw_rounded_ring(field, std::round(line * 0.4f), field.w + field.h,
                             Color{0.0f, 0.0f, 0.0f, 0.35f}, Color{0.0f, 0.0f, 0.0f, 0.35f});
     quads.draw_rounded_ring(field, std::round(line * 0.4f), std::max(2.0f, std::round(scale)),

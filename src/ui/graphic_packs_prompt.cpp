@@ -143,9 +143,9 @@ PopupText GraphicPacksPrompt::words() const {
 
 PopupGeometry GraphicPacksPrompt::geometry(float output_width, float output_height) const {
     const float width = popup_body_width(output_width, output_height);
-    float height = popup_text_height(words(), width, output_height);
+    float height = popup_text_height(words(), width, output_width, output_height);
     // Room for the bar a download draws under its words.
-    if (popup_ == Popup::Progress) height += TextRenderer::line_height(popup_scale(output_height)) * 1.2f;
+    if (popup_ == Popup::Progress) height += TextRenderer::line_height(popup_scale(output_width, output_height)) * 1.2f;
     return popup_geometry(output_width, output_height, height, buttons());
 }
 
@@ -182,11 +182,11 @@ void GraphicPacksPrompt::render(QuadRenderer& quads, TextRenderer& text, const B
     const std::vector<PopupButton> labels = buttons();
     draw_popup(quads, text, output_width, output_height, box, labels, cursor_.focus(),
                cursor_.shown() && !labels.empty());
-    const float bottom = draw_popup_text(quads, text, words(), box.body.x, box.body.y, box.body.w, output_height);
+    const float bottom = draw_popup_text(quads, text, words(), box.body.x, box.body.y, box.body.w, output_width, output_height);
     if (popup_ == Popup::Progress) {
         // How far the download has got, as a bar, full while installing.
         const UiTheme& theme = ui_theme();
-        const float line = TextRenderer::line_height(popup_scale(output_height));
+        const float line = TextRenderer::line_height(popup_scale(output_width, output_height));
         const float bar_h = std::max(4.0f, std::round(line * 0.35f));
         const PixelRect track{box.body.x, std::round(bottom + line * 0.6f), box.body.w, bar_h};
         quads.draw_rounded_rect(track, bar_h * 0.5f, popup_rule());
