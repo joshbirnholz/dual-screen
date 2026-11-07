@@ -1502,7 +1502,9 @@ struct App::Impl {
         if (state != State::Playing || quick_menu_leaving() || companion_session) return false;
         // A Wii U game is in Cemu's window, not this one.
         if (system == SystemId::WiiU && external_source) return false;
-        return active_source() != nullptr && input.connected_gamepads() == 0;
+        // Only held upright, with the game in the top half and the controls
+        // in the bottom one.
+        return output_height > output_width && active_source() != nullptr && input.connected_gamepads() == 0;
     }
     // Gone at once: closed from a page of it, where it was never on screen
     // to go away.
@@ -7915,9 +7917,14 @@ void App::Impl::render() {
         panel_size(panel_width, panel_height);
         compositor.set_display_size(panel_width, panel_height);
         apply_lcd_grid();
+        // The touch controller has the bottom half, when it is up.
+        const bool touch_controls = input.touch_controller().shown();
+        const float game_height = touch_controls ? TouchController::game_height(height) : height;
+        compositor.set_game_height(touch_controls ? game_height : 0.0f);
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
-        draw_stylus_cursor(width, height);
+        compositor.set_game_height(0.0f);
+        draw_stylus_cursor(width, game_height);
         draw_touch_controls(quads, text, input.touch_controller());
         frames = &textures;
     } else {

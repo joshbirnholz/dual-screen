@@ -1872,7 +1872,11 @@ void InputManager::end_frame(const Layout& layout,
         // the game.
         if (held_input_gate_.touching() && fingers_.size() < 2) {
             DsTouchPoint point;
-            if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,
+            // With the touch controller up, the game is drawn in the top half
+            // only -- see TouchController::game_height().
+            const float game_height =
+                touch_.shown() ? TouchController::game_height(output_height) : output_height;
+            if (map_output_point_to_ds(layout, output_width, game_height, pointer_x_, pointer_y_,
                                        point, screens, display_width, display_height)) {
                 ds_state_.touching = true;
                 ds_state_.touch_x = point.x;

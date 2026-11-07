@@ -53,97 +53,81 @@ void TouchController::arrange(float width, float height, const Set& set) {
     controls_.clear();
     if (width <= 0.0f || height <= 0.0f) return;
 
-    const bool landscape = width >= height;
-    // Everything is sized from the short side, which is what a thumb spans.
-    const float s = landscape ? height : width;
-    // A wide phone's corners are rounded and one side may have a notch, so
-    // the controls keep further in from its ends.
-    const float mx = s * (landscape && width / height > 1.9f ? 0.11f : 0.05f);
-    const float my = s * (landscape ? 0.05f : 0.08f);
+    // Sized from the width, what two thumbs span -- unless that would reach
+    // up into the game's half, when everything is made smaller to fit under
+    // it. Every distance is from the bottom or a side and grows with the
+    // size, so one measurement says how much smaller.
+    lay_out(width);
+    float top = height;
+    for (const Control& control : controls_) top = std::min(top, control.rect.y);
+    const float limit = game_height(height) + width * 0.02f;
+    if (top < limit && height - top > 0.0f) {
+        lay_out(width * std::max(0.1f, (height - limit) / (height - top)));
+    }
+
+    // A finger already down keeps a control of the same place in the list;
+    // one whose control is gone is let go.
+    for (auto it = fingers_.begin(); it != fingers_.end();) {
+        if (it->second.control >= controls_.size()) {
+            it = fingers_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void TouchController::lay_out(float s) {
+    controls_.clear();
+    const float width = width_;
+    const float height = height_;
+    const Set& set = set_;
+    const float mx = s * 0.05f;
+    const float my = s * 0.08f;
 
     const float face_radius = s * 0.068f;
     const float face_spread = s * 0.115f;
     const float shoulder_w = s * 0.30f;
     const float shoulder_h = s * 0.10f;
     const float small = s * 0.045f;
+    const float stick_r = s * 0.135f;
 
-    // Where each cluster goes: the d-pad and face buttons, the sticks, and
-    // the row of shoulder buttons above them.
+    // Select, Start and the menu along the foot, and everything else above
+    // them: there is no room between the two clusters on a phone held
+    // upright. Then the d-pad and face buttons, the sticks, and the shoulder
+    // buttons over them.
     float dpad_x = 0.0f, dpad_y = 0.0f, dpad_r = 0.0f;
     float face_x = 0.0f, face_y = 0.0f;
     float left_stick_x = 0.0f, left_stick_y = 0.0f;
     float right_stick_x = 0.0f, right_stick_y = 0.0f;
-    const float stick_r = s * 0.135f;
-    float shoulder_y = 0.0f;
-    float select_x = 0.0f, select_y = 0.0f, start_x = 0.0f, start_y = 0.0f;
-    float menu_x = 0.0f, menu_y = 0.0f;
-
-    if (landscape) {
-        shoulder_y = my;
-        const float upper = height * (set.zl_zr ? 0.46f : 0.42f);
-        const float lower = height - my - s * 0.14f;
-        const float middle = height * 0.64f;
-        if (set.left_stick) {
-            left_stick_x = mx + s * 0.16f;
-            left_stick_y = upper;
-            dpad_r = s * 0.13f;
-            dpad_x = mx + s * 0.32f;
-            dpad_y = lower;
-        } else {
-            dpad_r = s * 0.17f;
-            dpad_x = mx + s * 0.19f;
-            dpad_y = middle;
-        }
+    const float bottom = height - my;
+    const float select_x = width * 0.5f - s * 0.12f;
+    const float start_x = width * 0.5f + s * 0.12f;
+    const float select_y = bottom - small;
+    const float start_y = select_y;
+    const float menu_x = width - mx - small;
+    const float menu_y = select_y;
+    const float base = bottom - s * 0.12f;
+    float cluster_top = 0.0f;
+    if (set.left_stick || set.right_stick) {
+        dpad_r = s * 0.12f;
+        dpad_x = mx + s * 0.16f;
+        dpad_y = base - s * 0.15f;
+        left_stick_x = dpad_x;
+        left_stick_y = base - s * 0.48f;
         face_x = width - mx - s * 0.19f;
-        if (set.right_stick) {
-            face_y = upper;
-            right_stick_x = width - mx - s * 0.32f;
-            right_stick_y = lower;
-        } else {
-            face_y = set.left_stick ? height * 0.50f : middle;
-        }
-        // Inside the shoulder buttons, as a Switch has - and + inside its
-        // Joy-Con's top edges.
-        select_x = mx + shoulder_w + s * 0.03f + (set.plus_minus ? small : small * 2.2f);
-        select_y = my + shoulder_h * 0.5f;
-        start_x = width - select_x;
-        start_y = select_y;
-        menu_x = width - mx - small;
-        menu_y = height - my - small;
+        face_y = set.right_stick ? base - s * 0.48f : base - s * 0.30f;
+        right_stick_x = width - mx - s * 0.16f;
+        right_stick_y = base - s * 0.15f;
+        cluster_top = std::min(left_stick_y - stick_r, face_y - face_spread - face_radius);
     } else {
-        // Select, Start and the menu along the foot, and everything else
-        // above them: there is no room between the two clusters on a phone
-        // held upright.
-        const float bottom = height - my;
-        select_x = width * 0.5f - s * 0.12f;
-        start_x = width * 0.5f + s * 0.12f;
-        select_y = bottom - small;
-        start_y = select_y;
-        menu_x = width - mx - small;
-        menu_y = select_y;
-        const float base = bottom - s * 0.12f;
-        float cluster_top = 0.0f;
-        if (set.left_stick || set.right_stick) {
-            dpad_r = s * 0.12f;
-            dpad_x = mx + s * 0.16f;
-            dpad_y = base - s * 0.15f;
-            left_stick_x = dpad_x;
-            left_stick_y = base - s * 0.48f;
-            face_x = width - mx - s * 0.19f;
-            face_y = set.right_stick ? base - s * 0.48f : base - s * 0.30f;
-            right_stick_x = width - mx - s * 0.16f;
-            right_stick_y = base - s * 0.15f;
-            cluster_top = std::min(left_stick_y - stick_r, face_y - face_spread - face_radius);
-        } else {
-            dpad_r = s * 0.17f;
-            dpad_x = mx + s * 0.19f;
-            dpad_y = base - s * 0.20f;
-            face_x = width - mx - s * 0.19f;
-            face_y = dpad_y;
-            cluster_top = std::min(dpad_y - dpad_r, face_y - face_spread - face_radius);
-        }
-        shoulder_y = cluster_top - s * 0.03f - shoulder_h * (set.zl_zr ? 2.15f : 1.0f);
+        dpad_r = s * 0.17f;
+        dpad_x = mx + s * 0.19f;
+        dpad_y = base - s * 0.20f;
+        face_x = width - mx - s * 0.19f;
+        face_y = dpad_y;
+        cluster_top = std::min(dpad_y - dpad_r, face_y - face_spread - face_radius);
     }
+    const float shoulder_y = cluster_top - s * 0.03f - shoulder_h * (set.zl_zr ? 2.15f : 1.0f);
 
     {
         Control dpad;
@@ -162,16 +146,18 @@ void TouchController::arrange(float width, float height, const Set& set) {
     controls_.push_back(button(SDL_CONTROLLER_BUTTON_X, "Y",
                                circle(face_x - face_spread, face_y, face_radius), true));
 
+    // ZL and ZR over L and R, as the GamePad has them; L and R nearer the
+    // thumbs, as the buttons pressed most.
+    const float l_y = set.zl_zr ? shoulder_y + shoulder_h * 1.15f : shoulder_y;
     controls_.push_back(button(SDL_CONTROLLER_BUTTON_LEFTSHOULDER, "L",
-                               PixelRect{mx, shoulder_y, shoulder_w, shoulder_h}));
+                               PixelRect{mx, l_y, shoulder_w, shoulder_h}));
     controls_.push_back(button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, "R",
-                               PixelRect{width - mx - shoulder_w, shoulder_y, shoulder_w, shoulder_h}));
+                               PixelRect{width - mx - shoulder_w, l_y, shoulder_w, shoulder_h}));
     if (set.zl_zr) {
-        const float below = shoulder_y + shoulder_h * 1.15f;
         controls_.push_back(trigger(SDL_CONTROLLER_AXIS_TRIGGERLEFT, "ZL",
-                                    PixelRect{mx, below, shoulder_w, shoulder_h}));
+                                    PixelRect{mx, shoulder_y, shoulder_w, shoulder_h}));
         controls_.push_back(trigger(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, "ZR",
-                                    PixelRect{width - mx - shoulder_w, below, shoulder_w, shoulder_h}));
+                                    PixelRect{width - mx - shoulder_w, shoulder_y, shoulder_w, shoulder_h}));
     }
     controls_.push_back(button(SDL_CONTROLLER_BUTTON_BACK, set.plus_minus ? "\xE2\x88\x92" : "Select",
                                set.plus_minus ? circle(select_x, select_y, small)
@@ -199,16 +185,6 @@ void TouchController::arrange(float width, float height, const Set& set) {
         menu.kind = Kind::Menu;
         menu.rect = circle(menu_x, menu_y, small);
         controls_.push_back(menu);
-    }
-
-    // A finger already down keeps a control of the same place in the list;
-    // one whose control is gone is let go.
-    for (auto it = fingers_.begin(); it != fingers_.end();) {
-        if (it->second.control >= controls_.size()) {
-            it = fingers_.erase(it);
-        } else {
-            ++it;
-        }
     }
 }
 
@@ -420,6 +396,8 @@ void TouchController::stick_push(std::size_t index, float& x, float& y) const {
         return;
     }
 }
+
+float TouchController::game_height(float height) { return std::round(height * 0.5f); }
 
 TouchController::Set touch_controls_for(SystemId system) {
     TouchController::Set set;

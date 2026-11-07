@@ -97,6 +97,11 @@ public:
     // since smoothing it could only make it worse.
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
 
+    // How much of the window, from the top, the screens are laid out in: all
+    // of it for 0, or the top half while the touch controller has the
+    // bottom -- see TouchController::game_height(). Asked every frame.
+    void set_game_height(float height) { game_height_ = height; }
+
     // An LCD's pixel grid over each screen drawn here, of the console's own
     // pixels -- a DS's 256 by 192 -- or none for 0. Drawn only where the
     // screen is drawn by this compositor.
@@ -137,6 +142,7 @@ public:
 private:
     CompositorStyle style_;
     const Texture* bezel_art_ = nullptr;
+    float game_height_ = 0.0f;
     bool smoothing_ = false;
     int lcd_cells_across_ = 0;
     int lcd_cells_down_ = 0;
