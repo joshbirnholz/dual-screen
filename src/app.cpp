@@ -6044,7 +6044,13 @@ void App::Impl::open_launcher() {
         stop_recent_games();
         return;
     }
-    if (!launch_finder.running()) launch_finder.start();
+    if (!launch_finder.running()) {
+        // The computers already paired with are asked directly as well as by
+        // broadcast, which some networks drop.
+        net::LaunchSearch search;
+        search.remembered_in = remote_start_tokens();
+        launch_finder.start(search);
+    }
     if (!recent_games.running()) recent_games.start(remote_start_tokens(), 16);
     recent_shown = ~uint64_t{0};
 }

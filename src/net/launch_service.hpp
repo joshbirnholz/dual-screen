@@ -118,6 +118,12 @@ struct LaunchSearch {
     int timeout_ms = 1500;
     // Asked directly as well as by broadcast, for a test.
     std::vector<std::string> addresses;
+    // A tokens file (see remember_computer()) whose computers are asked
+    // directly too, at the address each last answered from, read afresh on
+    // every search. The broadcast is not enough on its own: an iPhone or iPad
+    // may not send one at all without Apple's multicast entitlement, and some
+    // routers drop them, but a datagram to one address always goes.
+    std::string remembered_in;
 };
 
 // Every PC that answered within the time, by name. Blocks for all of it.

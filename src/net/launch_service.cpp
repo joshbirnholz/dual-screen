@@ -402,6 +402,15 @@ std::vector<LaunchHost> search_launch_hosts(const LaunchSearch& search) {
     const std::string text = asked.dump();
     query.insert(query.end(), text.begin(), text.end());
 
+    std::vector<std::string> addresses = search.addresses;
+    if (!search.remembered_in.empty()) {
+        for (const LaunchHost& known : remembered_computers(search.remembered_in)) {
+            if (known.address.empty()) continue;
+            if (std::find(addresses.begin(), addresses.end(), known.address) != addresses.end()) continue;
+            addresses.push_back(known.address);
+        }
+    }
+
     const uint64_t started = monotonic_millis();
     const uint64_t deadline = started + static_cast<uint64_t>(std::max(search.timeout_ms, 1));
     int asked_times = 0;
@@ -409,7 +418,7 @@ std::vector<LaunchHost> search_launch_hosts(const LaunchSearch& search) {
         const uint64_t now = monotonic_millis();
         if (asked_times < 3 && now >= started + static_cast<uint64_t>(asked_times) * 300) {
             socket.broadcast(search.query_port, query.data(), query.size());
-            for (const std::string& address : search.addresses) {
+            for (const std::string& address : addresses) {
                 socket.send_to(address, search.query_port, query.data(), query.size());
             }
             ++asked_times;

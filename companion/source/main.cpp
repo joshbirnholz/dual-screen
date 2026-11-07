@@ -929,7 +929,14 @@ void Client::open_launcher() {
     const bool quick_start = true;
 #endif
     if (quick_start) {
-        if (!launch_finder_.running()) launch_finder_.start();
+        if (!launch_finder_.running()) {
+            // The computers already paired with are asked directly too: an
+            // iPhone or iPad may not broadcast at all without an entitlement
+            // Apple hands out by request, and some routers drop broadcasts.
+            net::LaunchSearch search;
+            search.remembered_in = tokens_path();
+            launch_finder_.start(search);
+        }
         if (!recent_games_.running()) recent_games_.start(tokens_path(), 16);
     } else {
         launch_finder_.stop();
@@ -1020,23 +1027,6 @@ void Client::start_updater(const AppPaths& paths) {
     }
 }
 
-void Client::keep_remote_start_grant() {
-    net::RemoteStartGrantMessage grant;
-    if (!session_.take_remote_start_grant(grant)) return;
-    net::LaunchHost host;
-    host.id = grant.host_id;
-    host.name = grant.name;
-    host.kind = grant.kind;
-    host.address = session_.host_address();
-    if (grant.port != 0) host.port = grant.port;
-    host.macs = grant.macs;
-    if (net::keep_remote_start_grant(tokens_path(), host, grant.token)) {
-        log_info("games played on " + host.name + " can be started from here");
-    } else {
-        log_warn("could not save remote_start_tokens.json");
-    }
-}
-
 void Client::poll_updates() {
     if (!updater_) return;
     // The host checking for updates asks about this device's own too.
@@ -1108,6 +1098,27 @@ void Client::open_data_management() {
     state_ = State::DataManagement;
 }
 #endif
+
+// A computer just joined that lets this device start games on it -- kept, so
+// its games come up along the first screen's foot from now on. Every build,
+// not only one that plays games itself: a phone that is only ever a screen is
+// the device most likely to be in a hand when the computer is asleep.
+void Client::keep_remote_start_grant() {
+    net::RemoteStartGrantMessage grant;
+    if (!session_.take_remote_start_grant(grant)) return;
+    net::LaunchHost host;
+    host.id = grant.host_id;
+    host.name = grant.name;
+    host.kind = grant.kind;
+    host.address = session_.host_address();
+    if (grant.port != 0) host.port = grant.port;
+    host.macs = grant.macs;
+    if (net::keep_remote_start_grant(tokens_path(), host, grant.token)) {
+        log_info("games played on " + host.name + " can be started from here");
+    } else {
+        log_warn("could not save remote_start_tokens.json");
+    }
+}
 
 void Client::begin_search(ScreenId wanted) {
     state_ = State::Browsing;
@@ -1448,9 +1459,9 @@ void Client::route_guide_taps(std::vector<UiAction>& actions,
 
 void Client::handle_actions(const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers) {
+    keep_remote_start_grant();
 #if DS_LOCAL_PLAY
     poll_updates();
-    keep_remote_start_grant();
     // An update being offered, downloaded or reported takes every press.
     if (update_prompt_.open()) {
         update_prompt_.update(actions, pointers, static_cast<float>(output_width_),
