@@ -117,6 +117,9 @@ public:
     // far it is pushed, -1 to 1 each way.
     bool pressed(std::size_t index) const;
     void stick_push(std::size_t index, float& x, float& y) const;
+    // Where a stick is centred for drawing: under the finger that took it,
+    // where that finger landed, or its own place while nobody holds it.
+    void stick_centre(std::size_t index, float& x, float& y) const;
     // And for a d-pad, which directions: dpad_directions()'s bits.
     unsigned dpad_held(std::size_t index) const;
 
@@ -134,9 +137,16 @@ private:
         std::size_t control = 0;
         float x = 0.0f;
         float y = 0.0f;
+        // Where it landed: a stick's centre, wherever that was.
+        float anchor_x = 0.0f;
+        float anchor_y = 0.0f;
     };
     // The control under (x, y), if any, as an index into controls_.
     bool control_at(float x, float y, std::size_t& index) const;
+    // The stick whose side of the controls (x, y) is on, if that side has
+    // one: a finger landing anywhere there that is not on a button is the
+    // stick, centred where it lands.
+    bool stick_side_at(float x, float y, std::size_t& index) const;
     // Places every control for a thumb span of `s` pixels.
     void lay_out(float s);
     // The face button nearest (x, y) while a finger slides over them --

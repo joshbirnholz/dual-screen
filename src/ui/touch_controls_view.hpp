@@ -80,13 +80,18 @@ inline void draw_touch_controls(QuadRenderer& quads, TextRenderer& text, const T
                 break;
             }
             case TouchController::Kind::Stick: {
-                disc(control.rect, base);
+                // Drawn where the thumb took it, which is anywhere on its side.
+                float sx = cx;
+                float sy = cy;
+                touch.stick_centre(index, sx, sy);
+                const PixelRect ring{sx - r, sy - r, r * 2.0f, r * 2.0f};
+                disc(ring, base);
                 float x = 0.0f;
                 float y = 0.0f;
                 touch.stick_push(index, x, y);
                 const float knob = r * 0.55f;
                 const float travel = r - knob;
-                const PixelRect top{cx + x * travel - knob, cy + y * travel - knob, knob * 2.0f, knob * 2.0f};
+                const PixelRect top{sx + x * travel - knob, sy + y * travel - knob, knob * 2.0f, knob * 2.0f};
                 quads.draw_rounded_rect(top, knob, pressed ? held : Color{1.0f, 1.0f, 1.0f, 0.3f});
                 quads.draw_rounded_ring(top, knob, std::max(1.5f, knob * 0.08f), rim, rim);
                 break;

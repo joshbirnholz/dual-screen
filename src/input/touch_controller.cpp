@@ -109,15 +109,21 @@ void TouchController::lay_out(float s) {
     const float base = bottom - s * 0.12f;
     float cluster_top = 0.0f;
     if (set.left_stick || set.right_stick) {
-        dpad_r = s * 0.12f;
-        dpad_x = mx + s * 0.16f;
-        dpad_y = base - s * 0.15f;
-        left_stick_x = dpad_x;
-        left_stick_y = base - s * 0.48f;
-        face_x = width - mx - s * 0.19f;
-        face_y = set.right_stick ? base - s * 0.48f : base - s * 0.30f;
-        right_stick_x = width - mx - s * 0.16f;
-        right_stick_y = base - s * 0.15f;
+        // As a Switch's: the stick high and out where the left thumb rests,
+        // the d-pad below it and in; the face buttons high on the right, the
+        // right stick below them and in. Offset so, the two on a side share
+        // less height and neither thumb has far to go.
+        const float lower = select_y - s * 0.19f;
+        const float upper = lower - s * 0.28f;
+        dpad_r = s * 0.10f;
+        dpad_x = mx + s * 0.30f;
+        dpad_y = lower;
+        left_stick_x = mx + s * 0.15f;
+        left_stick_y = upper;
+        face_x = width - mx - s * 0.20f;
+        face_y = set.right_stick ? upper : upper + s * 0.08f;
+        right_stick_x = width - mx - s * 0.32f;
+        right_stick_y = lower;
         cluster_top = std::min(left_stick_y - stick_r, face_y - face_spread - face_radius);
     } else {
         dpad_r = s * 0.17f;
@@ -177,7 +183,7 @@ void TouchController::lay_out(float s) {
         Control stick;
         stick.kind = Kind::Stick;
         stick.right = true;
-        stick.rect = circle(right_stick_x, right_stick_y, stick_r);
+        stick.rect = circle(right_stick_x, right_stick_y, s * 0.12f);
         controls_.push_back(stick);
     }
     {
@@ -245,11 +251,26 @@ bool TouchController::face_at(float x, float y, std::size_t& index) const {
     return found;
 }
 
+bool TouchController::stick_side_at(float x, float y, std::size_t& index) const {
+    if (y < game_height(height_) || y > height_ || x < 0.0f || x > width_) return false;
+    const bool right = x >= width_ * 0.5f;
+    for (std::size_t i = 0; i < controls_.size(); ++i) {
+        if (controls_[i].kind == Kind::Stick && controls_[i].right == right) {
+            index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool TouchController::finger_down(SDL_FingerID finger, float x, float y) {
     if (!shown_) return false;
     std::size_t index = 0;
-    if (!control_at(x, y, index)) return false;
-    fingers_[finger] = Finger{index, x, y};
+    // On a button, that button; anywhere else on a side with a stick, the
+    // stick -- which, like any stick taken, is centred where the finger
+    // lands, so a thumb never has to find its middle first.
+    if (!control_at(x, y, index) && !stick_side_at(x, y, index)) return false;
+    fingers_[finger] = Finger{index, x, y, x, y};
     return true;
 }
 
@@ -383,16 +404,35 @@ void TouchController::stick_push(std::size_t index, float& x, float& y) const {
     for (const auto& [id, finger] : fingers_) {
         (void)id;
         if (finger.control != index) continue;
-        // All the way over at three quarters of the way to the rim, so a
-        // thumb does not have to find the edge to run.
+        // From where the finger landed, all the way over at three quarters
+        // of the stick's radius, so a thumb does not have to go far to run.
         const float full = control.radius() * 0.75f;
-        x = (finger.x - control.centre_x()) / full;
-        y = (finger.y - control.centre_y()) / full;
+        x = (finger.x - finger.anchor_x) / full;
+        y = (finger.y - finger.anchor_y) / full;
         const float length = std::sqrt(x * x + y * y);
         if (length > 1.0f) {
             x /= length;
             y /= length;
         }
+        return;
+    }
+}
+
+void TouchController::stick_centre(std::size_t index, float& x, float& y) const {
+    x = 0.0f;
+    y = 0.0f;
+    if (index >= controls_.size()) return;
+    const Control& control = controls_[index];
+    x = control.centre_x();
+    y = control.centre_y();
+    if (control.kind != Kind::Stick) return;
+    for (const auto& [id, finger] : fingers_) {
+        (void)id;
+        if (finger.control != index) continue;
+        // Kept wholly on screen and under the game, as it was drawn.
+        const float r = control.radius();
+        x = std::clamp(finger.anchor_x, r, std::max(r, width_ - r));
+        y = std::clamp(finger.anchor_y, game_height(height_) + r, std::max(game_height(height_) + r, height_ - r));
         return;
     }
 }
