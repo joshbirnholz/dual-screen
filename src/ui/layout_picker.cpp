@@ -410,6 +410,12 @@ void LayoutPicker::start_ordering(LayoutPickerResult& result) {
     result.change_order_started = true;
 }
 
+bool LayoutPicker::ordering_gamepad() const {
+    return ordering_controllers() && ordering_waiting_ >= 0 &&
+           ordering_waiting_ < static_cast<int>(state_.wii_u_controllers.size()) &&
+           state_.wii_u_controllers[static_cast<std::size_t>(ordering_waiting_)].slot.kind == PadSlot::Kind::GamePad;
+}
+
 void LayoutPicker::end_ordering() {
     if (confirm_ != MenuConfirm::Ordering) return;
     confirm_ = MenuConfirm::None;
@@ -1497,6 +1503,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 if (!tapped(pointer, hit.rect)) continue;
                 if (hit.glyph == ButtonGlyph::A) pressed.push_back(UiAction::Confirm);
                 if (hit.glyph == ButtonGlyph::B) pressed.push_back(UiAction::Cancel);
+                if (hit.glyph == ButtonGlyph::X) pressed.push_back(UiAction::MenuQuit);
             }
         }
         take_taps(pointers, output_width, output_height);
@@ -1504,6 +1511,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             switch (action) {
                 case UiAction::Confirm:
                     if (ordering_assigned_) result.change_order_done = true;
+                    break;
+                case UiAction::MenuQuit:
+                    if (ordering_gamepad()) result.change_order_skipped = true;
                     break;
                 case UiAction::Cancel: result.change_order_cancelled = true; break;
                 case UiAction::ToggleMenu:
@@ -2245,6 +2255,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         if (ordering_controllers()) {
             guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             if (ordering_assigned_) guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+            if (ordering_gamepad()) guide.push_back({ButtonGlyph::X, "Skip"});
         } else {
             // Always, and always first: it is the one prompt here that is
             // about the machine rather than about the game. Everything else
