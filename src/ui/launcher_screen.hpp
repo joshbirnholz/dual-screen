@@ -104,6 +104,10 @@ public:
     // by open(), like the flag above.
     void set_offers_load_game(bool offers) { offers_load_game_ = offers; }
     bool offers_load_game() const { return offers_load_game_; }
+    // Whether Settings is offered on a companion that plays nothing: an
+    // iPhone, whose own menus and touch controls have settings of their own.
+    void set_offers_settings(bool offers) { offers_settings_ = offers; }
+    bool offers_settings() const { return offers_settings_; }
 
     // What the control guide at the foot of the screen says, in the order it
     // says it. Exposed rather than built where it is drawn so the order is
@@ -177,6 +181,7 @@ private:
     bool plus_quits_ = false;
     bool offers_quit_ = true;
     bool offers_load_game_ = false;
+    bool offers_settings_ = false;
     std::vector<GuideHit> guide_hits_;
 
 public:

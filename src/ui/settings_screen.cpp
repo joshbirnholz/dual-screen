@@ -42,6 +42,11 @@ constexpr const char* kAsyncShadersDescription =
 constexpr const char* kQuickStartDescription =
     "Recently played games will be shown on the home page. Select a game to start it remotely on another "
     "device. Remote Start must be enabled on the other device.";
+#if DS_TOUCH_DEVICE
+constexpr const char* kTouchControlsDescription =
+    "Buttons will be shown over the game while no controller is connected. Connecting a controller "
+    "hides them.";
+#endif
 
 }  // namespace
 
@@ -195,6 +200,9 @@ std::string SettingsScreen::row_label(Row row) const {
         case Row::RemoteStart: return remote_start_on_ ? "Disable Remote Start" : "Enable Remote Start";
 #endif
         case Row::UiSounds: return "Sound Effects";
+#if DS_TOUCH_DEVICE
+        case Row::TouchControls: return "Touch Controls";
+#endif
         case Row::Count: break;
     }
     return std::string();
@@ -246,6 +254,9 @@ std::string SettingsScreen::row_value(Row row) const {
         case Row::RemoteStart: return std::string();
 #endif
         case Row::UiSounds: return settings_.ui_sounds ? "On" : "Off";
+#if DS_TOUCH_DEVICE
+        case Row::TouchControls: return settings_.touch_controls ? "On" : "Off";
+#endif
         case Row::Count: break;
     }
     return std::string();
@@ -286,11 +297,17 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             add(Row::PadGlyphs);
             add(Row::ConfirmButtonRow);
 #endif
-            add(Row::VideoHold);
-            add(Row::Vsync);
+#if DS_TOUCH_DEVICE
+            add(Row::TouchControls);
+#endif
+            if (plays_games_) {
+                add(Row::VideoHold);
+                add(Row::Vsync);
+            }
             add(Row::UiSounds);
             break;
         case SettingsGroup::Consoles: {
+            if (!plays_games_) break;
             add(Row::DsNickname);
             add(Row::DsFavoriteColor);
             add(Row::DsBirthMonth);
@@ -308,6 +325,7 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             break;
         }
         case SettingsGroup::WiiU:
+            if (!plays_games_) break;
 #if DS_PLAYS_WII_U
             add(Row::WiiUScreenAlone);
             add(Row::PauseWiiUInMenu);
@@ -338,7 +356,7 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             break;
         case SettingsGroup::System:
 #if DS_PLAYS_WII_U
-            add(Row::DiscordStatus);
+            if (plays_games_) add(Row::DiscordStatus);
 #endif
             add(Row::QuickStart);
 #if DS_REMOTE_START_HOST
@@ -875,6 +893,9 @@ const char* SettingsScreen::row_description(int index) const {
         if (item.kind != Item::Kind::Setting) return nullptr;
         if (item.row == Row::Vsync) return kVsyncDescription;
         if (item.row == Row::QuickStart) return kQuickStartDescription;
+#if DS_TOUCH_DEVICE
+        if (item.row == Row::TouchControls) return kTouchControlsDescription;
+#endif
 #if DS_PLAYS_WII_U
         if (item.row == Row::WiiUAsyncShaders) return kAsyncShadersDescription;
 #endif
@@ -1057,6 +1078,12 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
             settings_.ui_sounds = !settings_.ui_sounds;
             result.settings_changed = true;
             break;
+#if DS_TOUCH_DEVICE
+        case Row::TouchControls:
+            settings_.touch_controls = !settings_.touch_controls;
+            result.settings_changed = true;
+            break;
+#endif
         default: break;
     }
     refresh_items();
@@ -1566,6 +1593,9 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
 #endif
             case Row::QuickStart: view.toggle = settings_.quick_start ? 1 : 0; break;
             case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
+#if DS_TOUCH_DEVICE
+            case Row::TouchControls: view.toggle = settings_.touch_controls ? 1 : 0; break;
+#endif
             default: break;
         }
     }

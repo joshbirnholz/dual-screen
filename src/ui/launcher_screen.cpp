@@ -87,7 +87,7 @@ void LauncherScreen::open(bool runs_games) {
     rows_.push_back(LauncherChoice::ConnectAsBottomScreen);
     // Anything that plays games has Settings, and Data Management is in
     // there, as its first row.
-    if (runs_games || offers_load_game_) {
+    if (runs_games || offers_load_game_ || offers_settings_) {
         rows_.push_back(LauncherChoice::Settings);
     }
     if (offers_quit_) {

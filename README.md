@@ -40,6 +40,11 @@ one running the game.
 - **Two-device play**: one device runs the game and shows a screen; the other
   finds it on the network, shows the other screen, and sends its touches and
   buttons back.
+- **Touch Controls** on a phone or tablet (Android, iPhone, iPad): with no
+  controller connected, a d-pad, the face and shoulder buttons, Start and
+  Select -- and a 3DS's circle pad or a Wii U GamePad's sticks -- drawn over
+  the game, turned on in Settings > General. A finger on a control is that
+  control's; every other finger still touches the game.
 - Launched with no ROM, it opens a file browser so you can pick one, and starts
   in whichever folder you were last in.
 - Takes a **Wii U**'s two screens from an emulator running beside it rather than

@@ -84,9 +84,9 @@ SOURCE_DIRS := $(CLIENT) \
 CPPFILES    := main.cpp \
                audio_output.cpp audio_stretch.cpp \
                ui_sounds.cpp \
-               paths.cpp \
+               paths.cpp settings.cpp melonds_tuning.cpp \
                save_points.cpp system.cpp \
-               button_mapping.cpp wii_u_mapping.cpp controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
+               button_mapping.cpp wii_u_mapping.cpp controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp touch_controller.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp launch_service.cpp protocol.cpp transport.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \
@@ -95,7 +95,7 @@ CPPFILES    := main.cpp \
                menu_backdrop.cpp menu_overlay.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp controllers_screen.cpp graphic_packs_screen.cpp button_mapping_screen.cpp wii_u_controller_drawing.cpp wii_u_player_screen.cpp game_browser.cpp choice_popup.cpp text_entry.cpp game_dialog.cpp mirrored_game_dialog.cpp launcher_screen.cpp remote_start_screen.cpp layout_picker.cpp menu_state.cpp \
-               notice_popup.cpp \
+               notice_popup.cpp settings_screen.cpp \
                battery.cpp build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 
@@ -134,14 +134,14 @@ BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard 
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
 # the two with the desktop build's own, since nothing here can run this link.
 LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
-               game_config.cpp mapping_json.cpp mapping_profiles.cpp settings.cpp melonds_tuning.cpp sha1.cpp \
+               game_config.cpp mapping_json.cpp mapping_profiles.cpp sha1.cpp \
                ds_rom_info.cpp game_title.cpp save_store.cpp save_folder.cpp console_title_info.cpp \
                gl_call_trace.cpp hw_render_target.cpp \
                external_frame_link.cpp external_screen_source.cpp \
                libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
                retro_keymap.cpp \
                host_session.cpp save_exchange.cpp \
-               message_screen.cpp settings_screen.cpp \
+               message_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp discord_presence.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp \

@@ -76,6 +76,7 @@ std::vector<LauncherChoice> rows_you_can_reach(LauncherScreen& launcher) {
         probe.set_plus_quits(launcher.plus_quits());
         probe.set_offers_quit(launcher.offers_quit());
         probe.set_offers_load_game(launcher.offers_load_game());
+        probe.set_offers_settings(launcher.offers_settings());
         probe.open(/*runs_games=*/false);
         for (int down = 0; down < step; ++down) {
             probe.update({UiAction::Down}, {}, kWidth, kHeight);
@@ -139,6 +140,20 @@ void test_a_companion_that_plays_games_offers_to_load_one() {
     CHECK_MSG(offers(rows, LauncherChoice::Settings), "Settings was not offered");
     CHECK_MSG(!offers(rows_you_can_reach(plain), LauncherChoice::Settings),
               "Settings appeared on the opening screen of a companion with no emulator");
+}
+
+// An iPhone plays nothing itself but has Settings of its own -- Touch
+// Controls among them -- and nothing to load.
+void test_an_iphone_offers_settings_without_loading_games() {
+    LauncherScreen iphone;
+    iphone.set_offers_quit(false);
+    iphone.set_offers_settings(true);
+    iphone.open(/*runs_games=*/false);
+    const std::vector<LauncherChoice> rows = rows_you_can_reach(iphone);
+    CHECK_MSG(offers(rows, LauncherChoice::Settings), "Settings was not offered on an iPhone");
+    CHECK_MSG(!offers(rows, LauncherChoice::LoadGame), "an iPhone offered to load a game");
+    CHECK_MSG(offers(rows, LauncherChoice::ConnectAsTopScreen) && offers(rows, LauncherChoice::ConnectAsBottomScreen),
+              "offering Settings took the connect rows away");
 }
 
 // Not through a keyboard either. An iPad with a keyboard attached is still an
@@ -322,6 +337,7 @@ int main() {
     test_quit_leads_the_control_guide();
     test_leaving_is_not_offered_where_the_system_does_it();
     test_a_companion_that_plays_games_offers_to_load_one();
+    test_an_iphone_offers_settings_without_loading_games();
     test_no_key_leaves_where_leaving_is_not_offered();
     test_the_connection_list_does_not_show_addresses();
     test_a_game_on_more_than_one_device_asks_which();

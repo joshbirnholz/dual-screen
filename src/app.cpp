@@ -70,6 +70,7 @@
 #include "ui/menu_cursor_sync.hpp"
 #include "ui/menu_scroll_sync.hpp"
 #include "ui/stylus_cursor_view.hpp"
+#include "ui/touch_controls_view.hpp"
 #include "ui/menu_entrance.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
@@ -1489,6 +1490,17 @@ struct App::Impl {
     bool menu_closing = false;
     bool quick_menu_leaving() const {
         return menu_closing && menu_entrance.leaving() && picker && picker->is_drawn() && state != State::Menu;
+    }
+    // Whether the touch controller is to be over the game this frame -- see
+    // TouchController: chosen in Settings on a phone or tablet, nothing
+    // connected to play with, and a game of this device's own on screen.
+    bool touch_controls_wanted() {
+        if (!DS_TOUCH_DEVICE && !touch_controls_forced()) return false;
+        if (!settings.touch_controls && !touch_controls_forced()) return false;
+        if (state != State::Playing || quick_menu_leaving() || companion_session) return false;
+        // A Wii U game is in Cemu's window, not this one.
+        if (system == SystemId::WiiU && external_source) return false;
+        return active_source() != nullptr && input.connected_gamepads() == 0;
     }
     // Gone at once: closed from a page of it, where it was never on screen
     // to go away.
@@ -7893,6 +7905,7 @@ void App::Impl::render() {
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
         draw_stylus_cursor(width, height);
+        draw_touch_controls(quads, text, input.touch_controller());
         frames = &textures;
     } else {
         quads.begin_frame(output_width, output_height);
@@ -8461,6 +8474,7 @@ int App::run(const AppOptions& options) {
             (impl.companion_session && impl.companion_session->host_button_mapping_view().open &&
              impl.companion_session->host_button_mapping_view().placing));
         impl.cursor.update(elapsed);
+        impl.input.set_touch_controls(impl.touch_controls_wanted(), touch_controls_for(impl.system));
         impl.input.begin_frame();
         impl.tick_identify();
         impl.update_discord();

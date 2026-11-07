@@ -38,10 +38,14 @@
 // service -- see launch/launch_host.hpp: a Linux PC or a Steam Deck, where it
 // runs as a systemd user unit, and a Windows PC, where Windows starts it at
 // sign-in.
+// A build can say otherwise: the companion on a desktop, which plays nothing
+// and has no service to install.
+#ifndef DS_REMOTE_START_HOST
 #if (defined(__linux__) && !defined(__ANDROID__) && !defined(__SWITCH__)) || defined(_WIN32)
 #define DS_REMOTE_START_HOST 1
 #else
 #define DS_REMOTE_START_HOST 0
+#endif
 #endif
 
 namespace ds {
@@ -135,6 +139,11 @@ public:
     // A Data Management row, in System, on a device that keeps saves of its
     // own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
+    // Whether this device plays games itself. An iPhone only joins games
+    // played elsewhere, so what a game played here would follow -- the DS's
+    // owner, streaming, vsync -- is left out and only what its own menus and
+    // controls follow is offered. Each row left is in its usual group.
+    void set_plays_games(bool plays) { plays_games_ = plays; }
     // The row that downloads Cemu's community graphics packs, or updates
     // them, last in Wii U, on a device that plays Wii U games: what it is
     // called -- Download or Update -- and which are here.
@@ -259,6 +268,10 @@ private:
         RemoteStart,
 #endif
         UiSounds,
+#if DS_TOUCH_DEVICE
+        // A controller on the screen while no pad is connected.
+        TouchControls,
+#endif
         Count
     };
     std::string row_label(Row row) const;
@@ -395,6 +408,7 @@ private:
     bool over_game_ = false;
 
     bool offers_data_management_ = false;
+    bool plays_games_ = true;
     bool offers_graphic_packs_ = false;
     std::string graphic_packs_label_;
     std::string graphic_packs_value_;
