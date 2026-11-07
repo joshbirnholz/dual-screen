@@ -43,6 +43,23 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 
+// --- an SDL that survives a display going away ------------------------------
+//
+// SDL 2.30.11 and older crash the app the moment iOS takes a display away.
+// UIKit_DelDisplay() releases the display's SDL_DisplayData and then calls
+// SDL_DelVideoDisplay(), which SDL_free()s the same pointer again: a double
+// free of an Objective-C object, found later by whatever touches the heap
+// next -- usually inside SDL_PollEvent, since that is where the run loop
+// delivers UIScreenDidDisconnectNotification.
+//
+// Folding an iPhone Duo is exactly that: one display leaves and the other
+// takes over. SDL fixed it in 2.30.12 (it now clears the pointer before the
+// second free), so anything older is refused here, at compile time, rather
+// than found on a fold.
+#if !SDL_VERSION_ATLEAST(2, 30, 12)
+#error "This SDL crashes when a display goes away (folding an iPhone Duo). Build SDL 2.30.12 or newer; apple/README.md uses release-2.32.10."
+#endif
+
 // --- what SDL already has, redeclared ---------------------------------------
 //
 // SDL publishes no header for any of this: SDL_uikitappdelegate.h lives in
