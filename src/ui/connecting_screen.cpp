@@ -107,7 +107,7 @@ void render_connecting_screen(QuadRenderer& quads,
         lines.push_back(note);
     }
     render_waiting_screen(quads, text, glyphs, output_width, output_height, "Connecting", lines,
-                          {{ButtonGlyph::B, "Stop waiting"}}, out_hits);
+                          {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}}, out_hits);
 }
 
 }  // namespace ds

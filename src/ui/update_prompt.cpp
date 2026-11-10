@@ -327,8 +327,8 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                     }
                 }
                 show_notice(name + " is up to date.",
-                            {core ? std::string("It is the buildbot's latest.")
-                                  : "This is " + describe_build(installed) + "."});
+                            core ? std::vector<std::string>{}
+                                 : std::vector<std::string>{"This is " + describe_build(installed) + "."});
             }
         } else if (may_offer && popup_ == Popup::None) {
             // At start-up: said only when there is something to say, and
@@ -376,13 +376,6 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                 show_notice(one ? name + (fresh ? " is installed." : " is up to date now.")
                                 : std::string("The updates are installed."),
                             {});
-                if (one && fresh) {
-                    const Component id = installing_.front().component.id;
-                    lines_ = {std::string(id == Component::Cemu     ? "Wii U"
-                                          : id == Component::DsCore ? "DS"
-                                                                    : "3DS") +
-                              " games will be played with it from now on."};
-                }
             }
             for (const update::Offer& offer : installing_) {
                 result.installed.push_back(offer.component.id);

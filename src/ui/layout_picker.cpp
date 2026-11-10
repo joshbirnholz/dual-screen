@@ -2263,7 +2263,6 @@ void LayoutPicker::render(QuadRenderer& quads,
         // A Wii U's Controls: X buzzes the controller the cursor is on and Y
         // changes the order -- and while it is being changed, only Back,
         // and Done once a controller has been taken.
-        const ControllerRowView* controller = focused_controller();
         const bool on_controls = system_ == SystemId::WiiU && section_ == MenuSection::ControllerOrder &&
                                  on_content_ && !state_.wii_u_controllers.empty();
         if (ordering_controllers()) {
@@ -2275,8 +2274,12 @@ void LayoutPicker::render(QuadRenderer& quads,
             // about the machine rather than about the game. Everything else
             // the face buttons used to do is in the list now.
             guide.push_back({ButtonGlyph::Plus, "Settings"});
-            if (controller != nullptr && !controller->pad.empty()) guide.push_back({ButtonGlyph::X, "Identify"});
-            if (on_controls) guide.push_back({ButtonGlyph::Y, "Change Order"});
+            // The same on every row of Controls: X does nothing on a row
+            // with no controller to buzz.
+            if (on_controls) {
+                guide.push_back({ButtonGlyph::X, "Identify"});
+                guide.push_back({ButtonGlyph::Y, "Change Order"});
+            }
             // Back either way: off the right-hand side, or out of the menu.
             // One word for B wherever the cursor is, rather than one that
             // changes -- and none on the list shown in place of a Wii U
@@ -2284,11 +2287,9 @@ void LayoutPicker::render(QuadRenderer& quads,
             if (!state_.embedded || on_content_) {
                 guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             }
-            // OK, as everywhere -- but on a controller not used, which has
-            // no page to open.
-            if (controller == nullptr || controller->slot.kind != PadSlot::Kind::NotUsed) {
-                guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
-            }
+            // OK, as everywhere, on every row -- a controller not used has
+            // no page to open, and A does nothing there.
+            guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         }
     }
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);

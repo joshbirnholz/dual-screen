@@ -344,7 +344,7 @@ std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
         guide.push_back({ButtonGlyph::Plus, "Quit"});
     }
     // The row itself is the button on a touch device, and a bigger one.
-    guide.push_back({ButtonGlyph::A, "Select", PromptRole::ActsOnSelection});
+    guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     return guide;
 }
 
@@ -670,12 +670,8 @@ void HostPickerScreen::render(QuadRenderer& quads,
         }
     }
 
-    const bool on_host = focus_ >= 0 && focus_ < static_cast<int>(hosts.size());
-    const char* act = !on_host                                                 ? "Choose"
-                      : hosts[static_cast<std::size_t>(focus_)].needs_update() ? "Select"
-                                                                                : "Connect";
     draw_page_guide(quads, text, glyphs, frame,
-                    {{ButtonGlyph::A, act, PromptRole::ActsOnSelection},
+                    {{ButtonGlyph::A, "OK", PromptRole::ActsOnSelection},
                      {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                     &guide_hits_);
 

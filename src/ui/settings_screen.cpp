@@ -35,13 +35,13 @@ std::string rumble_label(int percent) {
 constexpr float kHeadingScale = 0.85f;
 
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
-constexpr const char* kGraphicPacksDescription =
-    "Cemu's community graphics packs, from GitHub: higher resolutions, 60 FPS and fixes for each game.";
 constexpr const char* kAsyncShadersDescription =
     "Less stutter while new shaders are built, though some things may be missing for a moment. Vulkan only.";
 constexpr const char* kQuickStartDescription =
-    "Recently played games will be shown on the home page. Select a game to start it remotely on another "
-    "device. Remote Start must be enabled on the other device.";
+    "Games recently played on other devices will be shown on the home page, to start from here. Remote Start "
+    "must be enabled on those devices.";
+constexpr const char* kPipelineDescription =
+    "A frame later keeps busy 3D games at full speed. As soon as drawn shows each picture a frame sooner.";
 #if DS_TOUCH_DEVICE
 constexpr const char* kTouchControlsDescription =
     "Buttons will be shown below the game while the device is held upright in portrait orientation and no "
@@ -139,13 +139,12 @@ PopupText SettingsScreen::remote_start_text() const {
                               "Remote Start and join a game here from it once.");
         return words;
     }
-    words.message = "Remote Start will install a small background service on this computer.";
+    words.message = "Remote Start will install a background service on this computer.";
     words.lines.push_back("The service will start each time you log in, in Game Mode too, and keep running with "
                           "Dualscreen closed.");
     words.lines.push_back("Any device that joins a game here will then show the games you play here on its home "
                           "screen, and can start one here from there, waking this computer first if it is asleep "
                           "and Wake-on-LAN is on.");
-    words.lines.push_back("Disable Remote Start will remove the service.");
     return words;
 }
 
@@ -875,13 +874,7 @@ void SettingsScreen::open_download_row(SystemId system) {
 
 std::string SettingsScreen::footnote() const {
     if (group() != SettingsGroup::Consoles || !melonds_available_) return std::string();
-    std::string note = "melonDS's settings take effect the next time a game starts. They are kept in " +
-                       melonds_path_ + ", which can be edited by hand as well.";
-    if (melonds_deko_) {
-        note += " Each frame shown a frame later lets the emulator run on while the GPU draws, which keeps "
-                "busy 3D games at full speed; as soon as drawn shows each picture a frame sooner.";
-    }
-    return note;
+    return "melonDS's settings take effect the next time a game starts.";
 }
 
 const char* SettingsScreen::row_description(int index) const {
@@ -889,7 +882,7 @@ const char* SettingsScreen::row_description(int index) const {
     for (const Item& item : items_) {
         if (!item.focusable()) continue;
         if (at++ != index) continue;
-        if (item.kind == Item::Kind::GraphicPacks) return kGraphicPacksDescription;
+        if (item.kind == Item::Kind::Melon) return item.melon == MelonRow::Pipeline ? kPipelineDescription : nullptr;
         if (item.kind != Item::Kind::Setting) return nullptr;
         if (item.row == Row::Vsync) return kVsyncDescription;
         if (item.row == Row::QuickStart) return kQuickStartDescription;
@@ -901,8 +894,8 @@ const char* SettingsScreen::row_description(int index) const {
 #endif
 #if DS_REMOTE_START_HOST
         if (item.row == Row::RemoteStart) {
-            return remote_start_on_ ? "Other devices can start games here. Disabling removes the service."
-                                    : "Installs a background service so other devices can start games here.";
+            return remote_start_on_ ? "Other devices can start games here."
+                                    : "Lets other devices start games here.";
         }
 #endif
         return nullptr;

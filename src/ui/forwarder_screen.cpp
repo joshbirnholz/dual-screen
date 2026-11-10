@@ -358,7 +358,7 @@ void ForwarderScreen::finish_job(ForwarderScreenResult& result) {
 
 void ForwarderScreen::edit_title() {
     std::string typed;
-    if (platform_.edit_text("App Title", "The name the HOME menu will show", request_.title,
+    if (platform_.edit_text("App Title", "", request_.title,
                             kForwarderTitleMax, typed) &&
         !typed.empty()) {
         request_.title = typed;
@@ -398,7 +398,7 @@ void ForwarderScreen::search_steamgriddb(ForwarderScreenResult& result, const st
 void ForwarderScreen::search_another_name(ForwarderScreenResult& result) {
     std::string typed;
     const std::string start = search_term_.empty() ? request_.title : search_term_;
-    if (!platform_.edit_text("Search SteamGridDB", "The game's name, as SteamGridDB might know it", start, 128,
+    if (!platform_.edit_text("Search SteamGridDB", "", start, 128,
                              typed) ||
         typed.empty()) {
         return;
@@ -452,7 +452,7 @@ void ForwarderScreen::activate(ForwarderScreenResult& result) {
     switch (static_cast<Row>(list_focus_)) {
         case Row::Publisher: {
             std::string typed;
-            if (platform_.edit_text("Publisher", "Who made the game", request_.publisher,
+            if (platform_.edit_text("Publisher", "", request_.publisher,
                                     kForwarderPublisherMax, typed)) {
                 request_.publisher = typed;
             }
@@ -811,9 +811,6 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
                   TextAlign::Center);
         pen_y += line * 1.3f;
         text.draw(quads, icon_source_, centre, pen_y, scale * 0.85f, theme.text_dim, TextAlign::Center);
-        pen_y += line * 1.3f;
-        text.draw_wrapped(quads, "Press A or tap the icon to change it", centre, pen_y,
-                          geometry.left.w - line * 1.6f, scale * 0.75f, theme.text_dim, TextAlign::Center);
 
         // The rows.
         for (int index = 0; index < static_cast<int>(Row::Count); ++index) {
@@ -848,7 +845,7 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
     std::vector<GuidePrompt> prompts;
     if (page_ == Page::Icons) prompts.push_back({ButtonGlyph::Y, "Other Game"});
     prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-    prompts.push_back({ButtonGlyph::A, "Select", PromptRole::ActsOnSelection});
+    prompts.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 
     switch (overlay_) {

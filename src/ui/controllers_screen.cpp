@@ -335,10 +335,10 @@ void ControllersScreen::render(QuadRenderer& quads,
 
     std::vector<GuidePrompt> guide;
     if (holding_) {
-        guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     } else {
         guide.push_back({ButtonGlyph::X, "Identify"});
-        guide.push_back({ButtonGlyph::A, "Reorder", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     }
     guide_hits_.clear();
