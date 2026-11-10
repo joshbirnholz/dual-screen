@@ -134,7 +134,7 @@ void MessageScreen::render(QuadRenderer& quads,
     // Any tap goes on -- see update() -- but the prompt is kept where it was
     // drawn all the same, so a finger held on it lights it up like any other.
     guide_hits_.clear();
-    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::A, "Continue"}}, &guide_hits_);
+    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::A, "OK"}}, &guide_hits_);
 }
 
 void MessageScreen::describe_for_sound(UiSoundView& view) const {

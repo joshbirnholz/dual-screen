@@ -565,13 +565,10 @@ void GameBrowser::render(QuadRenderer& quads,
     guide_hits_.clear();
     std::vector<GuidePrompt> prompts;
     if (!amiibo_) prompts.push_back({ButtonGlyph::Plus, "Main Menu"});
-    std::string target;
-    if (forwarder_target(target)) prompts.push_back({ButtonGlyph::X, "Create Forwarder"});
-    // An amiibo is scanned rather than opened; a folder is still opened.
-    const bool on_file = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) &&
-                         !rows_[static_cast<std::size_t>(focus_)].is_directory;
-    prompts.push_back({ButtonGlyph::A, amiibo_ && on_file ? "Scan" : "Open",
-                       PromptRole::ActsOnSelection});
+    // The same prompts whichever row the cursor is on: X makes a forwarder
+    // of a game, and does nothing on a folder.
+    if (offers_forwarders_) prompts.push_back({ButtonGlyph::X, "Create Forwarder"});
+    prompts.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 }

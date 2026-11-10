@@ -25,8 +25,7 @@ void GraphicPacksPrompt::choose(bool game_running) {
         return;
     }
     if (game_running) {
-        show_notice("The graphics packs will be ready to download when the game is closed.",
-                    {"Cemu reads them as a game starts, so they are left alone while one is being played."});
+        show_notice("The graphics packs will be ready to download when the game is closed.", {});
         return;
     }
     if (downloader_->busy()) {
@@ -101,8 +100,10 @@ void GraphicPacksPrompt::poll() {
     // The install's outcome.
     if (popup_ == Popup::Progress && status_.round == install_round_) {
         if (status_.phase == Phase::Installed) {
+            // Where to find them, said the first time only.
             show_notice(fresh_ ? "The graphics packs are downloaded." : "The graphics packs are up to date now.",
-                        {"Turn them on for a game in Graphics Packs, in its quick menu."});
+                        fresh_ ? std::vector<std::string>{"Turn them on for a game in Graphics Packs, in its quick menu."}
+                               : std::vector<std::string>{});
         } else if (status_.phase == Phase::Failed) {
             show_notice("The graphics packs were not installed.", {status_.error});
         } else if (status_.phase == Phase::Checked) {

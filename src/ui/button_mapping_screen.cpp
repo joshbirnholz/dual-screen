@@ -1364,7 +1364,9 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
 
     std::vector<GuidePrompt> guide;
     guide.push_back({ButtonGlyph::X, "Reset to Default"});
-    if (button_focus_ < 0 && can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
+    // On every row of the list, so the prompts stay put as the cursor
+    // moves; on a button turbo can't take, Y does nothing.
+    if (button_focus_ < 0) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     guide_hits_.clear();

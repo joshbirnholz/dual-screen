@@ -296,7 +296,7 @@ void RemoteStartScreen::render(QuadRenderer& quads, TextRenderer& text, const Bu
     }
 
     std::vector<GuidePrompt> prompts;
-    prompts.push_back({ButtonGlyph::B, "Cancel", PromptRole::LeavesScreen});
+    prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 
     if (!alert_.empty()) {

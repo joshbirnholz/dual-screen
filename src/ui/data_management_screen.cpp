@@ -1023,7 +1023,7 @@ std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
         case Page::List: {
             std::vector<GuidePrompt> prompts;
             prompts.push_back({ButtonGlyph::X, "Sync All"});
-            if (!saves_.empty()) prompts.push_back({ButtonGlyph::A, "Open", PromptRole::ActsOnSelection});
+            if (!saves_.empty()) prompts.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
             prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             return prompts;
         }
@@ -1042,7 +1042,7 @@ std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
         case Page::Earlier: {
             std::vector<GuidePrompt> prompts;
             if (!earlier_.empty()) {
-                prompts.push_back({ButtonGlyph::A, "Restore", PromptRole::ActsOnSelection});
+                prompts.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
             }
             prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             return prompts;

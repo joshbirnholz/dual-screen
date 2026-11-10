@@ -6326,8 +6326,7 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
             if (resolved_core_path.empty() && builtin_core_system()) {
                 details->push_back("This device plays " +
                                    system_profile(*builtin_core_system()).name +
-                                   " games only: its emulator is part of the app, and there is "
-                                   "no other to load.");
+                                   " games only.");
             } else if (resolved_core_path.empty()) {
                 core_not_found = true;
                 details->push_back("Looked for " + profile.core_filenames.front() +
@@ -6802,8 +6801,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure, G
 
     if (source && !source->warnings().empty()) {
         enter_message(MessageKind::Info, sentence_start(emulator_name()) + " didn't accept every setting",
-                      "The game will still run, but the screen split may not look right until this "
-                      "is resolved.",
+                      "The screens may not be split correctly.",
                       source->warnings(), false);
     }
     return true;
@@ -9140,8 +9138,7 @@ int App::run(const AppOptions& options) {
             if (impl.host_session->take_video_error(video_error)) {
                 const std::string other = impl.host_session->companion_name();
                 impl.enter_message(MessageKind::Error, "Can't send video to " + other,
-                                   "This device couldn't make video of the game, so " + other +
-                                       " isn't being sent a picture.",
+                                   "This device couldn't make video of the game.",
                                    {}, false);
             }
             // Whichever screen the companion took, the host shows the other.
