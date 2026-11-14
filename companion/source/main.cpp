@@ -1726,8 +1726,12 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                     launcher_.open(false);
                     break;
                 }
+                // The other paired computers awake now, to wake it through
+                // when it is asleep: an iPhone cannot broadcast the packet.
+                std::vector<net::WakeRelay> relays = net::wake_relays(launch_finder_.hosts(), tokens_path());
                 begin_search(ScreenId::Bottom);
                 if (state_ != State::Browsing) break;
+                remote_start_.set_wake_relays(std::move(relays));
                 remote_start_.open_and_start(picked.host, net::remote_start_token(tokens_path(), picked.host.id),
                                              picked.game, picked.icon_width, picked.icon_height,
                                              picked.icon_rgba);

@@ -359,6 +359,20 @@ bool LaunchService::start(std::string* error) {
                     } else {
                         reply["error"] = "no icon";
                     }
+                } else if (op == "wake") {
+                    // Another computer of this device's, asleep: woken from
+                    // here, for a device that cannot broadcast itself.
+                    LaunchHost asleep;
+                    asleep.name = "a computer";
+                    asleep.address = get_or<std::string>(request, "address", "");
+                    asleep.macs = get_or<std::vector<std::string>>(request, "macs", {});
+                    std::string error;
+                    if (wake_computer(asleep, &error)) {
+                        reply = {{"ok", true}};
+                        log_info("woke another computer for a connected device");
+                    } else {
+                        reply["error"] = error;
+                    }
                 } else {
                     reply["error"] = "unknown request \"" + op + "\"";
                 }
@@ -829,6 +843,17 @@ void RecentGamesFeed::start(std::string tokens_path, std::size_t most) {
                     listed_everywhere.push_back(entry);
                 }
             }
+            // A paired computer the search did not find at all is as
+            // silent as one that found and then did not answer: asleep, most
+            // likely. Without this its games went from the first screen
+            // whenever any other paired computer was awake, and a game on
+            // both was only ever offered on the awake one.
+            for (const LaunchHost& known : remembered_computers(tokens_path)) {
+                if (remote_start_token(tokens_path, known.id).empty()) continue;
+                const bool found = std::any_of(hosts.begin(), hosts.end(),
+                                               [&](const LaunchHost& host) { return host.id == known.id; });
+                if (!found) silent.push_back(known);
+            }
             // A paired computer not answering -- asleep, as far as this can
             // tell -- still has the games last seen on it, to be woken for.
             for (const LaunchHost& host : silent) {
@@ -1050,14 +1075,47 @@ std::vector<uint8_t> wake_on_lan_packet(const std::string& mac) {
     return packet;
 }
 
-bool wake_computer(const LaunchHost& host, std::string* error) {
+std::vector<WakeRelay> wake_relays(const std::vector<LaunchHost>& found, const std::string& tokens_path) {
+    std::vector<WakeRelay> relays;
+    for (const LaunchHost& host : found) {
+        if (host.asleep) continue;
+        WakeRelay relay;
+        relay.host = host;
+        relay.token = remote_start_token(tokens_path, host.id);
+        if (!relay.token.empty()) relays.push_back(std::move(relay));
+    }
+    return relays;
+}
+
+bool relay_wake(const WakeRelay& relay, const LaunchHost& asleep, std::string* error) {
+    json reply;
+    if (!exchange(relay.host, {{"op", "wake"}, {"token", relay.token}, {"macs", asleep.macs}, {"address", asleep.address}},
+                  reply, error)) {
+        return false;
+    }
+    bool unpaired = false;
+    return answered_yes(relay.host, reply, unpaired, error);
+}
+
+bool wake_computer(const LaunchHost& host, std::string* error, const std::vector<WakeRelay>& relays) {
     if (host.macs.empty()) {
         if (error != nullptr) *error = host.name + " never said how to wake it";
         return false;
     }
+    bool relayed = false;
+    for (const WakeRelay& relay : relays) {
+        if (relay.host.id == host.id) continue;
+        std::string why;
+        if (relay_wake(relay, host, &why)) {
+            log_info("asked " + relay.host.name + " to wake " + host.name);
+            relayed = true;
+        } else {
+            log_warn(relay.host.name + " could not wake " + host.name + ": " + why);
+        }
+    }
     UdpSocket socket;
-    if (!socket.start(0, true, error)) return false;
-    bool sent = false;
+    if (!socket.start(0, true, error)) return relayed;
+    bool sent = relayed;
     for (const std::string& mac : host.macs) {
         const std::vector<uint8_t> packet = wake_on_lan_packet(mac);
         if (packet.empty()) continue;
@@ -1076,8 +1134,8 @@ bool wake_computer(const LaunchHost& host, std::string* error) {
 }
 
 bool wake_and_wait(const LaunchHost& host, int timeout_ms, const std::atomic<bool>& cancelled, LaunchHost& awake,
-                   std::string* error, uint16_t query_port) {
-    if (!wake_computer(host, error)) return false;
+                   std::string* error, uint16_t query_port, const std::vector<WakeRelay>& relays) {
+    if (!wake_computer(host, error, relays)) return false;
     log_info("waking " + host.name);
     const uint64_t started = monotonic_millis();
     uint64_t woken_at = started;
@@ -1095,7 +1153,7 @@ bool wake_and_wait(const LaunchHost& host, int timeout_ms, const std::atomic<boo
         // Again every five seconds, as a packet sent while the network was
         // still coming up -- a router asleep too -- is simply lost.
         if (monotonic_millis() - woken_at >= 5000) {
-            wake_computer(host, nullptr);
+            wake_computer(host, nullptr, relays);
             woken_at = monotonic_millis();
         }
     }

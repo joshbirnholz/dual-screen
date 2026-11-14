@@ -54,6 +54,10 @@ public:
     // is the game's icon, `icon_width` by `icon_height`, or empty.
     void open_and_start(const net::LaunchHost& host, std::string token, const LaunchableGame& game,
                         int icon_width = 0, int icon_height = 0, std::vector<uint8_t> icon_rgba = {});
+    // The other paired computers awake now, asked to wake the one chosen
+    // when it is asleep -- see net::wake_computer(). Set before
+    // open_and_start().
+    void set_wake_relays(std::vector<net::WakeRelay> relays) { wake_relays_ = std::move(relays); }
     // Started, and now being joined: said under the title until close().
     void connecting();
     // Back to waiting for the game, after a join that did not take -- one
@@ -118,6 +122,7 @@ private:
     void run(std::function<Outcome(const std::atomic<bool>& cancelled)> work, std::string waiting_for);
     void drop_job();
     void wake();
+    std::vector<net::WakeRelay> wake_relays_;
     // `replace`: the game running there closed first.
     void start(bool replace = false);
     void alert(std::string message);

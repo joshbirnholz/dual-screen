@@ -7076,8 +7076,12 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         launcher->open();
                         break;
                     }
+                    // The other paired computers awake now, to wake it
+                    // through when it is asleep.
+                    std::vector<net::WakeRelay> relays = net::wake_relays(launch_finder.hosts(), remote_start_tokens());
                     start_companion(ScreenId::Bottom);
                     if (state != State::HostPicker) break;
+                    remote_start.set_wake_relays(std::move(relays));
                     remote_start.open_and_start(picked.host,
                                                 net::remote_start_token(remote_start_tokens(), picked.host.id),
                                                 picked.game, picked.icon_width, picked.icon_height,
