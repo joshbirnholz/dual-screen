@@ -47,6 +47,10 @@ constexpr const char* kTouchControlsDescription =
     "Buttons will be shown below the game while the device is held upright in portrait orientation and no "
     "controller is connected.";
 #endif
+#if DS_PICTURE_IN_PICTURE
+constexpr const char* kPictureInPictureDescription =
+    "The game will keep showing in a small window when you leave the app.";
+#endif
 
 }  // namespace
 
@@ -202,6 +206,9 @@ std::string SettingsScreen::row_label(Row row) const {
 #if DS_TOUCH_DEVICE
         case Row::TouchControls: return "Touch Controls";
 #endif
+#if DS_PICTURE_IN_PICTURE
+        case Row::PictureInPicture: return "Picture in Picture";
+#endif
         case Row::Count: break;
     }
     return std::string();
@@ -256,6 +263,9 @@ std::string SettingsScreen::row_value(Row row) const {
 #if DS_TOUCH_DEVICE
         case Row::TouchControls: return settings_.touch_controls ? "On" : "Off";
 #endif
+#if DS_PICTURE_IN_PICTURE
+        case Row::PictureInPicture: return settings_.picture_in_picture ? "On" : "Off";
+#endif
         case Row::Count: break;
     }
     return std::string();
@@ -298,6 +308,9 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
 #endif
 #if DS_TOUCH_DEVICE
             add(Row::TouchControls);
+#endif
+#if DS_PICTURE_IN_PICTURE
+            add(Row::PictureInPicture);
 #endif
             if (plays_games_) {
                 add(Row::VideoHold);
@@ -889,6 +902,9 @@ const char* SettingsScreen::row_description(int index) const {
 #if DS_TOUCH_DEVICE
         if (item.row == Row::TouchControls) return kTouchControlsDescription;
 #endif
+#if DS_PICTURE_IN_PICTURE
+        if (item.row == Row::PictureInPicture) return kPictureInPictureDescription;
+#endif
 #if DS_PLAYS_WII_U
         if (item.row == Row::WiiUAsyncShaders) return kAsyncShadersDescription;
 #endif
@@ -1074,6 +1090,12 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
 #if DS_TOUCH_DEVICE
         case Row::TouchControls:
             settings_.touch_controls = !settings_.touch_controls;
+            result.settings_changed = true;
+            break;
+#endif
+#if DS_PICTURE_IN_PICTURE
+        case Row::PictureInPicture:
+            settings_.picture_in_picture = !settings_.picture_in_picture;
             result.settings_changed = true;
             break;
 #endif
@@ -1588,6 +1610,9 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
             case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
 #if DS_TOUCH_DEVICE
             case Row::TouchControls: view.toggle = settings_.touch_controls ? 1 : 0; break;
+#endif
+#if DS_PICTURE_IN_PICTURE
+            case Row::PictureInPicture: view.toggle = settings_.picture_in_picture ? 1 : 0; break;
 #endif
             default: break;
         }

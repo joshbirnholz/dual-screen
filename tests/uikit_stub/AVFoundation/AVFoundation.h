@@ -6,6 +6,7 @@
 
 typedef NSString *AVLayerVideoGravity;
 extern AVLayerVideoGravity const AVLayerVideoGravityResize;
+extern AVLayerVideoGravity const AVLayerVideoGravityResizeAspect;
 
 typedef long AVQueuedSampleBufferRenderingStatus;
 enum {

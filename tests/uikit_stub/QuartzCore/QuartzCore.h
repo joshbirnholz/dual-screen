@@ -11,6 +11,7 @@ extern CALayerContentsFilter const kCAFilterNearest;
 @interface CALayer : NSObject
 - (instancetype)init;
 @property CGRect bounds;
+@property CGRect frame;
 @property CGPoint position;
 @property (getter=isHidden) BOOL hidden;
 @property (getter=isOpaque) BOOL opaque;
@@ -21,6 +22,7 @@ extern CALayerContentsFilter const kCAFilterNearest;
 - (CGAffineTransform)affineTransform;
 - (void)setAffineTransform:(CGAffineTransform)m;
 - (void)addSublayer:(CALayer *)layer;
+- (void)insertSublayer:(CALayer *)layer below:(CALayer *)sibling;
 - (void)removeFromSuperlayer;
 @end
 

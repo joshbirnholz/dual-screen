@@ -14,5 +14,6 @@ typedef struct CGColor *CGColorRef;
 
 CGPoint CGPointMake(CGFloat x, CGFloat y);
 CGRect CGRectMake(CGFloat x, CGFloat y, CGFloat width, CGFloat height);
+_Bool CGRectEqualToRect(CGRect rect1, CGRect rect2);
 extern const CGAffineTransform CGAffineTransformIdentity;
 CGAffineTransform CGAffineTransformMakeRotation(CGFloat angle);

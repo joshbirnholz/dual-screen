@@ -27,6 +27,17 @@
 #endif
 #endif
 
+// Whether the streamed picture can go on in a floating window when the app is
+// left: an iPhone or iPad, through AVPictureInPictureController. Only there is
+// Picture in Picture offered -- see Settings::picture_in_picture.
+#ifndef DS_PICTURE_IN_PICTURE
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_TV
+#define DS_PICTURE_IN_PICTURE 1
+#else
+#define DS_PICTURE_IN_PICTURE 0
+#endif
+#endif
+
 namespace ds {
 
 // What a device playing a Wii U on its own is: the television, the GamePad,
@@ -337,6 +348,11 @@ struct Settings {
     // or tablet. See TouchController. Off unless chosen; a pad connected
     // takes it away again.
     bool touch_controls = false;
+
+    // Picture in Picture: the streamed game goes on in the system's floating
+    // window when the app is left, on an iPhone or iPad. On unless turned
+    // off. See SystemVideoLayers' picture in picture.
+    bool picture_in_picture = true;
 
     // The DS's owner, as its own settings have them: the name games greet
     // the player by, the favorite color -- an index into kDsFavoriteColors

@@ -444,6 +444,18 @@ private:
 #if DS_COMPANION_SETTINGS
     void open_settings();
 #endif
+#if DS_PICTURE_IN_PICTURE && DS_COMPANION_SETTINGS
+    // Each pass: the game handed to the floating window the system shows when
+    // the app is left, and the sound let go of in the background once
+    // nothing is showing it -- see the definition.
+    void follow_picture_in_picture(uint64_t now);
+    // Off screen with no floating window since then, in ms; 0 while either
+    // is up.
+    uint64_t unseen_since_ms_ = 0;
+    // The sound was closed for being off screen with nothing showing it, and
+    // stays closed until the app is back.
+    bool unseen_silenced_ = false;
+#endif
     void begin_search(ScreenId wanted);
     void join(const net::DiscoveredHost& host);
     void leave(const std::string& reason);
@@ -804,6 +816,11 @@ bool Client::start() {
             if (rate == 0) {
                 return;
             }
+#if DS_PICTURE_IN_PICTURE && DS_COMPANION_SETTINGS
+            if (unseen_silenced_) {
+                return;
+            }
+#endif
             if (!audio_.is_open() || audio_rate_ != rate) {
                 std::string audio_error;
                 if (!audio_.open(static_cast<double>(rate), &audio_error)) {
@@ -2132,6 +2149,9 @@ void Client::run() {
 
         session_.poll(now);
         pass.poll_done = net::monotonic_millis();
+#if DS_PICTURE_IN_PICTURE && DS_COMPANION_SETTINGS
+        follow_picture_in_picture(now);
+#endif
 
         switch (state_) {
             case State::Launcher:
@@ -2454,6 +2474,61 @@ void Client::run() {
     }
     keep_awake(false);
 }
+
+#if DS_PICTURE_IN_PICTURE && DS_COMPANION_SETTINGS
+// Picture in Picture (Settings > General). The floating window is the system's
+// to start, as the app goes to the background; what is decided here is
+// whether it may, and what it shows: the screen this device was given, or
+// the other where only that one has a picture.
+//
+// Info-iOS.plist.in asks for the "audio" background mode, which picture in
+// picture needs, and which also lets an app go on playing sound with nothing
+// on screen. Without the window that is not wanted -- the app would play a
+// game's sound from the pocket until the battery ran out -- so a second off
+// screen with no window, the sound is closed, the system suspends the app as
+// it did before, and coming back opens it again.
+void Client::follow_picture_in_picture(uint64_t now) {
+    std::shared_ptr<void> picture;
+    uint64_t serial = 0;
+    if (state_ == State::Playing) {
+        const ScreenId granted = session_.granted_screen();
+        const ScreenId other = granted == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top;
+        for (ScreenId screen : {granted, other}) {
+            const net::CompanionSession::NativePicture native = session_.native_picture(screen);
+            if (native.picture != nullptr) {
+                picture = native.picture;
+                serial = native.serial;
+                break;
+            }
+        }
+    }
+    video_layers_.feed_picture_in_picture(picture, serial, settings_.picture_in_picture);
+    const bool floating = video_layers_.picture_in_picture_active();
+
+    if (foreground_ || floating) {
+        unseen_since_ms_ = 0;
+        if (unseen_silenced_) {
+            unseen_silenced_ = false;
+            log_info(floating ? "playing the sound again, under picture in picture"
+                              : "playing the sound again");
+        }
+        return;
+    }
+    if (unseen_since_ms_ == 0) {
+        unseen_since_ms_ = now;
+    }
+    // Long enough for the system to have started the window, which it does a
+    // moment after the app has gone.
+    constexpr uint64_t kUnseenBeforeSilenceMs = 1000;
+    if (!unseen_silenced_ && now - unseen_since_ms_ >= kUnseenBeforeSilenceMs) {
+        unseen_silenced_ = true;
+        if (audio_.is_open()) {
+            audio_.close();
+        }
+        log_info("off screen with no picture in picture, so the sound is stopped until the app is back");
+    }
+}
+#endif
 
 void Client::report_slow_pass(const PassTimes& pass) {
     if (pass.swap_done < pass.began || pass.swap_done - pass.began < kSlowPassMs) {

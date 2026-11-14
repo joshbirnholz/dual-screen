@@ -30,7 +30,7 @@ endif()
 # branch that only ever builds on one of the two is a branch nobody checked.
 foreach(tv IN ITEMS 0 1)
     execute_process(
-        COMMAND "${COMPILER}" -fsyntax-only -x objective-c -fobjc-runtime=macosx
+        COMMAND "${COMPILER}" -fsyntax-only -x objective-c -fobjc-runtime=macosx -fblocks
                 -Wall -Wextra -Werror
                 -DTARGET_OS_IPHONE=1 "-DTARGET_OS_TV=${tv}"
                 "-I${STUB_DIR}" "${SOURCE}"
