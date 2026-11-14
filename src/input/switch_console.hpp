@@ -25,8 +25,12 @@ inline SetSysProductModel switch_product_model() {
 // motor at all.
 inline bool switch_is_lite() { return switch_product_model() == SetSysProductModel_Hoag; }
 
-// In the words on its box: "Switch Lite", "Switch OLED" or "Switch".
+// In the words on its box: "Switch 2", "Switch Lite", "Switch OLED" or
+// "Switch". A Switch 2 build (libounce) runs on nothing else.
 inline const char* switch_console_name() {
+#ifdef __SWITCH2__
+    return "Switch 2";
+#endif
     switch (switch_product_model()) {
         case SetSysProductModel_Hoag: return "Switch Lite";
         case SetSysProductModel_Aula: return "Switch OLED";

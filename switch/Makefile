@@ -36,11 +36,36 @@ $(error Set DEVKITPRO in your environment, e.g. export DEVKITPRO=/opt/devkitpro)
 endif
 
 TOPDIR ?= $(CURDIR)
+
+# SWITCH2=1 builds for the Switch 2 instead, with ouncebrew's devkit
+# (https://github.com/ouncebrew/ounce-devkit) installed into devkitPro:
+#
+#   make SWITCH2=1  # -> Dualscreen-Switch2.nro
+#
+# libounce stands in for libnx and OunceVK for switch-mesa's EGL, so the same
+# sources build unchanged. It is the companion alone for now: RSDuck's melonDS
+# draws with deko3d, which speaks only to the Switch 1's GPU, the NVTEGRA
+# video decoder is the Switch 1's NVDEC too, and forwarders install into the
+# console's own storage, which is not something to try on a Switch 2 yet.
+SWITCH2 ?= 0
+ifeq ($(SWITCH2),1)
+ifeq ($(wildcard $(DEVKITPRO)/libounce/switch2_rules),)
+$(error SWITCH2=1 needs ouncebrew's devkit in $(DEVKITPRO) -- see \
+        https://github.com/ouncebrew/ounce-devkit)
+endif
+include $(DEVKITPRO)/libounce/switch2_rules
+else
 include $(DEVKITPRO)/libnx/switch_rules
+endif
 
 #---------------------------------------------------------------------------------
+ifeq ($(SWITCH2),1)
+TARGET      := Dualscreen-Switch2
+BUILD       := build-switch2
+else
 TARGET      := Dualscreen
 BUILD       := build
+endif
 SHARED      := ../src
 CLIENT      := ../companion/source
 
@@ -119,6 +144,9 @@ DEKO_CORE_LIB := cores/melonds_deko_libnx.a
 CORE_LIB ?= $(if $(wildcard $(TOPDIR)/$(DEKO_CORE_LIB)),$(DEKO_CORE_LIB),cores/melonds_libretro_libnx.a)
 CORE_LIB_PATH := $(if $(filter /%,$(CORE_LIB)),$(CORE_LIB),$(TOPDIR)/$(CORE_LIB))
 HAVE_CORE := $(if $(wildcard $(CORE_LIB_PATH)),1,0)
+ifeq ($(SWITCH2),1)
+HAVE_CORE := 0
+endif
 CORE_IS_DEKO := $(if $(findstring melonds_deko,$(notdir $(CORE_LIB))),1,0)
 # Its shaders, which it loads from the app's romfs; melonds_deko/Makefile
 # builds them beside the archive.
@@ -129,6 +157,9 @@ CORE_ROMFS := $(dir $(CORE_LIB_PATH))melonds_deko_romfs
 # Switch testing ran on it.
 DEKO_TREE := $(TOPDIR)/cores/melonds-deko
 BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard $(DEKO_TREE)/src/GPU3D_Deko.cpp)),1,0)
+ifeq ($(SWITCH2),1)
+BUILD_DEKO_CORE := 0
+endif
 
 # The desktop app's sources beyond the companion's. A second list, like the one
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
@@ -242,7 +273,11 @@ endif
 INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY) forwarder
 
 #---------------------------------------------------------------------------------
+ifeq ($(SWITCH2),1)
+ARCH    := $(SWITCH2_CPU) -mtp=soft -fPIE
+else
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
+endif
 
 PORTLIBS   := $(PORTLIBS_PATH)/switch
 SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
@@ -258,6 +293,9 @@ SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
 #   pacman -S switch-ffmpeg
 #
 HAVE_FFMPEG := $(if $(wildcard $(PORTLIBS)/lib/libavcodec.a),1,0)
+ifeq ($(SWITCH2),1)
+HAVE_FFMPEG := 0
+endif
 ifeq ($(HAVE_FFMPEG),1)
 $(info video codec: libavcodec found, building with the NVTEGRA decoder)
 else
@@ -298,7 +336,7 @@ CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
 CXXFLAGS := $(CFLAGS) -std=gnu++17
 
 ASFLAGS := -g $(ARCH)
-LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) $(LOCAL_PLAY_LDFLAGS)
+LDFLAGS  = -specs=$(LIBNX)/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) $(LOCAL_PLAY_LDFLAGS)
 
 # zlib is the frame codec's; everything else SDL2 needs on this platform comes
 # out of sdl2-config, including the GL stack SDL's own renderer sits on. This
