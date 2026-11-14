@@ -81,6 +81,30 @@ void *ds_video_view_for_window(SDL_Window *window)
     return (void *)view;
 }
 
+// Back from the background. SDL lays its GL view out, and resizes the GL
+// drawable to match, from layoutSubviews -- and the turn or fold that happened
+// while the app was away was laid out while GL could not be touched, so the
+// drawable kept its old size and nothing asks again on the way back. Asking
+// here does what a turn in the foreground would have: the view controller's
+// viewWillLayoutSubviews (apple/ios_scene_lifecycle.m) sizes the view to the
+// window, and SDL's view sizes its drawable and tells the app.
+void ds_video_view_relayout(void *view_handle)
+{
+    UIView *view = (UIView *)view_handle;
+    if (view == nil) {
+        return;
+    }
+    UIView *window = view.superview;
+    if (window != nil) {
+        [window setNeedsLayout];
+    }
+    [view setNeedsLayout];
+    if (window != nil) {
+        [window layoutIfNeeded];
+    }
+    [view layoutIfNeeded];
+}
+
 void *ds_video_layer_create(void *view_handle)
 {
     UIView *view = (UIView *)view_handle;
@@ -315,6 +339,9 @@ int ds_video_layer_show(void *handle, void *picture_handle, int is_new, float x,
     // From the system's first word that it is starting to its word that it
     // has stopped.
     BOOL active;
+    // Whether a game's picture is being offered: told to the system as
+    // playing, and anything else as paused, which it does not float.
+    BOOL offered;
     // Why it would not start, once, for the log.
     NSString *failure;
 }
@@ -376,7 +403,7 @@ int ds_video_layer_show(void *handle, void *picture_handle, int is_new, float x,
 - (BOOL)pictureInPictureControllerIsPlaybackPaused:(AVPictureInPictureController *)c
 {
     (void)c;
-    return NO;
+    return offered ? NO : YES;
 }
 
 - (void)pictureInPictureController:(AVPictureInPictureController *)c
@@ -477,9 +504,11 @@ void ds_pip_set_allowed(void *handle, int allowed)
         return;
     }
     const BOOL value = allowed ? YES : NO;
+    self->offered = value;
     if (self->controller.canStartPictureInPictureAutomaticallyFromInline != value) {
         self->controller.canStartPictureInPictureAutomaticallyFromInline = value;
     }
+    [self->controller invalidatePlaybackState];
 #else
     (void)handle;
     (void)allowed;
@@ -521,28 +550,6 @@ int ds_pip_feed(void *handle, void *picture_handle, char *reason, int reason_siz
     (void)reason;
     (void)reason_size;
     return 0;
-#endif
-}
-
-// The session ended: the last picture let go of, and the window closed if it
-// is up -- it would only ever show that picture again.
-void ds_pip_clear(void *handle)
-{
-#if DS_HAVE_PICTURE_IN_PICTURE
-    DsPictureInPicture *self = (DsPictureInPicture *)handle;
-    if (self == nil) {
-        return;
-    }
-    self->controller.canStartPictureInPictureAutomaticallyFromInline = NO;
-    if (self->active) {
-        [self->controller stopPictureInPicture];
-    }
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    [self->layer flushAndRemoveImage];
-    [CATransaction commit];
-#else
-    (void)handle;
 #endif
 }
 

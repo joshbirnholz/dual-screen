@@ -2091,6 +2091,9 @@ void Client::run() {
             } else if (event.type == SDL_APP_DIDENTERFOREGROUND) {
                 log_info("back on screen");
                 foreground_ = true;
+                // Turned or folded while away: laid out again for how the
+                // device is held now -- see SystemVideoLayers::relayout().
+                video_layers_.relayout(gl_.window);
                 std::string reload_error;
                 if (!load_gl_resources(&reload_error)) {
                     log_error("cannot draw any more: " + reload_error);

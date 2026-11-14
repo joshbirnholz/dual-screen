@@ -53,6 +53,7 @@
 @property (nonatomic) BOOL requiresLinearPlayback;
 @property (nonatomic) BOOL canStartPictureInPictureAutomaticallyFromInline;
 - (void)stopPictureInPicture;
+- (void)invalidatePlaybackState;
 @end
 
 #endif
