@@ -370,12 +370,17 @@ bool MotionReader::read_device_sensors() {
     const int turn = static_cast<int>(android_display_turn());
 #endif
     reading = motion_turned_to_display(reading, static_cast<DisplayTurn>(turn));
-#if defined(__ANDROID__)
     // And from a tablet's frame into a controller's, which is what the host
     // reads -- see motion_held_like_a_controller(). Measured on a G Cloud.
-    // An iPhone very likely needs the same and has not been measured.
+    //
+    // An iPhone too. SDL hands both phones' readings over in the same frame:
+    // Android's are passed through as the system reports them, and Core
+    // Motion's acceleration is negated and scaled into m/s^2 so that a phone
+    // lying face up reads +g on z exactly as an Android one does, with the
+    // rotation rates passed through on the same axes. Without this an iPhone
+    // sent its pitch as yaw and its yaw as pitch, turned the wrong way, and
+    // told the host down was towards the player.
     reading = motion_held_like_a_controller(reading);
-#endif
     // Said when it changes, because a reading of this device's motion cannot
     // be interpreted without it. Holding this device against one that is
     // already right and moving the two as one measures the conversion that is
