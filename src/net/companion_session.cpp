@@ -2053,13 +2053,18 @@ void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
 
 namespace {
 
+// Every field the host reads, `pressing` too: under a menu a pad's presses
+// are only that -- nothing held reaches the game -- and Change Order waits on
+// them. The phone's Touch Controls, hidden under the menu, are tapped as
+// nothing but a `pressing`, which went unsent when it alone changed.
 bool same_pads(const std::vector<ReportedPad>& a, const std::vector<ReportedPad>& b) {
     if (a.size() != b.size()) return false;
     for (std::size_t index = 0; index < a.size(); ++index) {
         const DsInputState& x = a[index].held;
         const DsInputState& y = b[index].held;
         if (a[index].id != b[index].id || a[index].name != b[index].name ||
-            a[index].slot != b[index].slot ||
+            a[index].slot != b[index].slot || a[index].pressing != b[index].pressing ||
+            a[index].controls != b[index].controls || a[index].has_controls != b[index].has_controls ||
             x.buttons != y.buttons || x.circle_x != y.circle_x ||
             x.circle_y != y.circle_y || x.c_stick_x != y.c_stick_x ||
             x.c_stick_y != y.c_stick_y || x.motion != y.motion) {
