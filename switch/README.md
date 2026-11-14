@@ -179,6 +179,25 @@ and version from the top of the `Makefile` — so a menu shows it as *dualscreen
 companion* with the two-screen icon rather than as a bare filename. If a loader
 says it **cannot parse the nro**, that section is what it is missing.
 
+## Switch 2
+
+The same app also builds for a Switch 2 running
+[kaiHEN](https://github.com/ouncebrew/kaihen), with ouncebrew's
+[devkit](https://github.com/ouncebrew/ounce-devkit) installed into devkitPro:
+libounce stands in for libnx and OunceVK for switch-mesa's EGL, and the
+sources are compiled unchanged.
+
+    make SWITCH2=1     # -> Dualscreen-Switch2.nro, built in build-switch2/
+
+Every nightly has it as `Dualscreen-Switch2.nro`. Copy it to `/switch/` on
+the SD card (or over OunceShell's FTP) and open it from hbmenu.
+
+For now it is the companion alone: it joins games on other devices but plays
+none itself. RSDuck's melonDS draws with deko3d, which only knows the Switch 1's
+GPU; the H.264 decoder is the Switch 1's NVDEC, so the GamePad screen comes as
+changed tiles; and forwarders, which install into the console's own storage,
+are left out.
+
 ## Playing DS games on the Switch
 
 With a DS core built in, the opening screen gains **Load a game**, and the app

@@ -16,7 +16,12 @@
 
 namespace ds::sw {
 
+// A Switch 2 build updates from its own file, never the Switch 1's.
+#ifdef __SWITCH2__
+inline constexpr const char* kSwitchAsset = "Dualscreen-Switch2.nro";
+#else
 inline constexpr const char* kSwitchAsset = "Dualscreen.nro";
+#endif
 
 // `nro_path` is argv[0]; `staging_dir` where downloads wait to be put in place.
 std::unique_ptr<update::Backend> make_switch_update_backend(const std::string& nro_path,
