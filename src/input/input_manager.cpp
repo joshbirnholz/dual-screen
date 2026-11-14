@@ -23,6 +23,10 @@
 #include <jni.h>
 #endif
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace ds {
 namespace {
 
@@ -1043,10 +1047,14 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // layout swap and the smoothing toggle, but together they are
                 // the menu, and which of the three a press turns out to be is
                 // not known until it is released -- see end_frame().
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_TV)
                 // A pad's own home button, which on Android reaches the app.
-                // Elsewhere the system takes it first -- Steam on a Deck, the
-                // console itself on a Switch -- so there is nothing to bind.
+                // On an iPhone or iPad it does too: SDL turns the button's
+                // system gesture off while the pad is open, so iOS hands the
+                // press over rather than opening its own game overlay with
+                // it. Elsewhere the system takes it first -- Steam on a Deck,
+                // the console itself on a Switch, tvOS on an Apple TV -- so
+                // there is nothing to bind.
                 case SDL_CONTROLLER_BUTTON_GUIDE: push_action(UiAction::ToggleMenu); break;
 #endif
                 default: break;
