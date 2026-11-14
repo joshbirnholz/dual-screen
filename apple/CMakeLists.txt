@@ -394,6 +394,11 @@ if(NOT DUALSCREEN_PLATFORM STREQUAL "macos")
         target_link_libraries(dualscreen_companion PRIVATE ${${framework}_FRAMEWORK})
     endforeach()
 endif()
+# And what it floats the game in when the app is left, on a phone or tablet.
+if(DUALSCREEN_PLATFORM STREQUAL "ios")
+    find_library(AVKit_FRAMEWORK AVKit REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE ${AVKit_FRAMEWORK})
+endif()
 
 set(DUALSCREEN_HAVE_CODEC OFF)
 if(DUALSCREEN_EMBEDDED)

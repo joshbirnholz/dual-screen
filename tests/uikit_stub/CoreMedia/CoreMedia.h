@@ -15,6 +15,19 @@ typedef struct {
     CMTimeEpoch epoch;
 } CMTime;
 extern const CMTime kCMTimeInvalid;
+extern const CMTime kCMTimePositiveInfinity;
+extern const CMTime kCMTimeNegativeInfinity;
+
+typedef struct {
+    CMTime start;
+    CMTime duration;
+} CMTimeRange;
+CMTimeRange CMTimeRangeMake(CMTime start, CMTime duration);
+
+typedef struct {
+    int32_t width;
+    int32_t height;
+} CMVideoDimensions;
 
 typedef struct {
     CMTime duration;

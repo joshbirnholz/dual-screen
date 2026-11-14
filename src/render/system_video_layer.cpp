@@ -30,6 +30,15 @@ int ds_video_layer_show(void* layer, void* picture, int is_new, float x, float y
 void ds_video_layer_hide(void* layer);
 // Hidden, and the picture it was holding let go of.
 void ds_video_layer_clear(void* layer);
+// Picture in picture: null from create where the device has none (tvOS, or
+// an iPhone that cannot). feed returns 0, or -1 with the reason written.
+void* ds_pip_create(void* view);
+void ds_pip_destroy(void* pip);
+void ds_pip_set_allowed(void* pip, int allowed);
+int ds_pip_feed(void* pip, void* picture, char* reason, int reason_size);
+void ds_pip_clear(void* pip);
+// 1 while the window is up or on its way. A reason it would not start, once.
+int ds_pip_poll(void* pip, char* failure, int failure_size);
 }
 #endif
 
@@ -54,6 +63,10 @@ SystemVideoLayers::SystemVideoLayers() = default;
 
 SystemVideoLayers::~SystemVideoLayers() {
 #if DS_HAVE_SYSTEM_VIDEO_LAYER
+    if (pip_ != nullptr) {
+        ds_pip_destroy(pip_);
+        pip_ = nullptr;
+    }
     for (Layer* layer : {&top_, &bottom_}) {
         if (layer->handle != nullptr) {
             ds_video_layer_destroy(layer->handle);
@@ -76,6 +89,7 @@ bool SystemVideoLayers::attach(SDL_Window* window) {
         log_warn("video: the window has no view to lay video over; drawing it with OpenGL");
         return false;
     }
+    pip_ = ds_pip_create(view_);
     return true;
 #else
     (void)window;
@@ -158,6 +172,13 @@ void SystemVideoLayers::end_frame() {
 }
 
 void SystemVideoLayers::forget() {
+#if DS_HAVE_SYSTEM_VIDEO_LAYER
+    if (pip_ != nullptr) {
+        ds_pip_clear(pip_);
+    }
+#endif
+    pip_serial_ = 0;
+    pip_allowed_ = false;
     for (Layer* layer : {&top_, &bottom_}) {
         layer->visible = false;
         layer->shown_this_frame = false;
@@ -179,6 +200,66 @@ void SystemVideoLayers::hide(Layer& layer) {
     if (layer.handle != nullptr) {
         ds_video_layer_hide(layer.handle);
     }
+#endif
+}
+
+bool SystemVideoLayers::picture_in_picture_available() {
+#if DS_HAVE_SYSTEM_VIDEO_LAYER && !TARGET_OS_TV
+    return true;
+#else
+    return false;
+#endif
+}
+
+void SystemVideoLayers::feed_picture_in_picture(const std::shared_ptr<void>& picture, uint64_t serial,
+                                                bool allowed) {
+#if DS_HAVE_SYSTEM_VIDEO_LAYER
+    if (pip_ == nullptr) {
+        return;
+    }
+    // Several failures in a row is the layer not working; the window is not
+    // offered again this run rather than offered with nothing in it.
+    const bool offer = allowed && picture != nullptr && pip_failures_ < kFailuresBeforeGivingUp;
+    if (offer != pip_allowed_) {
+        pip_allowed_ = offer;
+        ds_pip_set_allowed(pip_, offer ? 1 : 0);
+    }
+    if (!offer || serial == pip_serial_) {
+        return;
+    }
+    char reason[256] = {0};
+    if (ds_pip_feed(pip_, picture.get(), reason, static_cast<int>(sizeof(reason))) < 0) {
+        ++pip_failures_;
+        log_warn(std::string("video: the picture-in-picture layer failed (") + reason + ")" +
+                 (pip_failures_ >= kFailuresBeforeGivingUp ? "; picture in picture is off for now" : ""));
+        return;
+    }
+    pip_failures_ = 0;
+    pip_serial_ = serial;
+#else
+    (void)picture;
+    (void)serial;
+    (void)allowed;
+#endif
+}
+
+bool SystemVideoLayers::picture_in_picture_active() {
+#if DS_HAVE_SYSTEM_VIDEO_LAYER
+    if (pip_ == nullptr) {
+        return false;
+    }
+    char failure[256] = {0};
+    const bool active = ds_pip_poll(pip_, failure, static_cast<int>(sizeof(failure))) != 0;
+    if (failure[0] != '\0') {
+        log_warn(std::string("picture in picture would not start: ") + failure);
+    }
+    if (active != pip_active_said_) {
+        pip_active_said_ = active;
+        log_info(active ? "showing the game in picture in picture" : "picture in picture closed");
+    }
+    return active;
+#else
+    return false;
 #endif
 }
 

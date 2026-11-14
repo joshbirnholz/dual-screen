@@ -61,6 +61,21 @@ public:
     // replaces it.
     void forget();
 
+    // --- picture in picture (an iPhone, an iPad) ---
+    //
+    // The game going on in the system's floating window when the app is left.
+    // The system starts it by itself as the app goes to the background, from
+    // a layer of its own that is fed every pass -- in the background too,
+    // where nothing is drawn with GL -- and hidden behind the GL view. See
+    // the picture-in-picture half of apple/system_video_layer.m.
+    static bool picture_in_picture_available();
+    // Each pass while a game is streaming: the picture to float, or null for
+    // none, in which case the window is not offered. `allowed` is the
+    // Picture in Picture setting.
+    void feed_picture_in_picture(const std::shared_ptr<void>& picture, uint64_t serial, bool allowed);
+    // Whether the floating window is up, or on its way up.
+    bool picture_in_picture_active();
+
 private:
     struct Layer {
         void* handle = nullptr;
@@ -72,6 +87,11 @@ private:
     void hide(Layer& layer);
 
     void* view_ = nullptr;
+    [[maybe_unused]] void* pip_ = nullptr;
+    [[maybe_unused]] uint64_t pip_serial_ = 0;
+    [[maybe_unused]] bool pip_allowed_ = false;
+    [[maybe_unused]] bool pip_active_said_ = false;
+    [[maybe_unused]] unsigned pip_failures_ = 0;
     Layer top_;
     Layer bottom_;
     // Only ever touched where there are layers to fail -- see available().

@@ -25,6 +25,7 @@ typedef signed char BOOL;
 
 @interface NSObject
 + (instancetype)alloc;
+- (instancetype)init;
 - (instancetype)retain;
 - (void)release;
 + (Class)class;

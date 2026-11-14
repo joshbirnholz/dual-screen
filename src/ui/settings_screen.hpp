@@ -272,6 +272,10 @@ private:
         // A controller on the screen while no pad is connected.
         TouchControls,
 #endif
+#if DS_PICTURE_IN_PICTURE
+        // The game in the system's floating window when the app is left.
+        PictureInPicture,
+#endif
         Count
     };
     std::string row_label(Row row) const;

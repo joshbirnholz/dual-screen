@@ -100,6 +100,18 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
+	<!-- Picture in Picture (Settings > General): the game goes on in the
+	     system's floating window when the app is left. "audio" is the
+	     background mode picture in picture belongs to: without it the
+	     system will not start the window, and would suspend the app that
+	     feeds it. It would also let the game's sound go on playing with
+	     nothing on screen, which the app itself prevents: see
+	     follow_picture_in_picture() in companion/source/main.cpp. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+
 	<!-- UIKit's scene life cycle. An app built against the iOS 26 SDK or later
 	     is killed at launch without it, and lowering the deployment target is
 	     no escape: the rule is about the SDK the binary was built with, not
