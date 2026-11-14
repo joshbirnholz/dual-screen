@@ -67,6 +67,8 @@ extern "C" {
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
+#include <exception>
 #include <thread>
 #include <cmath>
 #include <cstdio>
@@ -2894,6 +2896,141 @@ void show_failure(const std::string& message) {
 }  // namespace
 }  // namespace ds::sw
 
+#ifdef __SWITCH__
+// What a crash leaves in Dualscreen.log. A homebrew crash otherwise leaves
+// nothing anywhere -- Atmosphère writes no report for one run from the
+// homebrew menu on every setup -- and the log's last lines are only what
+// happened to be written before it, not where it was. So the faulting
+// address, and the return addresses found on the stack, go to the log as
+// offsets into the .nro's code: `aarch64-none-elf-addr2line -Cfe
+// Dualscreen.elf <offset>...` against the same build's ELF names the lines.
+namespace {
+
+alignas(16) unsigned char g_exception_stack[0x10000];
+
+// The start of the mapping `address` is in, and whether it is this program's
+// code (read and execute).
+bool code_mapping(uint64_t address, uint64_t& base, uint64_t& size) {
+    MemoryInfo info = {};
+    u32 page = 0;
+    if (R_FAILED(svcQueryMemory(&info, &page, address))) return false;
+    if ((info.perm & Perm_X) == 0) return false;
+    base = info.addr;
+    size = info.size;
+    return true;
+}
+
+// The program's own code: the mapping main() is in.
+uint64_t g_code_base = 0;
+uint64_t g_code_size = 0;
+
+const char* exception_name(u32 desc) {
+    switch (desc) {
+        case ThreadExceptionDesc_InstructionAbort: return "instruction abort";
+        case ThreadExceptionDesc_MisalignedPC: return "misaligned PC";
+        case ThreadExceptionDesc_MisalignedSP: return "misaligned SP";
+        case ThreadExceptionDesc_SError: return "SError";
+        case ThreadExceptionDesc_BadSVC: return "bad SVC";
+        case ThreadExceptionDesc_Trap: return "trap (undefined instruction)";
+        case ThreadExceptionDesc_Other: return "data abort or other";
+        default: return "unknown";
+    }
+}
+
+void log_code_address(char* line, std::size_t size, const char* what, uint64_t address) {
+    if (g_code_size != 0 && address >= g_code_base && address < g_code_base + g_code_size) {
+        std::snprintf(line, size, "crash: %s at code offset 0x%llx", what,
+                      static_cast<unsigned long long>(address - g_code_base));
+    } else {
+        std::snprintf(line, size, "crash: %s at 0x%llx (outside the app's code)", what,
+                      static_cast<unsigned long long>(address));
+    }
+    ds::log_crash(line);
+}
+
+}  // namespace
+
+extern "C" {
+// libnx's: where the exception handler runs, so that a crash from running out
+// of stack can still be told about.
+u8* __nx_exception_stack = g_exception_stack;
+u64 __nx_exception_stack_size = sizeof(g_exception_stack);
+
+void __libnx_exception_handler(ThreadExceptionDump* ctx) {
+    char line[256];
+    std::snprintf(line, sizeof(line), "crash: %s (desc 0x%x, esr 0x%x, far 0x%llx) on thread %p",
+                  exception_name(ctx->error_desc), ctx->error_desc, ctx->esr,
+                  static_cast<unsigned long long>(ctx->far.x), static_cast<void*>(threadGetSelf()));
+    ds::log_crash(line);
+    log_code_address(line, sizeof(line), "pc", ctx->pc.x);
+    log_code_address(line, sizeof(line), "lr", ctx->lr.x);
+    std::snprintf(line, sizeof(line), "crash: sp 0x%llx fp 0x%llx x0 0x%llx x1 0x%llx x2 0x%llx",
+                  static_cast<unsigned long long>(ctx->sp.x), static_cast<unsigned long long>(ctx->fp.x),
+                  static_cast<unsigned long long>(ctx->cpu_gprs[0].x),
+                  static_cast<unsigned long long>(ctx->cpu_gprs[1].x),
+                  static_cast<unsigned long long>(ctx->cpu_gprs[2].x));
+    ds::log_crash(line);
+    // Every word on the stack that points into the app's code, nearest
+    // first: return addresses, mostly, so the calls that led here.
+    MemoryInfo stack = {};
+    u32 page = 0;
+    if (g_code_size != 0 && R_SUCCEEDED(svcQueryMemory(&stack, &page, ctx->sp.x)) && (stack.perm & Perm_R) != 0) {
+        const uint64_t end = std::min<uint64_t>(stack.addr + stack.size, ctx->sp.x + 0x4000);
+        std::string offsets;
+        int found = 0;
+        for (uint64_t at = ctx->sp.x & ~uint64_t{7}; at + 8 <= end && found < 40; at += 8) {
+            const uint64_t word = *reinterpret_cast<const uint64_t*>(at);
+            if (word > g_code_base && word < g_code_base + g_code_size && (word & 3) == 0) {
+                char one[24];
+                std::snprintf(one, sizeof(one), " 0x%llx", static_cast<unsigned long long>(word - g_code_base));
+                offsets += one;
+                ++found;
+            }
+        }
+        ds::log_crash(("crash: code addresses on the stack:" + offsets).c_str());
+    }
+    ds::log_crash("crash: the app stopped here");
+    // Back to the system, which ends the program as it would have.
+    svcReturnFromException(-1);
+}
+}
+
+namespace {
+
+[[noreturn]] void log_termination() {
+    // An exception nobody caught: which, when it is one of the standard ones.
+    std::string what = "crash: an exception nobody caught ended the app";
+    if (std::exception_ptr thrown = std::current_exception()) {
+        try {
+            std::rethrow_exception(thrown);
+        } catch (const std::exception& error) {
+            what += std::string(": ") + error.what();
+        } catch (...) {
+        }
+    } else {
+        what = "crash: std::terminate with no exception";
+    }
+    ds::log_crash(what.c_str());
+    std::abort();
+}
+
+void log_abort(int) {
+    ds::log_crash("crash: abort() ended the app");
+}
+
+void install_crash_log() {
+    uint64_t base = 0, size = 0;
+    if (code_mapping(reinterpret_cast<uint64_t>(&install_crash_log), base, size)) {
+        g_code_base = base;
+        g_code_size = size;
+    }
+    std::set_terminate(log_termination);
+    std::signal(SIGABRT, log_abort);
+}
+
+}  // namespace
+#endif
+
 int main(int argc, char** argv) {
     ds::attach_parent_console();
     using namespace ds;
@@ -2909,6 +3046,7 @@ int main(int argc, char** argv) {
     set_log_file(DS_LOCAL_PLAY && options.local_play.wanted() ? kSwitchGameLogPath
                                                               : kSwitchLogPath);
     log_info("Dualscreen starting");
+    install_crash_log();
 
     // Sockets are not on by default, and without them there is nothing this
     // app can do at all. nxlink, if a computer is listening for it, gets the

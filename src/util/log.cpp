@@ -121,6 +121,29 @@ void flush_log_file() {
     g_written.wait(lock, [queued] { return g_flushed >= queued || !g_writer.joinable(); });
 }
 
+void log_crash(const char* message) {
+    // A few tries at the lock, not a wait: the thread that crashed may hold it.
+    bool locked = false;
+    for (int attempt = 0; attempt < 1000 && !locked; ++attempt) {
+        locked = g_mutex.try_lock();
+        if (!locked) std::this_thread::yield();
+    }
+    std::FILE* const file = g_file;
+    if (file != nullptr) {
+        if (locked) {
+            for (const std::string& line : g_pending) std::fputs(line.c_str(), file);
+            g_pending.clear();
+        }
+        std::fputs("[error] ", file);
+        std::fputs(message, file);
+        std::fputs("\n", file);
+        std::fflush(file);
+    }
+    std::fprintf(stderr, "[dualscreen][error] %s\n", message);
+    std::fflush(stderr);
+    if (locked) g_mutex.unlock();
+}
+
 void log_message(LogLevel level, const std::string& message) {
     std::unique_lock<std::mutex> lock(g_mutex);
     // The file always gets everything, whatever the console level is set to:

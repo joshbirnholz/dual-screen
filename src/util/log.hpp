@@ -21,6 +21,13 @@ void close_log_file();
 // Waits until every line logged so far is on the file -- before anything that
 // may end the process without closing it. See log.cpp for why lines wait.
 void flush_log_file();
+// For a crash handler, with the process about to end: every line still
+// waiting for the writer thread, then `message`, put on the file from this
+// thread, now, and flushed. Never waits on another thread -- the one that
+// crashed may be holding the log's lock -- so it can mix with a line being
+// written at that moment, which beats losing the lines that led up to the
+// crash.
+void log_crash(const char* message);
 
 void log_debug(const std::string& message);
 void log_info(const std::string& message);
