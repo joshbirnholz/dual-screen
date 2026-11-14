@@ -104,12 +104,14 @@ void RemoteStartScreen::drop_job() {
 
 void RemoteStartScreen::wake() {
     const net::LaunchHost host = host_;
+    const std::vector<net::WakeRelay> relays = wake_relays_;
     step_ = Step::Waking;
     run(
-        [host](const std::atomic<bool>& cancelled) {
+        [host, relays](const std::atomic<bool>& cancelled) {
             Outcome outcome;
             outcome.kind = Outcome::Kind::Woken;
-            outcome.ok = net::wake_and_wait(host, 90000, cancelled, outcome.woken, &outcome.error);
+            outcome.ok = net::wake_and_wait(host, 90000, cancelled, outcome.woken, &outcome.error,
+                                            net::kLaunchQueryPort, relays);
             return outcome;
         },
         "Waking " + host_.name + "...");

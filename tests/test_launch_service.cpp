@@ -355,6 +355,23 @@ void test_a_computer_is_remembered_and_woken() {
     LaunchHost awake;
     CHECK_MSG(wake_and_wait(asleep, 5000, cancelled, awake, &error, kWakeQueryPort), error);
     CHECK_STR_EQ(awake.id, hosts[0].id);
+
+    // Another computer asleep, woken through this one: an iPhone cannot
+    // broadcast the packet itself. Only for a device it paired with.
+    LaunchHost other;
+    other.id = "other-pc";
+    other.name = "Bedroom PC";
+    other.macs = {"aa:bb:cc:dd:ee:02"};
+    WakeRelay relay;
+    relay.host = hosts[0];
+    relay.token = "not-paired";
+    CHECK(!relay_wake(relay, other, &error));
+    relay.token = RemoteStartRecord(config.record_path).grant("Phone");
+    CHECK_MSG(relay_wake(relay, other, &error), error);
+    // Handed out only for computers this device holds a token for, awake.
+    CHECK(keep_remote_start_token(tokens, hosts[0].id, relay.token));
+    CHECK_EQ(wake_relays(hosts, tokens).size(), 1u);
+    CHECK(wake_relays({other}, tokens).empty());
     // Put away while waiting: stops, saying nothing.
     service.stop();
     cancelled = true;
@@ -375,6 +392,7 @@ void test_the_recent_games_feed() {
     config.query_port = kWakeQueryPort;
     config.port = kWakePort;
     config.name = "Den PC";
+    config.macs = {"aa:bb:cc:dd:ee:03"};
     config.record_path = sandbox + "/remote_start.json";
     config.games = [] {
         std::vector<LaunchableGame> games;
@@ -444,6 +462,53 @@ void test_the_recent_games_feed() {
     CHECK_EQ(games.size(), 2u);
     if (!games.empty()) CHECK_STR_EQ(games[0].game.title, "Newest");
     asleep.stop();
+
+    // Asleep while another paired computer is awake: the search never finds
+    // it, and its games still stay, to be woken for -- not only when nothing
+    // answers at all.
+    remember_computer(tokens, hosts[0]);
+    LaunchService::Config deck_config;
+    deck_config.query_port = kWakeQueryPort + 10;
+    deck_config.port = kWakePort + 10;
+    deck_config.name = "Deck";
+    deck_config.record_path = sandbox + "/deck_remote_start.json";
+    deck_config.games = [] {
+        LaunchableGame game;
+        game.id = "steam:9";
+        game.title = "Deck Game";
+        game.system = "ds";
+        game.steam_run_id = 9;
+        game.last_played = 50;
+        return std::vector<LaunchableGame>{game};
+    };
+    LaunchService deck(deck_config);
+    CHECK_MSG(deck.start(&error), error);
+    LaunchSearch deck_search;
+    deck_search.query_port = deck_config.query_port;
+    deck_search.addresses = {"127.0.0.1"};
+    deck_search.timeout_ms = 500;
+    const std::vector<LaunchHost> deck_hosts = search_launch_hosts(deck_search);
+    CHECK_EQ(deck_hosts.size(), 1u);
+    if (!deck_hosts.empty()) {
+        CHECK(keep_remote_start_token(tokens, deck_hosts[0].id, RemoteStartRecord(deck_config.record_path).grant("Phone")));
+        RecentGamesFeed both;
+        both.start(tokens, 16);
+        both.set_hosts(deck_hosts);
+        bool deck_listed = false;
+        bool den_asleep = false;
+        for (int tries = 0; tries < 60 && !(deck_listed && den_asleep); ++tries) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            deck_listed = den_asleep = false;
+            for (const RecentGamesFeed::Game& game : both.games()) {
+                if (game.host.id == deck_hosts[0].id) deck_listed = true;
+                if (game.host.id == hosts[0].id && game.host.asleep) den_asleep = true;
+            }
+        }
+        CHECK(deck_listed);
+        CHECK(den_asleep);
+        both.stop();
+    }
+    deck.stop();
 }
 
 // What the first screen keeps of its recent games comes back as it went,

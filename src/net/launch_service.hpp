@@ -289,12 +289,29 @@ bool wake_on_lan(const std::string& mac, std::string* error);
 // magic packet for each of its network cards, to every local network's
 // broadcast address, to 255.255.255.255, and straight to the address it
 // last had, on ports 7 and 9 -- whichever of those reaches it.
-bool wake_computer(const LaunchHost& host, std::string* error);
+//
+// And asks each of `relays` -- other paired computers that are awake -- to
+// send the same packets from there. An iPhone or iPad may not send a
+// broadcast at all without Apple's multicast entitlement, and a magic packet
+// sent straight to a sleeping PC's address rarely reaches it, so a computer
+// awake on the same network is how a phone wakes one. True when anything was
+// sent, from here or by a relay.
+struct WakeRelay {
+    LaunchHost host;
+    std::string token;
+};
+bool wake_computer(const LaunchHost& host, std::string* error, const std::vector<WakeRelay>& relays = {});
+// The computers in `found` this device holds a token for (in `tokens_path`),
+// to relay a wake through.
+std::vector<WakeRelay> wake_relays(const std::vector<LaunchHost>& found, const std::string& tokens_path);
+// Asks `relay` to wake `asleep` (its hardware addresses and last address).
+bool relay_wake(const WakeRelay& relay, const LaunchHost& asleep, std::string* error);
 // Wakes it, then asks after it until it answers, sending the packets again
 // every few seconds, for up to `timeout_ms`; `awake` is how it answered.
 // Stops early when `cancelled` is set.
 bool wake_and_wait(const LaunchHost& host, int timeout_ms, const std::atomic<bool>& cancelled, LaunchHost& awake,
-                   std::string* error, uint16_t query_port = kLaunchQueryPort);
+                   std::string* error, uint16_t query_port = kLaunchQueryPort,
+                   const std::vector<WakeRelay>& relays = {});
 // The packet itself, for a test.
 std::vector<uint8_t> wake_on_lan_packet(const std::string& mac);
 
