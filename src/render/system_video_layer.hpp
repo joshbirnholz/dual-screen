@@ -69,6 +69,11 @@ public:
     // where nothing is drawn with GL -- and hidden behind the GL view. See
     // the picture-in-picture half of apple/system_video_layer.m.
     static bool picture_in_picture_available();
+    // Back on screen: the window laid out again for the scene as it is now.
+    // A turn or a fold while the app was away (in picture in picture, say)
+    // happened while GL could not be touched, and SDL's drawable kept the
+    // old size until something made it look again.
+    void relayout(SDL_Window* window);
     // Each pass while a game is streaming: the picture to float, or null for
     // none, in which case the window is not offered. `allowed` is the
     // Picture in Picture setting.

@@ -36,7 +36,8 @@ void* ds_pip_create(void* view);
 void ds_pip_destroy(void* pip);
 void ds_pip_set_allowed(void* pip, int allowed);
 int ds_pip_feed(void* pip, void* picture, char* reason, int reason_size);
-void ds_pip_clear(void* pip);
+// The window's own size taken again from the scene, and GL's drawable with it.
+void ds_video_view_relayout(void* view);
 // 1 while the window is up or on its way. A reason it would not start, once.
 int ds_pip_poll(void* pip, char* failure, int failure_size);
 }
@@ -89,7 +90,6 @@ bool SystemVideoLayers::attach(SDL_Window* window) {
         log_warn("video: the window has no view to lay video over; drawing it with OpenGL");
         return false;
     }
-    pip_ = ds_pip_create(view_);
     return true;
 #else
     (void)window;
@@ -173,12 +173,17 @@ void SystemVideoLayers::end_frame() {
 
 void SystemVideoLayers::forget() {
 #if DS_HAVE_SYSTEM_VIDEO_LAYER
+    // Gone altogether, not just told it may not start: a controller left
+    // standing with the last game's picture was one the system still floated
+    // from the main menu. The next game makes a new one.
     if (pip_ != nullptr) {
-        ds_pip_clear(pip_);
+        ds_pip_destroy(pip_);
+        pip_ = nullptr;
     }
 #endif
     pip_serial_ = 0;
     pip_allowed_ = false;
+    pip_active_said_ = false;
     for (Layer* layer : {&top_, &bottom_}) {
         layer->visible = false;
         layer->shown_this_frame = false;
@@ -203,6 +208,17 @@ void SystemVideoLayers::hide(Layer& layer) {
 #endif
 }
 
+void SystemVideoLayers::relayout(SDL_Window* window) {
+#if DS_HAVE_SYSTEM_VIDEO_LAYER
+    void* view = view_ != nullptr ? view_ : ds_video_view_for_window(window);
+    if (view != nullptr) {
+        ds_video_view_relayout(view);
+    }
+#else
+    (void)window;
+#endif
+}
+
 bool SystemVideoLayers::picture_in_picture_available() {
 #if DS_HAVE_SYSTEM_VIDEO_LAYER && !TARGET_OS_TV
     return true;
@@ -214,12 +230,23 @@ bool SystemVideoLayers::picture_in_picture_available() {
 void SystemVideoLayers::feed_picture_in_picture(const std::shared_ptr<void>& picture, uint64_t serial,
                                                 bool allowed) {
 #if DS_HAVE_SYSTEM_VIDEO_LAYER
-    if (pip_ == nullptr) {
+    if (view_ == nullptr) {
         return;
     }
     // Several failures in a row is the layer not working; the window is not
     // offered again this run rather than offered with nothing in it.
     const bool offer = allowed && picture != nullptr && pip_failures_ < kFailuresBeforeGivingUp;
+    if (pip_ == nullptr) {
+        if (!offer) {
+            return;
+        }
+        pip_ = ds_pip_create(view_);
+        if (pip_ == nullptr) {
+            return;
+        }
+        pip_allowed_ = false;
+        pip_serial_ = 0;
+    }
     if (offer != pip_allowed_) {
         pip_allowed_ = offer;
         ds_pip_set_allowed(pip_, offer ? 1 : 0);

@@ -122,6 +122,8 @@ typedef unsigned long UIInterfaceOrientationMask;
 @property (nonatomic) CGRect bounds;
 @property (nonatomic) CGRect frame;
 @property (nonatomic, readonly) UIView *superview;
+- (void)setNeedsLayout;
+- (void)layoutIfNeeded;
 @end
 
 @interface UIColor : NSObject
