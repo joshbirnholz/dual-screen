@@ -9,18 +9,17 @@
 # and puts it in the app's Frameworks folder; the app loads it from there when
 # a game starts (DS_BUNDLED_LIBRETRO_CORE).
 #
-# For a device (iphoneos), by default, it is libretro's own nightly build for
-# iOS -- the same build RetroArch on iOS uses, with melonDS's JIT turned off,
-# since iOS gives an app no memory it may write and then run. melonDS DS's
-# CMakeLists turns the JIT off for every iOS build, so a build from source is
-# the same interpreter. For a simulator there is no nightly, so it is built
-# from source.
+# It is built from melonDS DS's own source, at the tag below, with its JIT
+# off: iOS gives an app no memory it may write and then run, so melonDS runs
+# on its interpreter there (melonDS DS turns the JIT off for every iOS build
+# anyway). The first build takes a few minutes; after that it is kept.
 #
-# usage: apple/fetch-ds-core.sh [--simulator] [--from-source] [--dylib <file>]
+# usage: apple/fetch-ds-core.sh [--simulator] [--nightly] [--dylib <file>]
 #                               [--out <dir>] [--force]
 #
 #   --simulator     for the iOS simulator rather than a device
-#   --from-source   build melonDS DS (tag below) instead of downloading
+#   --nightly       download libretro's nightly iOS build instead, where
+#                   there is one (device only)
 #   --dylib <file>  wrap this already-built melondsds_libretro_ios.dylib
 #   --out <dir>     where build-apple/ is (default: the repository's)
 #   --force         make it again even if it is already there
@@ -31,7 +30,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 out="${root}/build-apple"
 sdk="iphoneos"
-from_source=0
+from_source=1
 dylib=""
 force=0
 melonds_tag="${MELONDS_DS_TAG:-v1.4.0}"
@@ -42,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --simulator) sdk="iphonesimulator"; shift ;;
         --from-source) from_source=1; shift ;;
+        --nightly) from_source=0; shift ;;
         --dylib) dylib="${2:-}"; shift 2 ;;
         --out) out="${2:-}"; shift 2 ;;
         --force) force=1; shift ;;
@@ -76,7 +76,7 @@ if [[ -z "${dylib}" ]]; then
         (cd "${work}" && unzip -q core.zip)
         dylib="$(find "${work}" -name '*.dylib' -print -quit)"
     else
-        echo "=== building melonDS DS ${melonds_tag} for ${sdk} (the first build takes a few minutes)"
+        echo "=== building melonDS DS ${melonds_tag} for ${sdk} (a few minutes, once)"
         git clone --depth 1 -b "${melonds_tag}" https://github.com/JesseTG/melonds-ds "${work}/melonds-ds"
         platform="OS64"
         if [[ "${sdk}" == "iphonesimulator" ]]; then platform="SIMULATORARM64"; fi

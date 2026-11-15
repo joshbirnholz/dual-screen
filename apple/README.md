@@ -566,6 +566,35 @@ cmake -S apple -B build-macos -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 — which needs Homebrew's SDL2 and FFmpeg to be universal too, and they are not
 by default. One architecture at a time is the ordinary case.
 
+## Playing DS games on an iPhone or iPad
+
+The iOS build plays DS games itself, the way an Android device does: **Load a
+game** on the opening screen opens the desktop app's own game browser, with its
+layouts, quick menu, save states and per-game options, and a game started here
+is hosted like one on a Steam Deck, so a companion can join it as the other
+screen. Quitting the game comes back to the opening screen.
+
+- **The emulator** is melonDS DS, the libretro core the desktop app plays DS
+  games with, carried in the app as `Frameworks/melondsds_libretro.framework`
+  and loaded from there when a game starts. `apple/fetch-ds-core.sh` makes it
+  (libretro's own nightly build for iOS, or `--from-source`), and
+  `build-all.sh` runs that for you; `--no-ds-core` leaves it out, and the app
+  then only joins games, without the Load a game row.
+- **No JIT.** iOS gives an app no memory it may write and then run, so the core
+  is built with melonDS's JIT off and runs on its interpreter, as RetroArch on
+  iOS does. That is plenty for a DS on any recent iPhone.
+- **Games** go in the app's own folder, which the Files app shows as **On My
+  iPhone > Dualscreen**: put `.nds` files in its `ROMs` folder (made on the
+  first run). Saves, save states and settings are in the app's Library and are
+  not shown there.
+- **Away from the app**, the game's save is written and the game waits until
+  the app is back: iOS ends an app that draws while it is off screen.
+- **A simulator** needs a core built for it, which `build-all.sh` does from
+  source (a few minutes, once).
+
+CI's **iOS** workflow builds all of this, core included, on one of GitHub's
+Macs on every push, and leaves an unsigned `.ipa` as an artifact.
+
 ## Running it
 
 It looks for a host on the local network by itself, the same as every other
@@ -647,8 +676,17 @@ received — including the early "knock" that provokes the permission prompt,
 which is a single datagram to one host and opens its socket with broadcast
 explicitly off (`knock_on_the_local_network()` in `companion_session.cpp`).
 
-The ordinary local-network usage description is all it wants. A *host* on iOS
-would be a different question, and there is no iOS host.
+The ordinary local-network usage description is all it wants.
+
+**A host on iOS does not need it either.** An iPhone or iPad playing a DS game
+itself (below) is a host, and a host announces itself -- but iOS would refuse
+its broadcast. So it sends the same beacon to every other address on its
+network, one at a time (`neighbour_addresses()` in `src/net/transport.hpp`;
+the /24 around it on a bigger network). That is ordinary unicast, which the
+local network permission covers, and every companion already listening on the
+discovery port hears it exactly as it hears a broadcast one: nothing on the
+companion's side changed. The log says "announcing this host to each of the
+253 addresses on ...". Personal Hotspot works the same way.
 
 ### Where things are written
 

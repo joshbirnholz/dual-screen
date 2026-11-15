@@ -285,7 +285,8 @@ for platform in "${platforms[@]}"; do
     if [[ "${platform}" == "ios" && ${ds_core} -eq 1 ]]; then
         core_flags=(--out "${out}")
         if [[ ${device} -eq 0 ]]; then core_flags+=(--simulator); fi
-        "${here}/fetch-ds-core.sh" "${core_flags[@]}"
+        # DUALSCREEN_FETCH_DS_CORE stands in for the script in a test.
+        "${DUALSCREEN_FETCH_DS_CORE:-${here}/fetch-ds-core.sh}" "${core_flags[@]}"
     fi
     configure_one "${platform}"
 done

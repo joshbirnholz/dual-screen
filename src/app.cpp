@@ -8101,6 +8101,40 @@ bool App::Impl::write_screenshot(const std::string& path) {
 
 // ---------------------------------------------------------------------------
 
+#if DS_APPLE_PLAYS_HERE
+namespace {
+// iOS ends an app that draws with OpenGL while it is off screen, and may end
+// one it has suspended whenever it wants the memory back. So when the app is
+// put away -- the home gesture, the app switcher, a call -- the game's save is
+// written and the game waits, right there, until the app is back: no frame is
+// run and nothing is drawn meanwhile.
+//
+// An event watch, because SDL sends these synchronously from UIKit's
+// notifications while the loop is pumping events, before anything else in
+// the frame runs; waiting inside it keeps pumping, which is how the
+// notification that the app is back arrives.
+bool g_off_screen = false;
+std::function<void()> g_flush_when_off_screen;
+
+int hold_while_off_screen(void*, SDL_Event* event) {
+    if (event->type == SDL_APP_DIDENTERFOREGROUND) {
+        g_off_screen = false;
+        return 1;
+    }
+    if (event->type != SDL_APP_WILLENTERBACKGROUND || g_off_screen) return 1;
+    g_off_screen = true;
+    log_info("going off screen: the game is saved and waits until it is back");
+    if (g_flush_when_off_screen) g_flush_when_off_screen();
+    while (g_off_screen) {
+        SDL_PumpEvents();
+        SDL_Delay(50);
+    }
+    log_info("back on screen");
+    return 1;
+}
+}  // namespace
+#endif
+
 int App::run(const AppOptions& options) {
     Impl& impl = *impl_;
     impl.options = options;
@@ -8207,6 +8241,11 @@ int App::run(const AppOptions& options) {
     if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
         log_warn(std::string("no game controller support this session: ") + SDL_GetError());
     }
+#if DS_APPLE_PLAYS_HERE
+    g_flush_when_off_screen = [&impl] { impl.flush_saves("the app was put away"); };
+    g_off_screen = false;
+    SDL_AddEventWatch(hold_while_off_screen, nullptr);
+#endif
     {
         const char* driver = SDL_GetCurrentVideoDriver();
         log_info(std::string("SDL video driver: ") + (driver != nullptr ? driver : "none"));
@@ -10202,6 +10241,10 @@ int App::run(const AppOptions& options) {
     impl.input.shutdown();
     watchdog.at("closing the window");
     impl.destroy_window();
+#if DS_APPLE_PLAYS_HERE
+    SDL_DelEventWatch(hold_while_off_screen, nullptr);
+    g_flush_when_off_screen = nullptr;
+#endif
     SDL_Quit();
     watchdog.finish();
     log_info("dualscreen exiting normally");

@@ -36,7 +36,7 @@
 	     working, in a way that looks like a rendering bug. -->
 	<!-- The app's Documents folder in the Files app, as On My iPhone >
 	     Dualscreen: where DS games go to be played here, in its ROMs folder.
-	     The game browser opens there -- see default_browse_dirs(). -->
+	     The game browser opens there: see default_browse_dirs(). -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

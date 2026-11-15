@@ -47,10 +47,14 @@ jobs:
                 -DCMAKE_INSTALL_PREFIX="$HOME/sdl-ios-install"
           cmake --build "$HOME/sdl-ios" --target install
 
+      - name: DS core from cache
+        uses: actions/cache@v4
+        with:
+          path: build-apple/ds-core/iphoneos
+          key: ds-core-iphoneos-${{ hashFiles('apple/fetch-ds-core.sh') }}-v1
+
       - name: DS core
-        # libretro's nightly first, as a player's own build gets it; from
-        # source if the nightly is not there.
-        run: apple/fetch-ds-core.sh || apple/fetch-ds-core.sh --from-source --force
+        run: apple/fetch-ds-core.sh
 
       - name: Configure
         env:
@@ -66,7 +70,7 @@ jobs:
           xcodebuild -project build-ios/dualscreen_companion.xcodeproj \
                      -target dualscreen_companion -configuration Release -sdk iphoneos \
                      CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-                     -quiet build
+                     -IDEBuildingContinueBuildingAfterErrors=YES -quiet build
 
       - name: Check the bundle
         run: |

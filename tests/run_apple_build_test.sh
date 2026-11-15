@@ -53,7 +53,15 @@ for arg in "$@"; do
 done
 exit 0
 STUB
-chmod +x "$WORK_DIR/bin/uname" "$WORK_DIR/bin/lipo" "$WORK_DIR/bin/cmake"
+# And apple/fetch-ds-core.sh, which downloads or builds the DS core: its
+# arguments go to a log of their own.
+cat > "$WORK_DIR/bin/fetch-ds-core" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${CORE_LOG}"
+exit 0
+STUB
+chmod +x "$WORK_DIR/bin/uname" "$WORK_DIR/bin/lipo" "$WORK_DIR/bin/cmake" "$WORK_DIR/bin/fetch-ds-core"
+export DUALSCREEN_FETCH_DS_CORE="$WORK_DIR/bin/fetch-ds-core"
 touch "$WORK_DIR/sdl/lib/libSDL2.a"
 
 export PATH="$WORK_DIR/bin:$PATH"
@@ -63,7 +71,9 @@ failures=0
 # Runs the script and leaves its cmake arguments in $WORK_DIR/args.
 run_build_all() {
     export ARGS_LOG="$WORK_DIR/args"
+    export CORE_LOG="$WORK_DIR/core"
     : > "$ARGS_LOG"
+    : > "$CORE_LOG"
     "$BUILD_ALL" --out "$WORK_DIR/out" "$@" > "$WORK_DIR/output" 2>&1
 }
 
@@ -112,6 +122,28 @@ expect_flag "a fat SDL builds both, as a CMake list" \
 run_build_all ios
 expect_flag "arm64 when there is no SDL to ask" \
             "-DCMAKE_OSX_ARCHITECTURES=arm64"
+# The DS core: made for the simulator, and handed to cmake.
+expect_flag "an iOS build carries the DS core" \
+            "-DDUALSCREEN_DS_CORE_FRAMEWORK=$WORK_DIR/out/ds-core/iphonesimulator/melondsds_libretro.framework"
+if grep -q -- "--simulator" "$WORK_DIR/core"; then
+    echo "ok - and makes it for the simulator"
+else
+    echo "NOT OK - a simulator build did not ask for a simulator DS core"
+    failures=$((failures + 1))
+fi
+run_build_all --no-ds-core ios
+expect_no_flag "--no-ds-core leaves the DS core out" "DUALSCREEN_DS_CORE_FRAMEWORK"
+if [ -s "$WORK_DIR/core" ]; then
+    echo "NOT OK - --no-ds-core still made a DS core"
+    failures=$((failures + 1))
+fi
+run_build_all tvos
+if [ -s "$WORK_DIR/core" ]; then
+    echo "NOT OK - an Apple TV build made a DS core"
+    failures=$((failures + 1))
+else
+    echo "ok - an Apple TV build makes no DS core"
+fi
 
 # A prefix with a library lipo cannot read. Falling back is right; doing it
 # quietly is not, because the app would be built for an architecture the SDL
