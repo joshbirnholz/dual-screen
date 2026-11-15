@@ -274,10 +274,10 @@ int main(int argc, char** argv) {
     std::vector<std::string> sharpness;
     for (int percent = 0; percent <= 100; ++percent) sharpness.push_back(std::to_string(percent) + "%");
     options[1] = {"fsr_sharpness_percent", "FSR Sharpness", sharpness, 30, false, 30, false, true};
-    options[2] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false, 0};
-    options[3] = {"performance_overlay", "Performance overlay",
+    options[2] = {"fullscreen_scaling", "Aspect Ratio", {"Original", "Stretched"}, 0, false, 0};
+    options[3] = {"performance_overlay", "Performance Overlay",
                   {"Off", "Frame rate", "Frame rate and CPU", "Everything"}, 0, false, 0};
-    options[4] = {"cpu_mode", "CPU mode", {"Auto", "Multi-core", "Single-core"}, 0, true, -1};
+    options[4] = {"cpu_mode", "CPU Mode", {"Auto", "Multi-core", "Single-core"}, 0, true, -1};
     options[5] = {"tv_channels", "TV audio", {"Mono", "Stereo", "Surround"}, 1, false, 1};
 
     ds::ExternalFrameProducer producer;

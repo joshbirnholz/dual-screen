@@ -33,11 +33,6 @@ numbers can change freely.
 
 ## Low priority
 
-- Update the README.md. I'd like it written less as a technical document, and
-  more as an introduction to Dualscreen, listing its features, and how to use
-  it. Some of it is out of date, including the screenshots. The technical
-  details can be saved in a separate document.
-
 - **Screenshot, mappable to a button.** Both screens as laid out, saved
   where Steam keeps screenshots on a Deck.
 
