@@ -89,3 +89,101 @@ jobs:
           name: dualscreen-ios-unsigned
           path: dist/dualscreen-ios-unsigned.ipa
           if-no-files-found: error
+
+  # The same app in a simulator, playing a DS program: that the core really
+  # loads from the app's Frameworks folder and runs a game, which compiling
+  # cannot show. tests/make_test_nds.py writes the program (it fills the top
+  # screen with red); the log and a screenshot are kept as an artifact.
+  simulator:
+    name: iOS simulator (plays a DS program)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
+
+      - name: SDL2 from cache
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: ~/sdl-iossim-install
+          key: sdl-iossim-release-2.32.10-${{ runner.os }}-v1
+
+      - name: Build SDL2 for the simulator
+        if: steps.sdl.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b release-2.32.10 https://github.com/libsdl-org/SDL "$HOME/SDL"
+          cmake -S "$HOME/SDL" -B "$HOME/sdl-iossim" -G Ninja \
+                -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF \
+                -DCMAKE_INSTALL_PREFIX="$HOME/sdl-iossim-install"
+          cmake --build "$HOME/sdl-iossim" --target install
+
+      - name: DS core from cache
+        uses: actions/cache@v4
+        with:
+          path: build-apple/ds-core/iphonesimulator
+          key: ds-core-iphonesimulator-${{ hashFiles('apple/fetch-ds-core.sh') }}-v1
+
+      - name: DS core
+        run: apple/fetch-ds-core.sh --simulator
+
+      - name: Build
+        env:
+          DUALSCREEN_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          cmake -S apple -B build-sim -G Xcode \
+                -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DDUALSCREEN_SDL2_PREFIX="$HOME/sdl-iossim-install"
+          xcodebuild -project build-sim/dualscreen_companion.xcodeproj \
+                     -target dualscreen_companion -configuration Release -sdk iphonesimulator \
+                     CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+                     -quiet build
+
+      - name: Play the DS program
+        run: |
+          app="$(find build-sim -name 'Dualscreen Companion.app' -type d -path '*Release-iphonesimulator*' -print -quit)"
+          test -f "$app/Frameworks/melondsds_libretro.framework/melondsds_libretro"
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime in sorted(devices, reverse=True):
+              if "iOS" not in runtime: continue
+              for device in devices[runtime]:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"]); sys.exit(0)
+          sys.exit(1)')"
+          echo "simulator: $udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$app"
+          data="$(xcrun simctl get_app_container "$udid" com.joshbirnholz.dualscreen.companion data)"
+          mkdir -p "$data/Documents/ROMs" out
+          python3 tests/make_test_nds.py "$data/Documents/ROMs/test.nds"
+          xcrun simctl launch --terminate-running-process "$udid" com.joshbirnholz.dualscreen.companion \
+                --game "$data/Documents/ROMs/test.nds" \
+                --screenshot-at-seconds 15 --screenshot "$data/Documents/shot.png" \
+                --exit-after-seconds 25
+          for i in $(seq 1 60); do
+            [ -f "$data/Documents/shot.png" ] && break
+            sleep 1
+          done
+          sleep 12
+          xcrun simctl io "$udid" screenshot out/simulator.png || true
+          log="$(find "$data/Library" -name '*.log' | head -1)"
+          cp "$log" out/ 2>/dev/null || true
+          cp "$data/Documents/shot.png" out/ 2>/dev/null || true
+          find "$data/Library" -name '*.log' -exec cat {} \;
+          grep -q "packaged with the app" "$log"
+          test -f out/shot.png
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator-run
+          path: out/

@@ -577,7 +577,7 @@ screen. Quitting the game comes back to the opening screen.
 - **The emulator** is melonDS DS, the libretro core the desktop app plays DS
   games with, carried in the app as `Frameworks/melondsds_libretro.framework`
   and loaded from there when a game starts. `apple/fetch-ds-core.sh` makes it
-  (libretro's own nightly build for iOS, or `--from-source`), and
+  (built from melonDS DS's source, once), and
   `build-all.sh` runs that for you; `--no-ds-core` leaves it out, and the app
   then only joins games, without the Load a game row.
 - **No JIT.** iOS gives an app no memory it may write and then run, so the core
