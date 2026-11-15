@@ -41,6 +41,9 @@ controller or touch, and looks and feels like a console's own menus.
   players, set each player as a Pro Controller, Wii Remote, Wii Remote +
   Nunchuk or Classic Controller, scan amiibo, and turn Cemu's graphics packs
   on and off, all from a controller.
+- **Web Play.** Friends on your network, or on a VPN such as Tailscale, can
+  watch and play your Wii U game in a web browser with their own controllers,
+  with nothing to install. Whoever holds the GamePad sees its screen.
 - **Touch Controls** on a phone or tablet with no controller: an on-screen
   pad below the game while you hold it upright.
 - **Keeps itself up to date.** Dualscreen updates itself, and on a PC or a
@@ -143,6 +146,10 @@ The device in your hands can be the GamePad and your TV the television, or
 the other way round. See the [guide](docs/guide.md#wii-u-games) for setting
 up controllers and players.
 
+**Playing Wii U games in a browser.** Turn on **Settings > Wii U > Web Play**
+and open the address it shows on another device. See
+[Web Play](docs/web-play.md).
+
 **Syncing saves.** Open **Settings > System > Save Data Management**, or
 **Save Sync** in a game's quick menu, to move a save between devices on your
 network. Nothing moves unless you choose it.
@@ -184,6 +191,8 @@ build the Cemu fork for Wii U games.
   and the tests.
 - [docs/building.md](docs/building.md): building for every platform, and how
   updates are published.
+- [docs/web-play.md](docs/web-play.md): Web Play, certificates and playing
+  over the internet.
 - [docs/cemu-integration.md](docs/cemu-integration.md): how Wii U games are
   played through Cemu.
 - [switch/README.md](switch/README.md), [android/README.md](android/README.md)

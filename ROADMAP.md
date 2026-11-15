@@ -8,12 +8,6 @@ numbers can change freely.
 
 ## Next up
 
-- **Web Play, phase 2: passing the GamePad.** Whoever holds the GamePad in
-  Controls sees the GamePad's screen in their browser instead of the TV,
-  hears its sound, and touches it; everyone else stays on the TV. Change
-  Order moves it between browsers as it does between devices. See
-  docs/web-play.md for phase 1.
-
 ### After remapping
 
 - The background service should also be able to make the device visible

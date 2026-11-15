@@ -61,6 +61,7 @@ enum class WebMessage : uint8_t {
     Audio = 2,  // screen, rate u32, channels u8, then s16 interleaved
     // Browser to server.
     Pads = 16,  // count, then per pad: index, buttons u32 (SDL bits), 6 axes s16 (SDL order)
+    Touch = 17,  // down u8, x u16, y u16: where on the picture, 0 to 65535 across and down
 };
 
 // What a browser's gamepads look like from here: one RawPadState each, the
@@ -93,6 +94,11 @@ struct WebViewer {
     std::string address;
     // Which screen they are being sent.
     ScreenId screen = ScreenId::Top;
+    // A finger (or the mouse) on that picture, from 0 to 65535 across and
+    // down it -- the GamePad's touch screen, to a browser holding it.
+    bool touching = false;
+    uint16_t touch_x = 0;
+    uint16_t touch_y = 0;
 };
 
 class WebPlayServer {
