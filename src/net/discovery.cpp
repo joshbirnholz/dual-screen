@@ -1,6 +1,11 @@
 #include "net/discovery.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include "util/log.hpp"
 
@@ -8,12 +13,24 @@ namespace ds::net {
 
 // --- HostAnnouncer ----------------------------------------------------------
 
+bool HostAnnouncer::sweeps_by_default() {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    return true;
+#else
+    const char* asked = std::getenv("DUALSCREEN_BEACON_SWEEP");
+    return asked != nullptr && asked[0] == '1';
+#endif
+}
+
 bool HostAnnouncer::start(std::string* error) {
     // Send-only: the announcer never needs to receive anything, so it does not
     // bind the discovery port and cannot collide with a browser on the same
     // machine.
     stop();
-    if (!socket_.start(0, true, error)) {
+    sweep_ = sweeps_by_default();
+    // A sweeping host's socket never broadcasts, so it does not ask to: on
+    // iOS that is the half the multicast entitlement guards.
+    if (!socket_.start(0, !sweep_, error)) {
         return false;
     }
     {
@@ -28,7 +45,16 @@ bool HostAnnouncer::start(std::string* error) {
         where += network.broadcast;
         if (!network.interface.empty()) where += " from " + network.interface;
     }
-    log_info("announcing this host on " + where);
+    if (sweep_) {
+        std::size_t count = 0;
+        for (const LocalNetwork& network : announce_networks()) {
+            count += neighbour_addresses(network).size();
+        }
+        log_info("announcing this host to each of the " + std::to_string(count) +
+                 " addresses on " + where + ", since this device may not broadcast");
+    } else {
+        log_info("announcing this host on " + where);
+    }
 
     const std::string shared = shared_network_warning(local_networks());
     if (!shared.empty()) {
@@ -64,6 +90,7 @@ void HostAnnouncer::set_icon(std::vector<std::vector<uint8_t>> pieces) {
 void HostAnnouncer::run() {
     std::unique_lock<std::mutex> lock(mutex_);
     int round = 0;
+    std::vector<std::string> neighbours;
     while (!stopping_) {
         if (dirty_ || encoded_.empty()) {
             encode_beacon(beacon_, encoded_);
@@ -71,13 +98,33 @@ void HostAnnouncer::run() {
         }
         const std::vector<uint8_t> beacon = encoded_;
         std::vector<std::vector<uint8_t>> icon;
-        if (round++ % kBeaconIconEvery == 0) icon = icon_pieces_;
+        const int this_round = round++;
+        if (this_round % (sweep_ ? kSweptBeaconIconEvery : kBeaconIconEvery) == 0) icon = icon_pieces_;
         // Sent without the lock: however long the network takes, the game's
         // loop handing over a new beacon never waits for it.
         lock.unlock();
-        socket_.broadcast(kDiscoveryPort, beacon.data(), beacon.size());
-        for (const std::vector<uint8_t>& piece : icon) {
-            socket_.broadcast(kDiscoveryPort, piece.data(), piece.size());
+        if (sweep_) {
+            if (this_round % kSweepRefreshEvery == 0) {
+                neighbours.clear();
+                for (const LocalNetwork& network : announce_networks()) {
+                    for (std::string& address : neighbour_addresses(network)) {
+                        neighbours.push_back(std::move(address));
+                    }
+                }
+            }
+            for (const std::string& address : neighbours) {
+                socket_.send_to(address, kDiscoveryPort, beacon.data(), beacon.size());
+            }
+            for (const std::vector<uint8_t>& piece : icon) {
+                for (const std::string& address : neighbours) {
+                    socket_.send_to(address, kDiscoveryPort, piece.data(), piece.size());
+                }
+            }
+        } else {
+            socket_.broadcast(kDiscoveryPort, beacon.data(), beacon.size());
+            for (const std::vector<uint8_t>& piece : icon) {
+                socket_.broadcast(kDiscoveryPort, piece.data(), piece.size());
+            }
         }
         lock.lock();
         wake_.wait_for(lock, std::chrono::milliseconds(kBeaconIntervalMs),

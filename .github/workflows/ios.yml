@@ -1,0 +1,87 @@
+# The iPhone and iPad app, built on one of GitHub's Macs: a check that it
+# still compiles and links, with the DS core carried in it, since nothing else
+# in CI builds for iOS. Unsigned -- a device build has to be signed with
+# somebody's Apple ID, which is done on that person's own Mac (apple/README.md)
+# -- but the unsigned .ipa it leaves as an artifact can be signed and
+# installed with a sideloading tool.
+#
+# Its own workflow rather than a job in builds.yml, so a red iOS build never
+# holds up the nightly release of the others.
+name: iOS
+
+on:
+  push:
+    branches: [claude/emulator-display-streaming-xnfjj0, 'claude/ios-**']
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: iOS (build check)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
+
+      - name: SDL2 from cache
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: ~/sdl-ios-install
+          key: sdl-ios-release-2.32.10-${{ runner.os }}-v1
+
+      - name: Build SDL2 for iOS
+        if: steps.sdl.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b release-2.32.10 https://github.com/libsdl-org/SDL "$HOME/SDL"
+          cmake -S "$HOME/SDL" -B "$HOME/sdl-ios" -G Ninja \
+                -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF \
+                -DCMAKE_INSTALL_PREFIX="$HOME/sdl-ios-install"
+          cmake --build "$HOME/sdl-ios" --target install
+
+      - name: DS core
+        # libretro's nightly first, as a player's own build gets it; from
+        # source if the nightly is not there.
+        run: apple/fetch-ds-core.sh || apple/fetch-ds-core.sh --from-source --force
+
+      - name: Configure
+        env:
+          DUALSCREEN_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          cmake -S apple -B build-ios -G Xcode \
+                -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DDUALSCREEN_SDL2_PREFIX="$HOME/sdl-ios-install"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project build-ios/dualscreen_companion.xcodeproj \
+                     -target dualscreen_companion -configuration Release -sdk iphoneos \
+                     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+                     -quiet build
+
+      - name: Check the bundle
+        run: |
+          app="$(find build-ios -name 'Dualscreen Companion.app' -type d -path '*Release-iphoneos*' -print -quit)"
+          echo "app: $app"
+          test -n "$app"
+          ls -la "$app" "$app/Frameworks"
+          test -f "$app/Frameworks/melondsds_libretro.framework/melondsds_libretro"
+          /usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$app/Info.plist"
+          mkdir -p dist/Payload
+          cp -R "$app" dist/Payload/
+          (cd dist && zip -qry dualscreen-ios-unsigned.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dualscreen-ios-unsigned
+          path: dist/dualscreen-ios-unsigned.ipa
+          if-no-files-found: error

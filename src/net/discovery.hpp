@@ -72,10 +72,18 @@ public:
     // not change.
     void poll(uint64_t now_ms) { (void)now_ms; }
 
+    // Whether beacons go to each address on the network one by one rather
+    // than to its broadcast address -- see neighbour_addresses(). Always on
+    // an iPhone or iPad, which may not broadcast; DUALSCREEN_BEACON_SWEEP=1
+    // turns it on anywhere, for a test.
+    static bool sweeps_by_default();
+    bool sweeping() const { return sweep_; }
+
 private:
     void run();
 
     UdpSocket socket_;
+    bool sweep_ = false;
     std::mutex mutex_;
     std::condition_variable wake_;
     bool stopping_ = false;
@@ -135,6 +143,12 @@ constexpr uint64_t kHostExpiryMs = 5000;
 // opened mid-game has it in a moment or two, and the network is not carrying
 // the same few kilobytes every second for the whole of a session.
 constexpr int kBeaconIconEvery = 2;
+// The same, for a host sweeping its network address by address: each icon
+// piece goes to every address too, so it is sent a quarter as often.
+constexpr int kSweptBeaconIconEvery = 8;
+// How many beacons a sweeping host sends before asking the system again which
+// networks it is on, and so which addresses to sweep.
+constexpr int kSweepRefreshEvery = 10;
 
 // How long joining a host is given before it is called off. Generous against a
 // LAN handshake, which is a few round trips, and short enough that picking a

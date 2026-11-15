@@ -30,6 +30,7 @@ device=0
 generator="Ninja"
 run=""
 sdl_prefix=""
+ds_core=1
 platforms=()
 
 usage() {
@@ -53,6 +54,9 @@ usage: apple/build-all.sh [options] [macos] [ios] [tvos]
   --device          build iOS/tvOS for real hardware rather than a simulator
                     (needs --team, and --xcode to deploy)
   --team <id>       the Apple development team to sign with
+  --no-ds-core      leave the DS core out of the iOS build, so it joins
+                    games and plays none itself. Otherwise the core is made
+                    once by apple/fetch-ds-core.sh and carried in the app.
   --out <dir>       where to put the builds (default: build-apple/)
   -h, --help        this
 
@@ -70,6 +74,7 @@ while [[ $# -gt 0 ]]; do
         --sdl-prefix) sdl_prefix="${2:-}"; shift 2 ;;
         --run) run="${2:-}"; shift 2 ;;
         --team) team="${2:-}"; shift 2 ;;
+        --no-ds-core) ds_core=0; shift ;;
         --out) out="${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         macos|ios|tvos) platforms+=("$1"); shift ;;
@@ -203,6 +208,11 @@ configure_one() {
         flags+=("-DCMAKE_OSX_ARCHITECTURES=${archs:-arm64}")
     fi
 
+    if [[ "${platform}" == "ios" && ${ds_core} -eq 1 ]]; then
+        local core_sdk="iphonesimulator"
+        if [[ ${device} -eq 1 ]]; then core_sdk="iphoneos"; fi
+        flags+=("-DDUALSCREEN_DS_CORE_FRAMEWORK=${out}/ds-core/${core_sdk}/melondsds_libretro.framework")
+    fi
     if [[ -n "${team}" ]]; then
         flags+=("-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=${team}")
     fi
@@ -272,6 +282,11 @@ launch_on_simulator() {
 }
 
 for platform in "${platforms[@]}"; do
+    if [[ "${platform}" == "ios" && ${ds_core} -eq 1 ]]; then
+        core_flags=(--out "${out}")
+        if [[ ${device} -eq 0 ]]; then core_flags+=(--simulator); fi
+        "${here}/fetch-ds-core.sh" "${core_flags[@]}"
+    fi
     configure_one "${platform}"
 done
 

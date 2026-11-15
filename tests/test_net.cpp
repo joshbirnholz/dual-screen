@@ -1,3 +1,4 @@
+#include <algorithm>
 // Exercises the real sockets over loopback: a host announcing itself, a
 // companion finding it, and a TCP stream carrying framed messages both ways.
 
@@ -534,6 +535,53 @@ void test_a_network_reached_twice_is_announced_once_over_the_wire() {
     }
 }
 
+void test_a_host_that_may_not_broadcast_sweeps_its_network() {
+    LocalNetwork home {"en0", "192.168.0.103", "192.168.0.255", true, "255.255.255.0"};
+    std::vector<std::string> swept = neighbour_addresses(home);
+    CHECK_MSG(swept.size() == 253, "a /24 swept " + std::to_string(swept.size()) + " addresses, not 253");
+    CHECK(!swept.empty() && swept.front() == "192.168.0.1" && swept.back() == "192.168.0.254");
+    CHECK_MSG(std::find(swept.begin(), swept.end(), "192.168.0.103") == swept.end(),
+              "the sweep sent a beacon to this machine's own address");
+
+    // A phone's Personal Hotspot: a /28.
+    LocalNetwork hotspot {"bridge100", "172.20.10.1", "172.20.10.15", true, "255.255.255.240"};
+    swept = neighbour_addresses(hotspot);
+    CHECK_MSG(swept.size() == 13, "a /28 swept " + std::to_string(swept.size()) + " addresses, not 13");
+
+    // A /16 is narrowed to the 256 around this machine.
+    LocalNetwork office {"en0", "10.1.7.20", "10.1.255.255", false, "255.255.0.0"};
+    swept = neighbour_addresses(office);
+    CHECK_MSG(swept.size() == 253 && swept.front() == "10.1.7.1" && swept.back() == "10.1.7.254",
+              "a /16 was not narrowed to this machine's own /24");
+
+    // No mask given: a /24.
+    LocalNetwork unknown {"en0", "192.168.5.9", "192.168.5.255", true};
+    CHECK(neighbour_addresses(unknown).size() == 253);
+
+    LocalNetwork loopback {"lo", "127.0.0.1", "127.0.0.1", false, "255.0.0.0"};
+    CHECK_MSG(neighbour_addresses(loopback).empty(), "loopback was swept");
+}
+
+void test_a_swept_beacon_arrives() {
+    // The sweep's own send, to one address, over loopback.
+    UdpSocket listener;
+    std::string error;
+    CHECK(listener.start(kDiscoveryPort, false, &error));
+    UdpSocket sender;
+    CHECK(sender.start(0, false, &error));
+    const std::vector<uint8_t> payload {5, 6, 7};
+    CHECK(sender.send_to("127.0.0.1", kDiscoveryPort, payload.data(), payload.size()));
+    std::vector<uint8_t> received;
+    std::string from;
+    const uint64_t deadline = monotonic_millis() + 1000;
+    while (received.empty() && monotonic_millis() < deadline) {
+        if (!listener.receive(received, from)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    CHECK_MSG(received == payload, "a beacon sent to one address from a socket that may not broadcast never arrived");
+}
+
 void test_a_beacon_pinned_to_an_interface_still_arrives() {
     // Which interface gets chosen cannot be checked on a machine that is not
     // on one network twice. What can be checked is that asking for a specific
@@ -678,6 +726,8 @@ int main() {
     test_a_connect_in_progress_does_not_claim_to_be_connected();
     test_one_network_reached_twice_is_called_out();
     test_a_network_reached_twice_is_announced_once_over_the_wire();
+    test_a_host_that_may_not_broadcast_sweeps_its_network();
+    test_a_swept_beacon_arrives();
     test_a_beacon_pinned_to_an_interface_still_arrives();
     test_send_to_reaches_an_address_learned_from_a_receive();
     return test::finish("net");

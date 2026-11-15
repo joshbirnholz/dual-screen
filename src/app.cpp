@@ -2,6 +2,17 @@
 
 #include <SDL.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+// An iPhone or iPad playing DS games itself, as an Android device does: DS
+// only, with the core packaged in the app.
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_TV
+#define DS_APPLE_PLAYS_HERE 1
+#else
+#define DS_APPLE_PLAYS_HERE 0
+#endif
+
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -249,7 +260,7 @@ std::string resolve_core_path(const AppOptions& options,
 // Android device play DS games only -- melonDS is built in, or in the APK --
 // so nothing about another console's emulator is offered there.
 bool device_plays(SystemId system) {
-#if defined(__SWITCH__) || defined(__ANDROID__)
+#if defined(__SWITCH__) || defined(__ANDROID__) || DS_APPLE_PLAYS_HERE
     return system == SystemId::Ds;
 #else
     (void)system;
@@ -6366,7 +6377,7 @@ void App::Impl::note_external_game_closed() {
 
 std::vector<std::string> App::Impl::save_systems() const {
     std::vector<std::string> systems{kSaveSystemDs};
-#if !defined(__SWITCH__) && !defined(__ANDROID__)
+#if !defined(__SWITCH__) && !defined(__ANDROID__) && !DS_APPLE_PLAYS_HERE
     // A 3DS game's save goes in Azahar's folder under this app's saves, which
     // is always here to put it in; a Wii U game's in Cemu's, if there is one.
     systems.push_back(kSaveSystem3ds);
