@@ -236,10 +236,12 @@ void WebPlayServer::pump() {
         }
         viewers_.push_back(std::move(viewer));
     }
-    const uint64_t now = now_ms();
     for (auto& viewer : viewers_) {
         pump_viewer(*viewer);
-        if (!viewer->finished && now - viewer->heard_ms > kSilentForMs) {
+        // Read the clock after pumping: what was just heard is stamped now,
+        // and a clock read before it would make that a wrap-around, not 0.
+        const uint64_t now = now_ms();
+        if (!viewer->finished && now > viewer->heard_ms && now - viewer->heard_ms > kSilentForMs) {
             if (viewer->joined) log_info("Web Play: " + viewer->name + " stopped answering");
             viewer->finished = true;
         }
