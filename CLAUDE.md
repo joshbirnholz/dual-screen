@@ -41,3 +41,25 @@ list current -- it is how work carries across sessions.
   names. Dialogs speak in the future tense ("will change"). Info-level log
   lines are worded as a player would say them.
 - Steam Input is the only source of truth for what a button does.
+
+## The README and the docs
+
+Josh's rules for the documentation, to keep from now on:
+
+- `README.md` is for people using Dualscreen, not for people working on it:
+  what it is, its features, which devices it runs on, how to install it, how
+  to use it at a high level, a short section on building it, and links to
+  the other docs. Keep it short. No implementation details, internal names,
+  log lines, measurements or history there.
+- The details go in `docs/`: `docs/guide.md` for everything the app does and
+  every setting, in depth; `docs/technical.md` for how it works (streaming,
+  latency, files, `settings.json`, the command line, tests);
+  `docs/building.md` for building every platform and how updates are
+  published.
+- When a change adds, removes or renames a feature, a setting or a menu
+  entry, update the README's feature list (if it is a feature a user would
+  care about) and the guide in the same push. Check what the docs say
+  against the code rather than against older docs.
+- The screenshots in `docs/images/` must show the app as it is now. After a
+  change to anything they show, run `tools/readme-screenshots.sh` (it renders
+  them offscreen with the mock cores) and commit the new pictures.

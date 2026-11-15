@@ -10,16 +10,16 @@ Four products, three platforms, one source list:
 | | | |
 | --- | --- | --- |
 | **macOS** | desktop OpenGL, Homebrew's SDL2 and FFmpeg | run on a real Mac |
-| **iOS** | OpenGL ES, SDL2 built here, touch, VideoToolbox | **not yet built on a Mac** |
-| **iPadOS** | the iOS build exactly — one binary, one bundle | **not yet built on a Mac** |
+| **iOS** | OpenGL ES, SDL2 built here, touch, VideoToolbox | built on a Mac and run on an iPhone; also built by `.github/workflows/ios.yml` |
+| **iPadOS** | the iOS build exactly — one binary, one bundle | the iOS build |
 | **tvOS** | iOS without the touch screen, and nowhere to keep a file | **not yet built on a Mac** |
 
-This is developed on Linux, where none of it can be compiled. Only the macOS
-build has been through a Mac. Everything about iOS and tvOS below is written
-from the documentation and checked as far as it can be checked from here, which
-is further than it sounds but is not the same as having run it: see **What has
-actually been verified** at the end, which says precisely which claims have a
-device behind them and which do not.
+This is developed on Linux, where none of it can be compiled. The macOS build
+has been run on a Mac, and the iOS build on an iPhone; CI's
+`.github/workflows/ios.yml` builds iOS on every push and plays a test DS
+program in the simulator. tvOS has not been built on a Mac yet. See **What has
+actually been verified** at the end for which claims have a device behind
+them.
 
 ## What each device is good for
 

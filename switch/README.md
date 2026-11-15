@@ -30,8 +30,8 @@ below.
   a Switch put down for a while is still there when it is picked up. It is
   allowed to sleep again once the session ends.
 - Reports each controller attached to it separately, so on a
-  Wii U the host can make them different players (see **Players** in the main
-  README). Each is named by what it is -- "Pro Controller", "Left Joy-Con",
+  Wii U the host can make them different players (see [Players](../docs/guide.md#players) in
+  the guide). Each is named by what it is -- "Pro Controller", "Left Joy-Con",
   "Switch Lite" for a Lite's own controls, "Joy-Con (attached)" for another
   Switch's -- and reports which player slot it is in, the number its own
   player lights show. A controller in player 1's slot and the handheld
