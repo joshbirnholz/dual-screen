@@ -2,6 +2,14 @@
 
 #include <SDL.h>
 #include <SDL_opengl.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+// SDL_opengl.h declares nothing on iOS, which has no desktop GL; the ES
+// header has every type and error name this file uses -- see gl_loader.hpp.
+#include <SDL_opengles2.h>
+#endif
+#endif
 
 #include <cstdio>
 #include <cstdlib>
