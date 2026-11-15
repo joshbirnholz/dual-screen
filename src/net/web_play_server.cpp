@@ -174,6 +174,9 @@ struct WebPlayServer::Viewer {
     bool joined = false;
     std::string name;
     ScreenId screen = ScreenId::Top;
+    bool touching = false;
+    uint16_t touch_x = 0;
+    uint16_t touch_y = 0;
     bool waiting_keyframe = true;
     std::map<uint8_t, WebPad> pads;
     uint64_t heard_ms = 0;
@@ -435,6 +438,12 @@ void WebPlayServer::handle_message(Viewer& viewer, const WebSocketReader::Messag
         }
         case 2: {
             const std::vector<uint8_t>& data = message.data;
+            if (data.size() >= 6 && data[0] == static_cast<uint8_t>(WebMessage::Touch)) {
+                viewer.touching = data[1] != 0;
+                viewer.touch_x = static_cast<uint16_t>(data[2] | (data[3] << 8));
+                viewer.touch_y = static_cast<uint16_t>(data[4] | (data[5] << 8));
+                return;
+            }
             if (data.size() < 2 || data[0] != static_cast<uint8_t>(WebMessage::Pads)) return;
             const std::size_t count = data[1];
             constexpr std::size_t kEach = 1 + 4 + 12;
@@ -467,7 +476,16 @@ std::vector<WebViewer> WebPlayServer::viewers() const {
     std::vector<WebViewer> out;
     for (const auto& viewer : viewers_) {
         if (!viewer->joined || viewer->finished) continue;
-        out.push_back(WebViewer{viewer->id, viewer->name, viewer->address, viewer->screen});
+        WebViewer view;
+        view.id = viewer->id;
+        view.name = viewer->name;
+        view.address = viewer->address;
+        view.screen = viewer->screen;
+        // Only on the GamePad: on the TV there is nothing to touch.
+        view.touching = viewer->touching && viewer->screen == ScreenId::Bottom;
+        view.touch_x = viewer->touch_x;
+        view.touch_y = viewer->touch_y;
+        out.push_back(view);
     }
     return out;
 }
@@ -485,6 +503,7 @@ void WebPlayServer::set_viewer_screen(uint32_t id, ScreenId screen) {
     for (auto& viewer : viewers_) {
         if (viewer->id != id || viewer->screen == screen) continue;
         viewer->screen = screen;
+        viewer->touching = false;
         viewer->waiting_keyframe = true;
         keyframe_wanted_[screen == ScreenId::Top ? 0 : 1] = true;
         if (viewer->websocket) {

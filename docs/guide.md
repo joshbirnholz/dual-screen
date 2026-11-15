@@ -1225,6 +1225,21 @@ reading it from a DSU server at ...` when it finds one. Set
 to skip looking) — which is also how to use a phone or anything else that
 serves DSU as the motion source.
 
+### Web Play
+
+With **Settings > Wii U > Web Play** on, anyone on your network (or on a VPN
+such as Tailscale with you) can watch and play the Wii U game from a web
+browser, with nothing to install. The row shows the address to open. They
+type a name and join: they see the TV and hear the game, and the controllers
+on their device become players in Controls and Change Order, under their
+name. A phone with no controller gets touch controls.
+
+Whoever's controller is the GamePad is shown the GamePad's screen instead,
+and touching it is the GamePad's touch screen. Passing the GamePad passes the
+screen with it. The first time, a browser warns about Dualscreen's own
+certificate; choose to continue. [docs/web-play.md](web-play.md) covers
+certificates, playing over the internet and bandwidth.
+
 ## Settings
 
 Settings is laid out as Graphics Packs is: its groups down the left, and the
@@ -1237,7 +1252,7 @@ listed.
 | --- | --- |
 | General | Controller Icons and Confirm/Cancel (not on a Switch), Touch Controls (Android, iPhone, iPad), Picture in Picture (iPhone, iPad), Streaming Quality and Vsync (on a device that plays games), Sound Effects |
 | DS & 3DS | Nickname, Favorite Color, Birth Month, Birth Day, Run Ahead; then melonDS's own settings where it is built in (CPU Clock While Playing, Each Frame Shown) |
-| Wii U | Default Wii U Screen, Pause Wii U Games in the Quick Menu, Console Language, Wii U TV Audio, Wii U TV Volume, Wii Remote Rumble Strength, Async Shader Compile, Intro Sound, Download/Update Graphics Packs; then Notifications (Controller Profiles, Low Controller Battery, Shader Compiling, Friend List) |
+| Wii U | Default Wii U Screen, Pause Wii U Games in the Quick Menu, Console Language, Wii U TV Audio, Wii U TV Volume, Wii Remote Rumble Strength, Async Shader Compile, Intro Sound, Web Play, Download/Update Graphics Packs; then Notifications (Controller Profiles, Low Controller Battery, Shader Compiling, Friend List) |
 | System | Discord Rich Presence (PC and Steam Deck), Quick Start, Enable Remote Start (Linux, Steam Deck, Windows), Save Data Management; then Check for Updates, the build of Dualscreen this is, each emulator it keeps, and a Download row for each it does not have yet |
 
 **Touch Controls** puts an on-screen pad below the game on a phone or tablet

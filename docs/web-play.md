@@ -12,6 +12,15 @@ plugged into their device (or paired with it) becomes a controller of the
 game. It shows up in Controls and Change Order like any other, under their
 name. A phone with no controller gets touch controls.
 
+## Passing the GamePad
+
+Whoever's controller is the GamePad in Controls is shown the GamePad's screen
+in their browser instead of the TV, and hears the GamePad's sound. A finger or
+the mouse on that picture is the GamePad's touch screen. Everyone else sees
+the TV. Passing the GamePad, with Change Order or a player's page, passes the
+screen too: in Nintendo Land, whoever takes the GamePad sees it, and whoever
+gives it up goes back to the TV.
+
 Web Play works in Chrome, Edge, Safari 16.4+ (iOS too) and Firefox 130+.
 
 ## HTTPS and the certificate

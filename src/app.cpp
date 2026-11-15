@@ -846,6 +846,9 @@ struct App::Impl {
     // Which browser each of their pads came from, by pad id, and that
     // browser's name: what Controls shows as the pad's device.
     std::map<uint32_t, std::string> web_pad_owner;
+    // The GamePad's touch screen, from the browser holding the GamePad --
+    // see route_wii_u_pads(). Not touching when none does.
+    DsInputState web_gamepad_touch;
     void update_web_play();
     void stop_web_play();
     bool load_web_play_identity(net::TlsIdentity& identity, std::string* error);
@@ -2514,6 +2517,14 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     gamepad.touching = screen_device.touching;
     gamepad.touch_x = screen_device.touch_x;
     gamepad.touch_y = screen_device.touch_y;
+#if DS_WEB_PLAY
+    // And a browser holding it, which is shown its screen and touches that.
+    if (web_gamepad_touch.touching && !gamepad.touching) {
+        gamepad.touching = true;
+        gamepad.touch_x = web_gamepad_touch.touch_x;
+        gamepad.touch_y = web_gamepad_touch.touch_y;
+    }
+#endif
     bool screen_device_holds_it = false;
     bool other_device_holds_it = false;
     for (const std::size_t index : pads_in_slot(pad_slots, PadSlot::gamepad())) {
@@ -2743,6 +2754,7 @@ void App::Impl::stop_web_play() {
     web_pad_owner.clear();
     web_play_status.clear();
     web_play_serial[0] = web_play_serial[1] = 0;
+    web_gamepad_touch = DsInputState();
     log_info("Web Play: stopped");
 }
 
@@ -2793,6 +2805,30 @@ void App::Impl::update_web_play() {
     }
     input.set_foreign_pads(std::move(pads));
     web_pad_owner = std::move(owners);
+
+    // Whoever holds the GamePad is shown the GamePad, and touches it;
+    // everyone else the TV. Passing it in Controls passes the screen too.
+    std::map<uint32_t, bool> holds_gamepad_now;
+    for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
+        const KnownPad& pad = known_pads[index];
+        if (!pad.on_this_device || !net::is_web_pad_id(pad.id)) continue;
+        if (pad_slots[index].kind == PadSlot::Kind::GamePad) {
+            holds_gamepad_now[((pad.id - net::kWebPadIdBase) >> 4) & 0xFFFFu] = true;
+        }
+    }
+    web_gamepad_touch = DsInputState();
+    const ScreenSize pad_screen = system_profile(system).screens.bottom;
+    for (const net::WebViewer& viewer : web_play->viewers()) {
+        const ScreenId screen = holds_gamepad_now.count(viewer.id) ? ScreenId::Bottom : ScreenId::Top;
+        if (screen != viewer.screen) {
+            log_info("Web Play: " + viewer.name + " is shown the " + (screen == ScreenId::Top ? "TV" : "GamePad"));
+            web_play->set_viewer_screen(viewer.id, screen);
+        } else if (viewer.touching && !web_gamepad_touch.touching) {
+            web_gamepad_touch.touching = true;
+            web_gamepad_touch.touch_x = std::min(pad_screen.width - 1, viewer.touch_x * pad_screen.width / 65536);
+            web_gamepad_touch.touch_y = std::min(pad_screen.height - 1, viewer.touch_y * pad_screen.height / 65536);
+        }
+    }
 
     // And what each of them is now, told to its browser when it changes.
     std::map<uint32_t, nlohmann::json> status;
