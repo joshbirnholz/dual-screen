@@ -143,6 +143,9 @@ public:
     // played elsewhere, so what a game played here would follow -- the DS's
     // owner, streaming, vsync -- is left out and only what its own menus and
     // controls follow is offered. Each row left is in its usual group.
+    // Web Play's row's description: where a browser finds it, or what it
+    // is. Set by the app, which knows the address.
+    void set_web_play_description(const std::string& text) { web_play_description_ = text; }
     void set_plays_games(bool plays) { plays_games_ = plays; }
     // The row that downloads Cemu's community graphics packs, or updates
     // them, last in Wii U, on a device that plays Wii U games: what it is
@@ -251,6 +254,9 @@ private:
         WiiUTvVolume,
         WiiUAsyncShaders,
         WiiUIntroSound,
+        // A browser on another device watching and playing -- see
+        // net/web_play_server.hpp. Desktops only.
+        WebPlay,
         // Under a Notifications heading: what Cemu says in the corner.
         WiiUNotifyProfiles,
         WiiUNotifyBattery,
@@ -412,6 +418,7 @@ private:
     bool over_game_ = false;
 
     bool offers_data_management_ = false;
+    std::string web_play_description_;
     bool plays_games_ = true;
     bool offers_graphic_packs_ = false;
     std::string graphic_packs_label_;

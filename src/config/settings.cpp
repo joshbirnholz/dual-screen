@@ -187,6 +187,9 @@ Settings Settings::load(const AppPaths& paths) {
     settings.wii_u_tv_volume = std::clamp(get_or<int>(document, "wii_u_tv_volume", settings.wii_u_tv_volume), 0, 100);
     settings.wii_u_async_shaders = get_or<bool>(document, "wii_u_async_shaders", settings.wii_u_async_shaders);
     settings.wii_u_intro_sound = get_or<bool>(document, "wii_u_intro_sound", settings.wii_u_intro_sound);
+    settings.web_play = get_or<bool>(document, "web_play", settings.web_play);
+    settings.web_play_port = get_or<int>(document, "web_play_port", settings.web_play_port);
+    if (settings.web_play_port < 1 || settings.web_play_port > 65535) settings.web_play_port = 8443;
     settings.wii_u_notify_controller_profiles =
         get_or<bool>(document, "wii_u_notify_controller_profiles", settings.wii_u_notify_controller_profiles);
     settings.wii_u_notify_controller_battery =
@@ -291,6 +294,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["wii_u_tv_volume"] = wii_u_tv_volume;
     document["wii_u_async_shaders"] = wii_u_async_shaders;
     document["wii_u_intro_sound"] = wii_u_intro_sound;
+    document["web_play"] = web_play;
+    document["web_play_port"] = web_play_port;
     document["wii_u_notify_controller_profiles"] = wii_u_notify_controller_profiles;
     document["wii_u_notify_controller_battery"] = wii_u_notify_controller_battery;
     document["wii_u_notify_shader_compiling"] = wii_u_notify_shader_compiling;

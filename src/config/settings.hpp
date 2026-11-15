@@ -206,6 +206,13 @@ struct Settings {
     int wii_u_tv_volume = 50;
     bool wii_u_async_shaders = true;
     bool wii_u_intro_sound = false;
+    // Web Play: a page this computer serves while a Wii U game runs, which a
+    // browser on another device opens to watch the TV and play -- see
+    // net/web_play_server.hpp. Off until asked for, since it opens a port.
+    bool web_play = false;
+    // The port it is served on, over HTTPS. Not in Settings: only worth
+    // changing when something else has it, or to match a forwarded port.
+    int web_play_port = 8443;
     bool wii_u_notify_controller_profiles = true;
     bool wii_u_notify_controller_battery = false;
     bool wii_u_notify_shader_compiling = true;

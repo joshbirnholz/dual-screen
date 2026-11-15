@@ -60,6 +60,16 @@ public:
     // decides whether the session is on the wire or on the air.
     std::string local_address() const;
 
+    // Hands the descriptor over to the caller, who closes it, leaving this
+    // stream closed -- for a layer that speaks something of its own over the
+    // socket (see SecureStream).
+    int release() {
+        const int descriptor = descriptor_;
+        descriptor_ = -1;
+        connecting_ = false;
+        return descriptor;
+    }
+
     // Takes ownership of an accepted descriptor.
     static TcpStream adopt(int descriptor, std::string peer_address);
 

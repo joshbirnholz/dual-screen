@@ -795,6 +795,19 @@ std::vector<PadReading> InputManager::pad_readings() const {
         }
         readings.push_back(std::move(reading));
     }
+    // A browser's, last of all: heard by the game like any pad of this
+    // device's, and by Change Order however the game is.
+    for (const ForeignPad& pad : foreign_pads_) {
+        PadReading reading;
+        reading.id = static_cast<SDL_JoystickID>(pad.id);
+        reading.name = pad.name;
+        reading.pressing = held_state_from(pad.raw).buttons;
+        if (game_input_enabled_) {
+            reading.held = gated(held_state_from(pad.raw));
+            reading.controls = controls_held_in(pad.raw) & pad_controls_from_ds_buttons(held_input_gate_.buttons());
+        }
+        readings.push_back(std::move(reading));
+    }
     return readings;
 }
 

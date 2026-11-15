@@ -342,6 +342,17 @@ public:
     // The id it is reported under in pad_readings(): no SDL pad's.
     static constexpr SDL_JoystickID kTouchControllerId = 0x7FFFFFF0;
 
+    // Pads that are on no device of this app's but arrive here over the
+    // network -- a web browser's, through Web Play -- each one more pad in
+    // pad_readings(), read through the same mapping as a pad plugged in here.
+    // Their ids are their own, clear of SDL's and the touch controller's.
+    struct ForeignPad {
+        uint32_t id = 0;
+        std::string name;
+        RawPadState raw;
+    };
+    void set_foreign_pads(std::vector<ForeignPad> pads) { foreign_pads_ = std::move(pads); }
+
 private:
     void open_controller(int device_index);
     void close_controller(SDL_JoystickID instance_id);
@@ -498,6 +509,7 @@ private:
     TouchController touch_;
     TouchController::Set touch_set_;
     bool touch_listed_ = false;
+    std::vector<ForeignPad> foreign_pads_;
     uint64_t touch_tap_until_ = 0;
     float touch_width_ = 0.0f;
     float touch_height_ = 0.0f;

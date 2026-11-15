@@ -83,6 +83,37 @@ if(NOT nlohmann_json_FOUND)
     endif()
 endif()
 
+# Web Play's HTTPS: the page a browser opens to watch and play a Wii U game
+# from another device -- see src/net/web_play_server.hpp. A browser only lets a
+# page read gamepads and decode video over HTTPS, so the server speaks TLS
+# itself, with mbedTLS: small, built from source here the same on Linux and
+# Windows, and nothing the system has to provide.
+option(DUALSCREEN_WEB_PLAY "Serve the Web Play page (needs mbedTLS, fetched)" ON)
+if(DUALSCREEN_WEB_PLAY)
+    include(FetchContent)
+    # FetchContent_Populate() is how a dependency is added EXCLUDE_FROM_ALL on
+    # the CMake the Linux build has (3.25); newer ones only warn about it.
+    if(POLICY CMP0169)
+        cmake_policy(SET CMP0169 OLD)
+    endif()
+    set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+    set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+    set(GEN_FILES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(mbedtls
+        URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.2/mbedtls-3.6.2.tar.bz2
+        URL_HASH SHA256=8b54fb9bcf4d5a7078028e0520acddefb7900b3e66fec7f7175bb5b7d85ccdca
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_GetProperties(mbedtls)
+    if(NOT mbedtls_POPULATED)
+        FetchContent_Populate(mbedtls)
+        add_subdirectory(${mbedtls_SOURCE_DIR} ${mbedtls_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
+    message(STATUS "Web Play: mbedTLS 3.6.2")
+endif()
+
 # The console artwork the Standard layout draws, turned into source files so it
 # travels inside the binary. Regenerated whenever an image changes.
 set(BEZEL_SOURCES "")
@@ -111,6 +142,10 @@ dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 dualscreen_embed_asset(ui_icons.png kUiIconsPng BEZEL_SOURCES)
 # The menus' sounds: see assets/make_ui_sounds.py.
 dualscreen_embed_asset(ui_sounds.bin kUiSounds BEZEL_SOURCES)
+if(DUALSCREEN_WEB_PLAY)
+    # The page itself, served as it is.
+    dualscreen_embed_asset(web/index.html kWebPlayPage BEZEL_SOURCES)
+endif()
 
 set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.cmake)
@@ -254,6 +289,18 @@ if(FFMPEG_FOUND)
     target_compile_definitions(dualscreen_core PUBLIC DS_HAVE_VIDEO_CODEC=1)
 else()
     target_compile_definitions(dualscreen_core PUBLIC DS_HAVE_VIDEO_CODEC=0)
+endif()
+if(DUALSCREEN_WEB_PLAY)
+    # A desktop's alone, never a Switch's or a phone's: added here rather than
+    # in the list above, which every build shares.
+    target_sources(dualscreen_core PRIVATE
+        src/net/web_play_server.cpp
+        src/net/web_play_host.cpp
+        src/net/web_tls.cpp)
+    target_link_libraries(dualscreen_core PRIVATE mbedtls mbedx509 mbedcrypto)
+    target_compile_definitions(dualscreen_core PUBLIC DS_WEB_PLAY=1)
+else()
+    target_compile_definitions(dualscreen_core PUBLIC DS_WEB_PLAY=0)
 endif()
 if(ZSTD_FOUND)
     message(STATUS "Wii U archives (.wua): zstd ${ZSTD_VERSION}")

@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
     info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause |
                     ds::kExternalFeatureGraphicPacks | ds::kExternalFeatureOptions |
                     ds::kExternalFeatureAmiibo | ds::kExternalFeatureOverlayAnimation |
-                    ds::kExternalFeatureAmiiboReading;
+                    ds::kExternalFeatureAmiiboReading | ds::kExternalFeatureMirror;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
     std::vector<ds::ExternalOption> options(6);
@@ -400,7 +400,8 @@ int main(int argc, char** argv) {
         // against this stand-in exercises the same "nothing arrives for a
         // screen nobody wanted" behavior a real one does.
         const std::optional<ds::ScreenId> requested = producer.requested_screen();
-        if (!pad_only && requested == ds::ScreenId::Top) {
+        // And whatever is mirrored -- sent as well as shown -- for Web Play.
+        if (!pad_only && (requested == ds::ScreenId::Top || producer.mirrors(ds::ScreenId::Top))) {
             draw(tv, kTvWidth, kTvHeight, scene_frame, /*television=*/true);
             if (!producer.publish(ds::ScreenId::Top, static_cast<uint64_t>(frame), tv.data(),
                                   kTvWidth, kTvHeight, kTvWidth, &error)) {
@@ -408,7 +409,7 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        if (requested == ds::ScreenId::Bottom) {
+        if (requested == ds::ScreenId::Bottom || producer.mirrors(ds::ScreenId::Bottom)) {
             draw(pad, kPadWidth, kPadHeight, scene_frame, /*television=*/false);
             if (!producer.publish(ds::ScreenId::Bottom, static_cast<uint64_t>(frame), pad.data(),
                                   kPadWidth, kPadHeight, kPadWidth, &error)) {

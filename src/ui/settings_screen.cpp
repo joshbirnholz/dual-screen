@@ -192,6 +192,7 @@ std::string SettingsScreen::row_label(Row row) const {
         case Row::WiiUTvVolume: return "Wii U TV Volume";
         case Row::WiiUAsyncShaders: return "Async Shader Compile";
         case Row::WiiUIntroSound: return "Intro Sound";
+        case Row::WebPlay: return "Web Play";
         case Row::WiiUNotifyProfiles: return "Controller Profiles";
         case Row::WiiUNotifyBattery: return "Low Controller Battery";
         case Row::WiiUNotifyShaders: return "Shader Compiling";
@@ -249,6 +250,7 @@ std::string SettingsScreen::row_value(Row row) const {
         case Row::WiiUTvVolume: return std::to_string(std::clamp(settings_.wii_u_tv_volume, 0, 100)) + "%";
         case Row::WiiUAsyncShaders: return settings_.wii_u_async_shaders ? "On" : "Off";
         case Row::WiiUIntroSound: return settings_.wii_u_intro_sound ? "On" : "Off";
+        case Row::WebPlay: return settings_.web_play ? "On" : "Off";
         case Row::WiiUNotifyProfiles: return settings_.wii_u_notify_controller_profiles ? "On" : "Off";
         case Row::WiiUNotifyBattery: return settings_.wii_u_notify_controller_battery ? "On" : "Off";
         case Row::WiiUNotifyShaders: return settings_.wii_u_notify_shader_compiling ? "On" : "Off";
@@ -350,6 +352,9 @@ std::vector<SettingsScreen::Item> SettingsScreen::group_items(SettingsGroup grou
             add(Row::WiiUAsyncShaders);
 #endif
             add(Row::WiiUIntroSound);
+#if DS_WEB_PLAY
+            add(Row::WebPlay);
+#endif
 #endif
             if (offers_graphic_packs_) {
                 items.push_back(Item{Item::Kind::GraphicPacks, Row::Count, graphic_packs_label_, graphic_packs_value_});
@@ -907,6 +912,7 @@ const char* SettingsScreen::row_description(int index) const {
 #endif
 #if DS_PLAYS_WII_U
         if (item.row == Row::WiiUAsyncShaders) return kAsyncShadersDescription;
+        if (item.row == Row::WebPlay && !web_play_description_.empty()) return web_play_description_.c_str();
 #endif
 #if DS_REMOTE_START_HOST
         if (item.row == Row::RemoteStart) {
@@ -1053,6 +1059,10 @@ void SettingsScreen::adjust(SettingsScreenResult& result) {
             break;
         case Row::WiiUIntroSound:
             settings_.wii_u_intro_sound = !settings_.wii_u_intro_sound;
+            result.settings_changed = true;
+            break;
+        case Row::WebPlay:
+            settings_.web_play = !settings_.web_play;
             result.settings_changed = true;
             break;
         case Row::WiiUNotifyProfiles:
@@ -1581,6 +1591,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
                                    (settings_.wii_u_notify_friends ? 32u : 0u));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, settings_.discord_status ? 1u : 0u);
+    mix_sound_state(view.rest, settings_.web_play ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, text_entry_.is_open() ? 1u : 0u);
@@ -1601,6 +1612,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
             case Row::DiscordStatus: view.toggle = settings_.discord_status ? 1 : 0; break;
             case Row::WiiUAsyncShaders: view.toggle = settings_.wii_u_async_shaders ? 1 : 0; break;
             case Row::WiiUIntroSound: view.toggle = settings_.wii_u_intro_sound ? 1 : 0; break;
+            case Row::WebPlay: view.toggle = settings_.web_play ? 1 : 0; break;
             case Row::WiiUNotifyProfiles: view.toggle = settings_.wii_u_notify_controller_profiles ? 1 : 0; break;
             case Row::WiiUNotifyBattery: view.toggle = settings_.wii_u_notify_controller_battery ? 1 : 0; break;
             case Row::WiiUNotifyShaders: view.toggle = settings_.wii_u_notify_shader_compiling ? 1 : 0; break;
