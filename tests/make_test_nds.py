@@ -64,7 +64,7 @@ def main() -> int:
     arm7 = b"".join(struct.pack("<I", word) for word in ARM7)
     rom = bytearray(ROM_SIZE)
     rom[0x000:0x00C] = b"DUALSCRNTEST"
-    rom[0x00C:0x010] = b"DSTS"
+    rom[0x00C:0x010] = b"####"  # homebrew: nothing to decrypt
     rom[0x010:0x012] = b"00"
     struct.pack_into("<IIII", rom, 0x20, ARM9_OFFSET, 0x02000000, 0x02000000, len(arm9))
     struct.pack_into("<IIII", rom, 0x30, ARM7_OFFSET, 0x02380000, 0x02380000, len(arm7))
@@ -72,6 +72,9 @@ def main() -> int:
     struct.pack_into("<I", rom, 0x84, 0x4000)
     rom[ARM9_OFFSET:ARM9_OFFSET + len(arm9)] = arm9
     rom[ARM7_OFFSET:ARM7_OFFSET + len(arm7)] = arm7
+    # The logo's checksum, which melonDS DS checks; the logo itself is left
+    # out -- a direct boot never draws it.
+    struct.pack_into("<H", rom, 0x15C, 0xCF56)
     struct.pack_into("<H", rom, 0x15E, crc16(bytes(rom[:0x15E])))
     with open(sys.argv[1], "wb") as out:
         out.write(rom)

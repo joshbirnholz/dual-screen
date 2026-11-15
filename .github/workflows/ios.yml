@@ -167,20 +167,20 @@ jobs:
           python3 tests/make_test_nds.py "$data/Documents/ROMs/test.nds"
           xcrun simctl launch --terminate-running-process "$udid" com.joshbirnholz.dualscreen.companion \
                 --game "$data/Documents/ROMs/test.nds" \
-                --screenshot-at-seconds 15 --screenshot "$data/Documents/shot.png" \
+                --screenshot-at-seconds 15 --screenshot "$data/Documents/shot.ppm" \
                 --exit-after-seconds 25
           for i in $(seq 1 60); do
-            [ -f "$data/Documents/shot.png" ] && break
+            [ -f "$data/Documents/shot.ppm" ] && break
             sleep 1
           done
           sleep 12
           xcrun simctl io "$udid" screenshot out/simulator.png || true
           log="$(find "$data/Library" -name '*.log' | head -1)"
           cp "$log" out/ 2>/dev/null || true
-          cp "$data/Documents/shot.png" out/ 2>/dev/null || true
+          cp "$data/Documents/shot.ppm" out/ 2>/dev/null || true
           find "$data/Library" -name '*.log' -exec cat {} \;
           grep -q "packaged with the app" "$log"
-          test -f out/shot.png
+          python3 tests/check_red_screen.py out/shot.ppm
 
       - uses: actions/upload-artifact@v4
         if: always()
