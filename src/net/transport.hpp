@@ -131,6 +131,8 @@ struct LocalNetwork {
     std::string address;
     std::string broadcast;
     bool wireless = false;
+    // The subnet mask, dotted. Empty where the platform did not say.
+    std::string netmask;
 };
 
 class UdpSocket {
@@ -188,6 +190,16 @@ std::vector<LocalNetwork> local_networks();
 // all-subnets address and lets the routing table choose.
 std::vector<LocalNetwork> announce_networks(const std::vector<LocalNetwork>& networks);
 std::vector<LocalNetwork> announce_networks();
+
+// Every other address on `network`, one by one, for a host that may not
+// broadcast: an iPhone or iPad, where iOS refuses a datagram to a broadcast
+// address from any app without Apple's multicast entitlement. A beacon sent
+// to each of these instead is ordinary unicast, which needs only the local
+// network permission, and every companion already listening on the discovery
+// port hears it exactly as it hears a broadcast one. A network bigger than
+// `limit` addresses is narrowed to the 256 around this machine's own; no mask
+// is taken as a /24. Nothing for loopback.
+std::vector<std::string> neighbour_addresses(const LocalNetwork& network, std::size_t limit = 254);
 
 // Names the interfaces whenever this machine is on one network through more
 // than one of them, and is empty otherwise. Worth saying out loud: companions

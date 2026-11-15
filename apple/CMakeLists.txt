@@ -157,6 +157,72 @@ target_include_directories(dualscreen_companion PRIVATE
 target_compile_options(dualscreen_companion PRIVATE -Wall -Wextra)
 dualscreen_stamp_build("${DUALSCREEN_ROOT}/src/util/build_stamp.cpp")
 
+# Playing DS games here, on an iPhone or iPad, the way an Android device does:
+# the desktop app's own game browser, layouts, quick menu, save states and
+# hosting, compiled again from the same list the APK compiles. The emulator is
+# melonDS DS, the libretro core the desktop app plays DS games with, built for
+# iOS by libretro's buildbot with its JIT off (iOS gives an app no memory it
+# may write and then run) -- so it runs on melonDS's interpreter. It is not
+# linked in: it rides in the bundle as Frameworks/melondsds_libretro.framework,
+# which is how iOS lets an app carry code of its own beside its executable,
+# and is loaded by that path when a game starts. A build without it has all of
+# this compiled in and simply does not offer Load a game: whether the core is
+# there is asked at run time, as on Android. apple/fetch-ds-core.sh makes the
+# framework; build-all.sh runs it.
+#
+# Not tvOS: an Apple TV has no touch screen to be a DS's bottom one, and no
+# Documents folder to keep games in.
+if(DUALSCREEN_PLATFORM STREQUAL "ios")
+    target_sources(dualscreen_companion PRIVATE ${DUALSCREEN_LOCAL_PLAY_SOURCES})
+    target_compile_definitions(dualscreen_companion PRIVATE
+        DS_LOCAL_PLAY=1
+        DS_BUNDLED_LIBRETRO_CORE="@executable_path/Frameworks/melondsds_libretro.framework/melondsds_libretro")
+
+    string(TOLOWER "${CMAKE_OSX_SYSROOT}" DUALSCREEN_SYSROOT_LOWER)
+    if(DUALSCREEN_SYSROOT_LOWER MATCHES "simulator")
+        set(DUALSCREEN_DS_CORE_SDK "iphonesimulator")
+    else()
+        set(DUALSCREEN_DS_CORE_SDK "iphoneos")
+    endif()
+    set(DUALSCREEN_DS_CORE_DEFAULT
+        "${DUALSCREEN_ROOT}/build-apple/ds-core/${DUALSCREEN_DS_CORE_SDK}/melondsds_libretro.framework")
+    set(DUALSCREEN_DS_CORE_FRAMEWORK "" CACHE PATH
+        "melondsds_libretro.framework to carry in the app, as apple/fetch-ds-core.sh makes it (iOS)")
+    set(DUALSCREEN_DS_CORE "${DUALSCREEN_DS_CORE_FRAMEWORK}")
+    if(NOT DUALSCREEN_DS_CORE AND EXISTS "${DUALSCREEN_DS_CORE_DEFAULT}")
+        set(DUALSCREEN_DS_CORE "${DUALSCREEN_DS_CORE_DEFAULT}")
+    endif()
+
+    if(DUALSCREEN_DS_CORE)
+        if(NOT EXISTS "${DUALSCREEN_DS_CORE}/melondsds_libretro")
+            message(FATAL_ERROR "${DUALSCREEN_DS_CORE} is not a melondsds_libretro.framework")
+        endif()
+        message(STATUS "DS core: ${DUALSCREEN_DS_CORE}, carried in the app")
+        if(CMAKE_GENERATOR STREQUAL "Xcode")
+            # Xcode's own Embed Frameworks phase, which signs it with the
+            # app's identity -- a framework signed by anyone else will not load.
+            set_target_properties(dualscreen_companion PROPERTIES
+                XCODE_EMBED_FRAMEWORKS "${DUALSCREEN_DS_CORE}"
+                XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY ON
+                XCODE_EMBED_FRAMEWORKS_REMOVE_HEADERS_ON_COPY ON
+                XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks")
+        else()
+            # A simulator build: copied in and signed ad hoc, which is all a
+            # simulator asks.
+            add_custom_command(TARGET dualscreen_companion POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${DUALSCREEN_DS_CORE}"
+                        "$<TARGET_BUNDLE_DIR:dualscreen_companion>/Frameworks/melondsds_libretro.framework"
+                COMMAND codesign --force --sign -
+                        "$<TARGET_BUNDLE_DIR:dualscreen_companion>/Frameworks/melondsds_libretro.framework"
+                COMMENT "Carrying the DS core in the app"
+                VERBATIM)
+        endif()
+    else()
+        message(STATUS "DS core: none at ${DUALSCREEN_DS_CORE_DEFAULT}, so this build joins "
+                       "games and plays none itself (apple/fetch-ds-core.sh makes one)")
+    endif()
+endif()
+
 # --- SDL2 -------------------------------------------------------------------
 #
 # On a Mac, Homebrew's ships CMake config files and this finds it with nothing

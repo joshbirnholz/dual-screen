@@ -9,6 +9,10 @@
 #include "ui/page_frame.hpp"
 #include "util/log.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -69,6 +73,20 @@ std::vector<std::string> default_browse_dirs() {
         }
     }
     candidates.push_back(storage);
+    return candidates;
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    // The app's own Documents folder, which the Files app shows as
+    // On My iPhone > Dualscreen (UIFileSharingEnabled in Info-iOS.plist.in):
+    // the one place a player can put a ROM that this app may read without
+    // asking. A ROMs folder is made there at start -- see ensure_rom_folder().
+    const char* home_env = std::getenv("HOME");
+    const std::string documents = path_join(home_env != nullptr ? home_env : "", "Documents");
+    std::vector<std::string> candidates;
+    for (const char* candidate : {"ROMs/nds", "ROMs/NDS", "ROMs", "roms/nds", "roms"}) {
+        const std::string path = path_join(documents, candidate);
+        if (directory_exists(path)) candidates.push_back(path);
+    }
+    candidates.push_back(documents);
     return candidates;
 #elif defined(_WIN32)
     // The user's own folders, then EmuDeck's place on a Windows PC.

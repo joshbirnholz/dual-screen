@@ -3145,6 +3145,16 @@ int main(int argc, char** argv) {
     // the menu is missing a row.
     log_info(can_play_here() ? "this build carries a DS core and can play DS games here"
                              : "this build has no DS core; it joins games running elsewhere");
+#if DS_LOCAL_PLAY && defined(DS_APPLE_HANDHELD)
+    // Where games go: Documents is what the Files app shows as this app's own
+    // folder, and an empty ROMs folder in it says what to put there.
+    if (can_play_here()) {
+        const char* home = std::getenv("HOME");
+        if (home != nullptr && home[0] != '\0') {
+            ensure_directory(path_join(path_join(home, "Documents"), "ROMs"));
+        }
+    }
+#endif
 
     // This program's own path, for starting it again -- see local_play.hpp.
     [[maybe_unused]] const std::string self_path = argc > 0 && argv[0] != nullptr ? argv[0] : "";
@@ -3203,6 +3213,13 @@ int main(int argc, char** argv) {
                 // The menu comes back as itself, not joining anything the
                 // command line asked for the first time round.
                 again = !quit_chosen;
+                menu_options.auto_connect = false;
+#endif
+#if defined(DS_APPLE_HANDHELD)
+                // The same on an iPhone or iPad, where an app does not close
+                // itself at all: Quit comes back to the menu too.
+                again = true;
+                quit_chosen = false;
                 menu_options.auto_connect = false;
 #endif
             }

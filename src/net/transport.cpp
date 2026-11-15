@@ -847,6 +847,9 @@ std::vector<LocalNetwork> local_networks() {
             network.interface = entry->ifa_name != nullptr ? entry->ifa_name : "";
             network.address = describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_addr));
             network.wireless = interface_is_wireless(network.interface.c_str());
+            if (entry->ifa_netmask != nullptr && entry->ifa_netmask->sa_family == AF_INET) {
+                network.netmask = describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_netmask));
+            }
             // Loopback is included on purpose: it is how two instances on one
             // machine find each other, which is exactly what the tests do.
             if ((entry->ifa_flags & IFF_BROADCAST) != 0 && entry->ifa_broadaddr != nullptr) {
@@ -928,6 +931,33 @@ std::vector<LocalNetwork> local_networks() {
 #endif
 
     return networks;
+}
+
+std::vector<std::string> neighbour_addresses(const LocalNetwork& network, std::size_t limit) {
+    std::vector<std::string> addresses;
+    in_addr own {};
+    if (network.address == network.broadcast ||
+        ::inet_pton(AF_INET, network.address.c_str(), &own) != 1) {
+        return addresses;
+    }
+    uint32_t mask = 0xFFFFFF00u;
+    in_addr given {};
+    if (!network.netmask.empty() && ::inet_pton(AF_INET, network.netmask.c_str(), &given) == 1) {
+        mask = ntohl(given.s_addr);
+    }
+    const uint32_t self = ntohl(own.s_addr);
+    if (static_cast<uint64_t>(~mask) + 1 > static_cast<uint64_t>(limit) + 2) mask = 0xFFFFFF00u;
+    const uint32_t first = (self & mask) + 1;
+    const uint32_t last = (self | ~mask) - 1;
+    for (uint32_t host = first; host <= last && host > (self & mask); ++host) {
+        if (host == self) continue;
+        if (addresses.size() >= limit) break;
+        in_addr each {};
+        each.s_addr = htonl(host);
+        char text[INET_ADDRSTRLEN] = {};
+        if (::inet_ntop(AF_INET, &each, text, sizeof(text)) != nullptr) addresses.push_back(text);
+    }
+    return addresses;
 }
 
 std::vector<LocalNetwork> announce_networks() { return announce_networks(local_networks()); }
