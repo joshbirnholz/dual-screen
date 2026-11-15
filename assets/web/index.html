@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d0f17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Dualscreen</title>
+<style>
+:root {
+  --bg: #0d0f17;
+  --panel: #1a1f2b;
+  --panel-focus: #29364d;
+  --accent: #5cb8ff;
+  --text: #ebf0f7;
+  --dim: #99a6bd;
+  --danger: #ff7366;
+  --radius: 14px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden;
+  -webkit-user-select: none; user-select: none; touch-action: none; }
+button { font: inherit; color: inherit; }
+.hidden { display: none !important; }
+
+/* Joining */
+#join { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.card { width: min(420px, 100%); background: var(--panel); border-radius: 22px; padding: 28px 24px 24px; }
+.card h1 { margin: 0 0 4px; font-size: 24px; font-weight: 650; }
+.card .sub { margin: 0 0 22px; color: var(--dim); }
+.card label { display: block; font-size: 14px; color: var(--dim); margin-bottom: 6px; }
+.card input:not([type=range]) { width: 100%; font: inherit; font-size: 18px; color: var(--text); background: var(--bg);
+  border: 2px solid transparent; border-radius: 12px; padding: 12px 14px; outline: none; -webkit-user-select: text; user-select: text; }
+.card input:not([type=range]):focus { border-color: var(--accent); }
+.primary { display: block; width: 100%; margin-top: 18px; padding: 14px; border: 0; border-radius: 999px;
+  background: var(--accent); color: #06111d; font-weight: 650; font-size: 17px; cursor: pointer; }
+.primary:disabled { opacity: .5; }
+.problem { margin: 0; color: var(--dim); }
+.problem strong { color: var(--text); }
+
+/* Playing */
+#play { position: fixed; inset: 0; background: #000; }
+#stage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
+#video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+#notice { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px;
+  background: rgba(26,31,43,.92); color: var(--text); font-size: 15px; white-space: nowrap; pointer-events: none;
+  transition: opacity .3s; z-index: 5; }
+#waiting { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); pointer-events: none; }
+#menuButton { position: absolute; right: max(10px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top));
+  width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(26,31,43,.7); z-index: 6; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; opacity: .75; }
+#menuButton svg { width: 22px; height: 22px; }
+
+/* The menu */
+#menu { position: absolute; inset: 0; background: rgba(0,0,0,.6); z-index: 10; display: flex; align-items: center; justify-content: center; padding: 16px; }
+#menu .card { padding: 18px 0 8px; }
+#menu h2 { margin: 0 24px 2px; font-size: 20px; }
+#menu .who { margin: 0 24px 12px; color: var(--dim); font-size: 14px; }
+.heading { margin: 14px 24px 6px; font-size: 14px; color: var(--dim); font-weight: 500; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 24px;
+  background: none; border: 0; width: 100%; text-align: left; cursor: pointer; }
+.row:hover { background: var(--panel-focus); }
+.row .value { color: var(--dim); }
+.row.danger { color: var(--danger); }
+.pad-row { cursor: default; }
+.pad-row:hover { background: none; }
+.toggle { width: 48px; height: 28px; border-radius: 999px; background: #3a4255; position: relative; flex: none; transition: background .15s; }
+.toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .15s; }
+.toggle.on { background: var(--accent); }
+.toggle.on::after { left: 23px; }
+.slider { -webkit-appearance: none; appearance: none; width: 150px; height: 6px; border-radius: 999px; outline: none;
+  background: linear-gradient(to right, var(--accent) var(--fill, 100%), #3a4255 var(--fill, 100%)); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.slider::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.guide { display: flex; justify-content: flex-end; gap: 18px; padding: 10px 24px 6px; color: var(--dim); font-size: 14px; border-top: 1px solid #2a3040; margin-top: 8px; }
+
+/* Touch controls */
+#touch { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none; }
+#touch .ctl { position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.85); font-weight: 650; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.22); }
+#touch .ctl.held { background: rgba(92,184,255,.55); border-color: rgba(92,184,255,.9); }
+#touch .round { border-radius: 50%; }
+#touch .pill { border-radius: 999px; font-size: 14px; }
+#touch .zone { position: absolute; pointer-events: auto; }
+#touch .base { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06); pointer-events: none; }
+#touch .idle { opacity: .45; }
+#touch .knob { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+  background: rgba(255,255,255,.35); pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div id="join">
+  <div class="card" id="joinCard">
+    <h1 id="gameTitle">Dualscreen</h1>
+    <p class="sub" id="deviceName">Connecting…</p>
+    <form id="joinForm" autocomplete="off">
+      <label for="name">Your Name</label>
+      <input id="name" maxlength="32" enterkeyhint="go" spellcheck="false">
+      <button class="primary" id="joinButton" type="submit" disabled>Join</button>
+    </form>
+  </div>
+  <div class="card hidden" id="problemCard">
+    <h1>Can't Play Here</h1>
+    <p class="problem" id="problemText"></p>
+  </div>
+</div>
+
+<div id="play" class="hidden">
+  <div id="stage"><canvas id="video" width="1280" height="720"></canvas></div>
+  <div id="waiting">Waiting for the picture…</div>
+  <div id="notice" style="opacity:0"></div>
+  <div id="touch" class="hidden"></div>
+  <button id="menuButton" aria-label="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#ebf0f7" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <div id="menu" class="hidden">
+    <div class="card">
+      <h2 id="menuGame">Dualscreen</h2>
+      <p class="who" id="menuWho"></p>
+      <div id="padRows"></div>
+      <div class="heading">This Device</div>
+      <button class="row" id="touchRow"><span>Touch Controls</span><span class="toggle" id="touchToggle"></span></button>
+      <div class="row pad-row"><span>Volume</span><input class="slider" id="volume" type="range" min="0" max="100" step="1" value="100"></div>
+      <button class="row" id="fullscreenRow"><span>Full Screen</span></button>
+      <button class="row danger" id="leaveRow"><span>Leave</span></button>
+      <div class="guide"><span>Back</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(() => {
+const $ = (id) => document.getElementById(id);
+
+// --- What the page is for, and whether this browser can do it ------------
+
+function problem() {
+  if (!window.isSecureContext) {
+    return "This page has to be opened with <strong>https://</strong>. Check the address and try again.";
+  }
+  if (!("VideoDecoder" in window)) {
+    return "This browser can't show the game. Try a recent Chrome, Edge, Safari or Firefox.";
+  }
+  return "";
+}
+const why = problem();
+if (why) {
+  $("joinCard").classList.add("hidden");
+  $("problemCard").classList.remove("hidden");
+  $("problemText").innerHTML = why;
+  return;
+}
+
+let storedName = "";
+try { storedName = localStorage.getItem("dualscreen-name") || ""; } catch (e) {}
+$("name").value = storedName;
+
+// --- The connection --------------------------------------------------------
+
+let socket = null;
+let joined = false;
+let wantJoined = false;
+let myName = "";
+let screen = "tv";
+let info = { device: "", game: "" };
+let reconnectTimer = 0;
+
+function connect() {
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  socket = new WebSocket(scheme + "//" + location.host + "/ws");
+  socket.binaryType = "arraybuffer";
+  socket.onopen = () => {
+    if (wantJoined) sendHello();
+    sendPads(true);
+  };
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") onText(JSON.parse(event.data));
+    else onBinary(event.data);
+  };
+  socket.onclose = () => {
+    socket = null;
+    joined = false;
+    if (wantJoined) {
+      showNotice("Reconnecting…", 0);
+      resetVideo();
+    } else {
+      $("deviceName").textContent = "Can't reach " + (info.device || "the host") + ". Trying again…";
+      $("joinButton").disabled = true;
+    }
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+}
+
+function send(data) {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
+}
+function sendHello() { send(JSON.stringify({ type: "hello", name: myName })); }
+
+function onText(message) {
+  switch (message.type) {
+    case "info":
+      info = message;
+      $("gameTitle").textContent = message.game || "Dualscreen";
+      $("deviceName").textContent = message.device ? "On " + message.device : "";
+      $("menuGame").textContent = message.game || "Dualscreen";
+      $("joinButton").disabled = false;
+      document.title = (message.game ? message.game + " · " : "") + "Dualscreen";
+      break;
+    case "welcome":
+      joined = true;
+      screen = message.screen || "tv";
+      hideNotice();
+      break;
+    case "screen":
+      if (message.screen !== screen) {
+        screen = message.screen;
+        resetVideo();
+        showNotice(screen === "gamepad" ? "You have the GamePad" : "Showing the TV", 3000);
+        layoutTouch();
+      }
+      break;
+    case "status":
+      onStatus(message);
+      break;
+    case "rumble":
+      rumble(message);
+      break;
+  }
+}
+
+function onBinary(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] === 1) onVideo(bytes);
+  else if (bytes[0] === 2) onAudio(buffer, bytes);
+}
+
+// --- Video -----------------------------------------------------------------
+
+const canvas = $("video");
+const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+let decoder = null;
+let decoderCodec = "";
+let needKey = true;
+let timestamp = 0;
+let gotPicture = false;
+
+function hex2(n) { return n.toString(16).toUpperCase().padStart(2, "0"); }
+
+// The codec string from the stream's own SPS: "avc1.PPCCLL".
+function codecOf(data) {
+  for (let i = 0; i + 4 < data.length; i++) {
+    if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 1 && (data[i + 3] & 0x1f) === 7) {
+      return "avc1." + hex2(data[i + 4]) + hex2(data[i + 5]) + hex2(data[i + 6]);
+    }
+  }
+  return "avc1.42E01F";
+}
+
+function resetVideo() {
+  needKey = true;
+  if (decoder && decoder.state !== "closed") { try { decoder.close(); } catch (e) {} }
+  decoder = null;
+  decoderCodec = "";
+  gotPicture = false;
+  $("waiting").classList.remove("hidden");
+}
+
+function makeDecoder(codec) {
+  decoder = new VideoDecoder({
+    output: (frame) => {
+      const w = frame.displayWidth, h = frame.displayHeight;
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; layoutTouch(); }
+      context.drawImage(frame, 0, 0, w, h);
+      frame.close();
+      if (!gotPicture) { gotPicture = true; $("waiting").classList.add("hidden"); }
+    },
+    error: () => { resetVideo(); send(JSON.stringify({ type: "keyframe" })); },
+  });
+  decoder.configure({ codec, optimizeForLatency: true });
+  decoderCodec = codec;
+}
+
+function onVideo(bytes) {
+  const key = (bytes[2] & 1) !== 0;
+  const data = bytes.subarray(7);
+  if (needKey && !key) return;
+  if (key) {
+    const codec = codecOf(data);
+    if (!decoder || decoder.state === "closed" || codec !== decoderCodec) {
+      if (decoder && decoder.state !== "closed") { try { decoder.close(); } catch (e) {} }
+      makeDecoder(codec);
+    }
+    needKey = false;
+  }
+  if (!decoder) return;
+  // Behind: what is queued is already late, so skip to the next keyframe.
+  if (decoder.decodeQueueSize > 3 && !key) {
+    needKey = true;
+    send(JSON.stringify({ type: "keyframe" }));
+    return;
+  }
+  timestamp += 16667;
+  try {
+    decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data }));
+  } catch (e) {
+    resetVideo();
+    send(JSON.stringify({ type: "keyframe" }));
+  }
+}
+
+// --- Sound -----------------------------------------------------------------
+
+let audio = null;
+let audioNode = null;
+let gain = null;
+let audioRate = 0;
+let volume = 1;
+try { const v = parseFloat(localStorage.getItem("dualscreen-volume")); if (v >= 0 && v <= 1) volume = v; } catch (e) {}
+
+const workletSource = `
+class Player extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.queue = []; this.offset = 0; this.buffered = 0; this.started = false;
+    this.port.onmessage = (event) => {
+      this.queue.push(event.data);
+      this.buffered += event.data.length / 2;
+      // Never more than a quarter of a second behind.
+      while (this.buffered > sampleRate * 0.25 && this.queue.length > 1) {
+        const dropped = this.queue.shift();
+        this.buffered -= (dropped.length - this.offset) / 2;
+        this.offset = 0;
+      }
+    };
+  }
+  process(inputs, outputs) {
+    const left = outputs[0][0], right = outputs[0][1] || outputs[0][0];
+    if (!this.started) {
+      if (this.buffered < sampleRate * 0.05) { left.fill(0); right.fill(0); return true; }
+      this.started = true;
+    }
+    for (let n = 0; n < left.length; n++) {
+      if (this.queue.length === 0) { left.fill(0, n); right.fill(0, n); this.started = false; break; }
+      const chunk = this.queue[0];
+      left[n] = chunk[this.offset]; right[n] = chunk[this.offset + 1];
+      this.offset += 2; this.buffered--;
+      if (this.offset >= chunk.length) { this.queue.shift(); this.offset = 0; }
+    }
+    return true;
+  }
+}
+registerProcessor("dualscreen-player", Player);
+`;
+
+async function startAudio(rate) {
+  if (audio && audioRate === rate) return;
+  if (audio) { try { audio.close(); } catch (e) {} }
+  audio = null; audioNode = null;
+  audioRate = rate;
+  try {
+    const ctx = new AudioContext({ sampleRate: rate, latencyHint: "interactive" });
+    const url = URL.createObjectURL(new Blob([workletSource], { type: "application/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    const node = new AudioWorkletNode(ctx, "dualscreen-player", { outputChannelCount: [2] });
+    gain = ctx.createGain();
+    gain.gain.value = volume;
+    node.connect(gain).connect(ctx.destination);
+    audio = ctx; audioNode = node;
+    if (ctx.state !== "running") ctx.resume().catch(() => {});
+  } catch (e) {
+    audioRate = 0;
+  }
+}
+
+function onAudio(buffer, bytes) {
+  const rate = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
+  const channels = bytes[6];
+  if (!audio || audioRate !== rate) { startAudio(rate); return; }
+  if (!audioNode || channels !== 2) return;
+  const count = (bytes.length - 7) >> 1;
+  const view = new DataView(buffer, 7);
+  const samples = new Float32Array(count);
+  for (let i = 0; i < count; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+  audioNode.port.postMessage(samples, [samples.buffer]);
+}
+
+// --- Controllers -----------------------------------------------------------
+
+// SDL's numbers, which the host reads pads in.
+const B = { A: 0, B: 1, X: 2, Y: 3, BACK: 4, GUIDE: 5, START: 6, LS: 7, RS: 8, LB: 9, RB: 10, UP: 11, DOWN: 12, LEFT: 13, RIGHT: 14 };
+// The standard gamepad's buttons, in order, as SDL's. Its triggers are axes;
+// its Home is the host's alone.
+const STANDARD = [B.A, B.B, B.X, B.Y, B.LB, B.RB, -1, -1, B.BACK, B.START, B.LS, B.RS, B.UP, B.DOWN, B.LEFT, B.RIGHT, -1];
+const TOUCH_INDEX = 15;
+
+let touchOn = false;
+const touchState = { buttons: 0, axes: [0, 0, 0, 0, 0, 0] };
+let lastSent = "";
+let lastSentAt = 0;
+let padNames = "";
+
+function axis(value) { return Math.max(-32768, Math.min(32767, Math.round(value * 32767))); }
+
+function readPads() {
+  const out = [];
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const pad of pads) {
+    if (!pad || !pad.connected || pad.index >= TOUCH_INDEX) continue;
+    let buttons = 0;
+    const axes = [0, 0, 0, 0, 0, 0];
+    const pressed = (i) => pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > 0.5);
+    STANDARD.forEach((sdl, i) => { if (sdl >= 0 && pressed(i)) buttons |= 1 << sdl; });
+    for (let i = 0; i < 4 && i < pad.axes.length; i++) axes[i] = axis(pad.axes[i]);
+    axes[4] = axis(pad.buttons[6] ? pad.buttons[6].value : 0);
+    axes[5] = axis(pad.buttons[7] ? pad.buttons[7].value : 0);
+    out.push({ index: pad.index, name: padName(pad), buttons, axes });
+  }
+  if (touchOn) out.push({ index: TOUCH_INDEX, name: "Touch Controls", buttons: touchState.buttons, axes: touchState.axes.slice() });
+  return out;
+}
+
+// "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)" is
+// "Xbox Wireless Controller".
+function padName(pad) {
+  let name = pad.id.replace(/\s*\((STANDARD GAMEPAD|Vendor:).*$/i, "").replace(/^[0-9a-f]{4}-[0-9a-f]{4}-/i, "").trim();
+  return name || "Controller";
+}
+
+function sendPads(force) {
+  const pads = readPads();
+  const names = JSON.stringify(pads.map((p) => [p.index, p.name]));
+  if (names !== padNames || force) {
+    padNames = names;
+    send(JSON.stringify({ type: "pads", pads: pads.map((p) => ({ index: p.index, name: p.name })) }));
+    renderPadRows();
+  }
+  const bytes = new Uint8Array(2 + pads.length * 17);
+  const view = new DataView(bytes.buffer);
+  bytes[0] = 16;
+  bytes[1] = pads.length;
+  pads.forEach((pad, n) => {
+    const at = 2 + n * 17;
+    bytes[at] = pad.index;
+    view.setUint32(at + 1, pad.buttons >>> 0, true);
+    for (let a = 0; a < 6; a++) view.setInt16(at + 5 + a * 2, pad.axes[a], true);
+  });
+  const key = bytes.join(",");
+  const now = performance.now();
+  // Only what changed, and once a second regardless so the host knows this
+  // page is still here.
+  if (key !== lastSent || now - lastSentAt > 1000 || force) {
+    lastSent = key;
+    lastSentAt = now;
+    send(bytes);
+  }
+}
+
+setInterval(() => { if (socket) sendPads(false); }, 8);
+window.addEventListener("gamepadconnected", () => { autoTouch(); sendPads(true); });
+window.addEventListener("gamepaddisconnected", () => { autoTouch(); sendPads(true); });
+
+function rumble(message) {
+  const strong = Math.max(0, Math.min(1, message.low || 0));
+  const weak = Math.max(0, Math.min(1, message.high || 0));
+  const duration = Math.max(0, Math.min(5000, message.ms || 0));
+  if (message.pad === TOUCH_INDEX) {
+    if (navigator.vibrate && (strong > 0.2 || weak > 0.2)) navigator.vibrate(Math.min(duration, 400));
+    return;
+  }
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const pad = pads[message.pad];
+  if (pad && pad.vibrationActuator && pad.vibrationActuator.playEffect) {
+    pad.vibrationActuator.playEffect("dual-rumble", { duration, strongMagnitude: strong, weakMagnitude: weak }).catch(() => {});
+  }
+}
+
+// What the host says each pad is.
+let status = {};
+let lastSummary = "";
+function onStatus(message) {
+  status = message.pads || {};
+  renderPadRows();
+  const summary = Object.values(status).filter((s) => s && s !== "Not Used").join(", ");
+  if (summary && summary !== lastSummary) showNotice(summary, 3000);
+  lastSummary = summary;
+}
+
+function renderPadRows() {
+  const rows = $("padRows");
+  rows.textContent = "";
+  const pads = readPads();
+  $("menuWho").textContent = myName ? myName + (info.device ? " · on " + info.device : "") : "";
+  const heading = document.createElement("div");
+  heading.className = "heading";
+  heading.textContent = "Controllers";
+  rows.appendChild(heading);
+  if (pads.length === 0) {
+    const row = document.createElement("div");
+    row.className = "row pad-row";
+    row.innerHTML = "<span>Press a button on a controller</span>";
+    rows.appendChild(row);
+    return;
+  }
+  for (const pad of pads) {
+    const row = document.createElement("div");
+    row.className = "row pad-row";
+    const name = document.createElement("span");
+    name.textContent = pad.name;
+    const value = document.createElement("span");
+    value.className = "value";
+    value.textContent = status[pad.index] || "";
+    row.append(name, value);
+    rows.appendChild(row);
+  }
+}
+
+// --- Touch controls --------------------------------------------------------
+
+const touchLayer = $("touch");
+const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+let touchChosen = null;
+try { const t = localStorage.getItem("dualscreen-touch"); if (t === "on" || t === "off") touchChosen = t === "on"; } catch (e) {}
+
+function anyGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const pad of pads) if (pad && pad.connected) return true;
+  return false;
+}
+function autoTouch() {
+  const want = touchChosen !== null ? touchChosen : (coarse && !anyGamepad());
+  setTouch(want, false);
+}
+function setTouch(on, chosen) {
+  if (chosen) {
+    touchChosen = on;
+    try { localStorage.setItem("dualscreen-touch", on ? "on" : "off"); } catch (e) {}
+  }
+  if (touchOn === on) return;
+  touchOn = on;
+  touchState.buttons = 0;
+  touchState.axes = [0, 0, 0, 0, 0, 0];
+  $("touchToggle").classList.toggle("on", on);
+  touchLayer.classList.toggle("hidden", !on);
+  layoutTouch();
+  sendPads(true);
+}
+
+// Each control: what it presses, and where it goes, as fractions of the area
+// the controls have (portrait: the strip below the picture; landscape: the
+// whole screen, over it).
+const CONTROLS = [
+  { id: "zl", label: "ZL", kind: "pill", axis: 4, p: [0.03, 0.03, 0.17, 0.08], l: [0.02, 0.04, 0.10, 0.10] },
+  { id: "l", label: "L", kind: "pill", bit: B.LB, p: [0.22, 0.03, 0.17, 0.08], l: [0.13, 0.04, 0.10, 0.10] },
+  { id: "minus", label: "−", kind: "round", bit: B.BACK, p: [0.41, 0.04, 0.07, 0.07], l: [0.43, 0.86, 0.045, 0.1] },
+  { id: "plus", label: "+", kind: "round", bit: B.START, p: [0.52, 0.04, 0.07, 0.07], l: [0.525, 0.86, 0.045, 0.1] },
+  { id: "r", label: "R", kind: "pill", bit: B.RB, p: [0.61, 0.03, 0.17, 0.08], l: [0.70, 0.04, 0.10, 0.10] },
+  { id: "zr", label: "ZR", kind: "pill", axis: 5, p: [0.80, 0.03, 0.17, 0.08], l: [0.81, 0.04, 0.10, 0.10] },
+  { id: "up", label: "▲", kind: "round", bit: B.UP, p: [0.19, 0.62, 0.1, 0.1], l: [0.085, 0.60, 0.065, 0.11] },
+  { id: "down", label: "▼", kind: "round", bit: B.DOWN, p: [0.19, 0.86, 0.1, 0.1], l: [0.085, 0.84, 0.065, 0.11] },
+  { id: "left", label: "◀", kind: "round", bit: B.LEFT, p: [0.08, 0.74, 0.1, 0.1], l: [0.02, 0.72, 0.065, 0.11] },
+  { id: "right", label: "▶", kind: "round", bit: B.RIGHT, p: [0.30, 0.74, 0.1, 0.1], l: [0.15, 0.72, 0.065, 0.11] },
+  { id: "x", label: "X", kind: "round", bit: B.Y, p: [0.72, 0.17, 0.11, 0.11], l: [0.85, 0.22, 0.07, 0.125] },
+  { id: "b", label: "B", kind: "round", bit: B.A, p: [0.72, 0.41, 0.11, 0.11], l: [0.85, 0.48, 0.07, 0.125] },
+  { id: "y", label: "Y", kind: "round", bit: B.X, p: [0.60, 0.29, 0.11, 0.11], l: [0.78, 0.35, 0.07, 0.125] },
+  { id: "a", label: "A", kind: "round", bit: B.B, p: [0.84, 0.29, 0.11, 0.11], l: [0.92, 0.35, 0.07, 0.125] },
+];
+// Where a finger starts a stick: anywhere in its side that isn't a button.
+const STICKS = [
+  { axes: [0, 1], p: [0.0, 0.14, 0.5, 0.42], l: [0.0, 0.16, 0.33, 0.44], bit: B.LS },
+  { axes: [2, 3], p: [0.5, 0.58, 0.5, 0.42], l: [0.67, 0.62, 0.33, 0.38], bit: B.RS },
+];
+// The face buttons are where a Wii U has them. The host reads a browser's pads
+// by place, as it does any pad Steam isn't presenting -- SDL's east button is
+// A, its south one B -- so the right-hand button sends SDL's B.
+
+let controlElements = [];
+let stickElements = [];
+const fingers = new Map();
+
+function buildTouch() {
+  touchLayer.textContent = "";
+  controlElements = CONTROLS.map((c) => {
+    const el = document.createElement("div");
+    el.className = "ctl " + c.kind;
+    el.textContent = c.label;
+    el.dataset.id = c.id;
+    touchLayer.appendChild(el);
+    return { c, el };
+  });
+  stickElements = STICKS.map((s) => {
+    const zone = document.createElement("div");
+    zone.className = "zone";
+    const base = document.createElement("div");
+    base.className = "base idle";
+    const knob = document.createElement("div");
+    knob.className = "knob idle";
+    touchLayer.prepend(zone);
+    touchLayer.append(base, knob);
+    return { s, zone, base, knob };
+  });
+}
+buildTouch();
+
+const stage = $("stage");
+function layoutTouch() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const portrait = h > w;
+  let top = 0, height = h;
+  if (touchOn && portrait) {
+    // The picture on top, the controls under it.
+    const pictureHeight = Math.min(w * canvas.height / Math.max(1, canvas.width), h * 0.5);
+    stage.style.bottom = (h - pictureHeight) + "px";
+    top = pictureHeight;
+    height = h - pictureHeight;
+  } else {
+    stage.style.bottom = "0px";
+  }
+  touchLayer.style.top = top + "px";
+  touchLayer.style.height = height + "px";
+  const place = (el, r, round) => {
+    let x = r[0] * w, y = r[1] * height, cw = r[2] * w, ch = r[3] * height;
+    if (round) { const size = Math.min(cw, ch, 76); x += (cw - size) / 2; y += (ch - size) / 2; cw = ch = size; }
+    el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = cw + "px"; el.style.height = ch + "px";
+    el.style.fontSize = Math.max(12, Math.min(cw, ch) * 0.38) + "px";
+  };
+  for (const { c, el } of controlElements) place(el, portrait ? c.p : c.l, c.kind === "round");
+  for (const stick of stickElements) {
+    const r = portrait ? stick.s.p : stick.s.l;
+    place(stick.zone, r, false);
+    stick.home = [(r[0] + r[2] / 2) * w, (r[1] + r[3] / 2) * height];
+    if (!stick.held) restStick(stick);
+  }
+}
+// Where a stick sits untouched: faint, in the middle of its side.
+function restStick(stick) {
+  if (!stick.home) return;
+  for (const el of [stick.base, stick.knob]) {
+    el.classList.add("idle");
+    el.style.left = stick.home[0] + "px";
+    el.style.top = stick.home[1] + "px";
+  }
+}
+window.addEventListener("resize", layoutTouch);
+
+function controlAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el || !el.dataset || !el.dataset.id) return null;
+  return controlElements.find((e) => e.el === el) || null;
+}
+
+function recomputeTouch() {
+  let buttons = 0;
+  const axes = [0, 0, 0, 0, 0, 0];
+  for (const finger of fingers.values()) {
+    if (finger.control) {
+      const c = finger.control.c;
+      if (c.bit !== undefined) buttons |= 1 << c.bit;
+      if (c.axis !== undefined) axes[c.axis] = 32767;
+    } else if (finger.stick) {
+      const { s } = finger.stick;
+      const radius = 50;
+      let dx = (finger.x - finger.cx) / radius, dy = (finger.y - finger.cy) / radius;
+      const length = Math.hypot(dx, dy);
+      if (length > 1) { dx /= length; dy /= length; }
+      axes[s.axes[0]] = axis(dx);
+      axes[s.axes[1]] = axis(dy);
+    }
+  }
+  for (const { el, c } of controlElements) {
+    const held = (c.bit !== undefined && (buttons >> c.bit) & 1) || (c.axis !== undefined && axes[c.axis] > 0);
+    el.classList.toggle("held", !!held);
+  }
+  touchState.buttons = buttons;
+  touchState.axes = axes;
+}
+
+touchLayer.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  const control = controlAt(event.clientX, event.clientY);
+  const finger = { x: event.clientX, y: event.clientY, cx: event.clientX, cy: event.clientY, control, stick: null };
+  if (!control) {
+    finger.stick = stickElements.find(({ zone }) => zone === event.target) || null;
+    if (finger.stick) {
+      const { base, knob } = finger.stick;
+      finger.stick.held = true;
+      base.classList.remove("idle"); knob.classList.remove("idle");
+      base.style.left = event.clientX + "px"; base.style.top = (event.clientY - parseFloat(touchLayer.style.top)) + "px";
+      knob.style.left = base.style.left; knob.style.top = base.style.top;
+    }
+  }
+  try { touchLayer.setPointerCapture(event.pointerId); } catch (e) {}
+  fingers.set(event.pointerId, finger);
+  recomputeTouch();
+});
+touchLayer.addEventListener("pointermove", (event) => {
+  const finger = fingers.get(event.pointerId);
+  if (!finger) return;
+  finger.x = event.clientX; finger.y = event.clientY;
+  if (finger.stick) {
+    const { knob } = finger.stick;
+    let dx = finger.x - finger.cx, dy = finger.y - finger.cy;
+    const length = Math.hypot(dx, dy);
+    if (length > 50) { dx *= 50 / length; dy *= 50 / length; }
+    knob.style.left = (finger.cx + dx) + "px";
+    knob.style.top = (finger.cy + dy - parseFloat(touchLayer.style.top)) + "px";
+  } else {
+    // Sliding from one button to the next presses the next one.
+    const under = controlAt(event.clientX, event.clientY);
+    if (under) finger.control = under;
+  }
+  recomputeTouch();
+});
+const lift = (event) => {
+  const finger = fingers.get(event.pointerId);
+  if (!finger) return;
+  if (finger.stick) { finger.stick.held = false; restStick(finger.stick); }
+  fingers.delete(event.pointerId);
+  recomputeTouch();
+};
+touchLayer.addEventListener("pointerup", lift);
+touchLayer.addEventListener("pointercancel", lift);
+
+// --- Joining, the menu, and the rest ---------------------------------------
+
+let noticeTimer = 0;
+function showNotice(text, ms) {
+  const notice = $("notice");
+  notice.textContent = text;
+  notice.style.opacity = 1;
+  clearTimeout(noticeTimer);
+  if (ms) noticeTimer = setTimeout(() => { notice.style.opacity = 0; }, ms);
+}
+function hideNotice() { clearTimeout(noticeTimer); $("notice").style.opacity = 0; }
+
+let wakeLock = null;
+async function keepAwake() {
+  try { if (navigator.wakeLock && document.visibilityState === "visible") wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (wantJoined && document.visibilityState === "visible") keepAwake(); });
+
+$("joinForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  myName = $("name").value.trim() || "Guest";
+  try { localStorage.setItem("dualscreen-name", myName); } catch (e) {}
+  wantJoined = true;
+  // Made inside the tap, which is the only time a browser lets a page start sound.
+  startAudio(48000);
+  $("join").classList.add("hidden");
+  $("play").classList.remove("hidden");
+  autoTouch();
+  layoutTouch();
+  keepAwake();
+  sendHello();
+  sendPads(true);
+});
+
+function openMenu() { renderPadRows(); $("menu").classList.remove("hidden"); }
+function closeMenu() { $("menu").classList.add("hidden"); }
+$("menuButton").addEventListener("click", openMenu);
+$("menu").addEventListener("click", (event) => { if (event.target === $("menu")) closeMenu(); });
+document.querySelector("#menu .guide").addEventListener("click", closeMenu);
+$("touchRow").addEventListener("click", () => setTouch(!touchOn, true));
+const volumeSlider = $("volume");
+const showVolume = () => volumeSlider.style.setProperty("--fill", volumeSlider.value + "%");
+volumeSlider.value = Math.round(volume * 100);
+showVolume();
+volumeSlider.addEventListener("input", () => {
+  volume = volumeSlider.value / 100;
+  showVolume();
+  if (gain) gain.gain.value = volume;
+  try { localStorage.setItem("dualscreen-volume", String(volume)); } catch (e) {}
+});
+$("fullscreenRow").addEventListener("click", () => {
+  closeMenu();
+  const root = document.documentElement;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if (root.requestFullscreen) root.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+  else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+});
+$("leaveRow").addEventListener("click", () => {
+  wantJoined = false;
+  closeMenu();
+  if (socket) socket.close();
+  if (audio) { try { audio.close(); } catch (e) {} audio = null; audioNode = null; audioRate = 0; }
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  resetVideo();
+  setTouch(false, false);
+  $("play").classList.add("hidden");
+  $("join").classList.remove("hidden");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("menu").classList.contains("hidden")) closeMenu();
+});
+
+connect();
+})();
+</script>
+</body>
+</html>

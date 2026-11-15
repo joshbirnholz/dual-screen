@@ -280,6 +280,9 @@ dualscreen_add_test(test_session NEEDS_GL)
 # RUN_SERIAL, which excludes everything; these three only need to exclude each
 # other, and stay free to run alongside the tests that touch no socket.
 set_tests_properties(test_net test_session PROPERTIES RESOURCE_LOCK dualscreen_ports)
+if(DUALSCREEN_WEB_PLAY)
+    dualscreen_add_test(test_web_play)
+endif()
 dualscreen_add_test(test_config)
 dualscreen_add_test(test_game_title)
 dualscreen_add_test(test_discord_presence)
@@ -559,6 +562,20 @@ if(XVFB_RUN_EXECUTABLE AND NOT WIN32)
             ${CMAKE_BINARY_DIR}/wii-u
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(wii_u_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+    # Web Play: a browser stand-in joining a Wii U game over HTTPS. Needs a
+    # Python to be the browser and an encoder to send it anything.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(DUALSCREEN_WEB_PLAY AND FFMPEG_FOUND AND Python3_Interpreter_FOUND)
+        add_test(NAME web_play_headless
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_web_play_test.sh
+                ${XVFB_RUN_EXECUTABLE}
+                $<TARGET_FILE:dualscreen>
+                $<TARGET_FILE:fake_wii_u>
+                ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/web_play_client.py
+                ${CMAKE_BINARY_DIR}/web-play)
+        set_tests_properties(web_play_headless PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
+    endif()
     # And the same console across two devices. Three processes: the emulator
     # stand-in, the host it hands its screens to, and the companion the host
     # hands one of them on to -- which is the arrangement the whole app is for.

@@ -87,6 +87,12 @@
 #include "net/host_session.hpp"
 #include "launch/launch_host.hpp"
 #include "net/save_exchange.hpp"
+#if DS_WEB_PLAY
+#include <nlohmann/json.hpp>
+
+#include "net/transport.hpp"
+#include "net/web_play_host.hpp"
+#endif
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/button_mapping_screen.hpp"
@@ -822,6 +828,40 @@ struct App::Impl {
     // always has an opinion about it, and with nobody else connected that
     // opinion is the whole point (Settings::wii_u_screen_alone).
     std::optional<ScreenId> external_shown_screen;
+    // The screens last asked to be sent as well as shown -- see
+    // ExternalFrameLink::request_screen()'s `mirrored` -- for Web Play.
+    uint8_t external_mirrored = 0;
+#if DS_WEB_PLAY
+    // Web Play, while a Wii U game runs with it on -- see
+    // net/web_play_server.hpp. Started and stopped by update_web_play().
+    std::unique_ptr<net::WebPlayHost> web_play;
+    // Why it last failed to start, and when, so a port someone else has is
+    // tried again now and then rather than every frame.
+    std::string web_play_error;
+    uint64_t web_play_failed_ms = 0;
+    // The last frame of each screen handed to it.
+    uint64_t web_play_serial[2] = {0, 0};
+    // What each browser was last told its pads are, by browser.
+    std::map<uint32_t, std::string> web_play_status;
+    // Which browser each of their pads came from, by pad id, and that
+    // browser's name: what Controls shows as the pad's device.
+    std::map<uint32_t, std::string> web_pad_owner;
+    void update_web_play();
+    void stop_web_play();
+    bool load_web_play_identity(net::TlsIdentity& identity, std::string* error);
+    std::string web_play_address() const;
+#endif
+    // Which of a browser's pads this is, and the browser's name -- empty for
+    // any other pad.
+    std::string web_pad_owner_name(uint32_t id) const {
+#if DS_WEB_PLAY
+        const auto found = web_pad_owner.find(id);
+        if (found != web_pad_owner.end()) return found->second;
+#else
+        (void)id;
+#endif
+        return std::string();
+    }
     // Whether anything has yet been pressed on a console played by another
     // program -- see where it is set for what its absence from a log means.
     bool said_first_pad = false;
@@ -2607,6 +2647,15 @@ void App::Impl::apply_pad_rumble() {
         if (slot_rumble[motor] && strength > 0) wanted.emplace(pad_identity(pad), std::make_pair(pad, strength));
     }
     const auto set = [this](const KnownPad& pad, bool active, int strength) {
+#if DS_WEB_PLAY
+        if (pad.on_this_device && net::is_web_pad_id(pad.id)) {
+            if (web_play) {
+                const uint16_t level = active ? static_cast<uint16_t>(std::clamp(strength, 0, 100) * 655) : 0;
+                web_play->send_rumble(pad.id, level, level, active ? 5000 : 0);
+            }
+            return;
+        }
+#endif
         if (pad.on_this_device) {
             input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), active, strength / 100.0f);
         } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
@@ -2628,6 +2677,147 @@ void App::Impl::apply_pad_rumble() {
     }
     rumbling_pads = std::move(wanted);
 }
+
+#if DS_WEB_PLAY
+bool App::Impl::load_web_play_identity(net::TlsIdentity& identity, std::string* error) {
+    const auto read_text = [](const std::string& path, std::string& out) {
+        std::vector<uint8_t> bytes;
+        if (!read_file(path, bytes, nullptr)) return false;
+        out.assign(bytes.begin(), bytes.end());
+        return true;
+    };
+    // The player's own, when they have put one here: a certificate a browser
+    // already trusts, from wherever they got it, and no warning at all.
+    const std::string own_certificate = path_join(paths.config_dir, "web-play.crt");
+    const std::string own_key = path_join(paths.config_dir, "web-play.key");
+    net::TlsIdentity own;
+    if (read_text(own_certificate, own.certificate_pem) && read_text(own_key, own.key_pem)) {
+        std::string why;
+        if (net::tls_identity_usable(own, &why)) {
+            log_info("Web Play: using the certificate in " + own_certificate);
+            identity = own;
+            return true;
+        }
+        log_warn("Web Play: can't use " + own_certificate + " (" + why + "); using this computer's own instead");
+    }
+    // Otherwise this computer's own, made once and kept, so a browser that
+    // has accepted it once is not asked again.
+    const std::string made_certificate = path_join(paths.config_dir, "web-play-self-signed.crt");
+    const std::string made_key = path_join(paths.config_dir, "web-play-self-signed.key");
+    net::TlsIdentity made;
+    if (read_text(made_certificate, made.certificate_pem) && read_text(made_key, made.key_pem) &&
+        net::tls_identity_usable(made, nullptr)) {
+        identity = made;
+        return true;
+    }
+    if (!net::make_self_signed_identity(settings.device_name, made, error)) return false;
+    ensure_directory(paths.config_dir);
+    std::string why;
+    if (!write_file_atomically(made_certificate, made.certificate_pem.data(), made.certificate_pem.size(), &why) ||
+        !write_file_atomically(made_key, made.key_pem.data(), made.key_pem.size(), &why)) {
+        log_warn("Web Play: couldn't keep the certificate it made: " + why);
+    } else {
+        log_info("Web Play: made a certificate for this computer, " + net::tls_fingerprint(made));
+    }
+    identity = made;
+    return true;
+}
+
+std::string App::Impl::web_play_address() const {
+    std::string address;
+    for (const net::LocalNetwork& network : net::local_networks()) {
+        if (network.address.empty() || network.address.rfind("127.", 0) == 0) continue;
+        address = network.address;
+        // A wired or wireless LAN's first; any other only if there is none.
+        if (network.address.rfind("192.168.", 0) == 0 || network.address.rfind("10.", 0) == 0) break;
+    }
+    if (address.empty()) address = "localhost";
+    return "https://" + address + ":" + std::to_string(settings.web_play_port);
+}
+
+void App::Impl::stop_web_play() {
+    if (!web_play) return;
+    web_play->stop();
+    web_play.reset();
+    input.set_foreign_pads({});
+    web_pad_owner.clear();
+    web_play_status.clear();
+    web_play_serial[0] = web_play_serial[1] = 0;
+    log_info("Web Play: stopped");
+}
+
+void App::Impl::update_web_play() {
+    const bool wanted = settings.web_play && system == SystemId::WiiU && external_source && !is_companion();
+    if (settings_screen) {
+        settings_screen->set_web_play_description(
+            settings.web_play ? "Open " + web_play_address() + " in a browser on another device to watch and play."
+                              : std::string("Lets other devices watch and play Wii U games in a web browser."));
+    }
+    if (!wanted) {
+        stop_web_play();
+        web_play_error.clear();
+        return;
+    }
+    if (!web_play) {
+        const uint64_t now = SDL_GetTicks64();
+        if (!web_play_error.empty() && now - web_play_failed_ms < 10000) return;
+        net::WebPlayHost::Config config;
+        config.port = static_cast<uint16_t>(settings.web_play_port);
+        config.device_name = settings.device_name;
+        config.game_title = game_title;
+        std::string error;
+        auto host = std::make_unique<net::WebPlayHost>();
+        if (!load_web_play_identity(config.identity, &error) || !host->start(config, &error)) {
+            if (error != web_play_error) log_warn("Web Play: couldn't start: " + error);
+            web_play_error = error;
+            web_play_failed_ms = now;
+            return;
+        }
+        web_play_error.clear();
+        web_play = std::move(host);
+        log_info("Web Play: open " + web_play_address() + " in a browser to watch and play");
+    }
+
+    // Their pads, as pads of this device's.
+    std::vector<InputManager::ForeignPad> pads;
+    std::map<uint32_t, std::string> owners;
+    std::map<uint32_t, std::string> names;
+    for (const net::WebViewer& viewer : web_play->viewers()) names[viewer.id] = viewer.name;
+    for (const net::WebPad& pad : web_play->pads()) {
+        InputManager::ForeignPad foreign;
+        foreign.id = pad.id;
+        foreign.name = pad.name;
+        foreign.raw = pad.raw;
+        pads.push_back(std::move(foreign));
+        owners[pad.id] = names.count(pad.viewer) ? names[pad.viewer] : std::string("Browser");
+    }
+    input.set_foreign_pads(std::move(pads));
+    web_pad_owner = std::move(owners);
+
+    // And what each of them is now, told to its browser when it changes.
+    std::map<uint32_t, nlohmann::json> status;
+    for (const auto& [viewer, name] : names) status[viewer] = nlohmann::json::object();
+    for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
+        const KnownPad& pad = known_pads[index];
+        if (!pad.on_this_device || !net::is_web_pad_id(pad.id)) continue;
+        const uint32_t viewer = ((pad.id - net::kWebPadIdBase) >> 4) & 0xFFFFu;
+        const PadSlot slot = pad_slots[index];
+        std::string what = slot.kind == PadSlot::Kind::GamePad  ? std::string("GamePad")
+                           : slot.kind == PadSlot::Kind::Player ? "Player " + std::to_string(slot.player + 1)
+                                                                : std::string("Not Used");
+        status[viewer][std::to_string(pad.id & 0x0Fu)] = what;
+    }
+    for (auto it = web_play_status.begin(); it != web_play_status.end();) {
+        it = status.count(it->first) ? std::next(it) : web_play_status.erase(it);
+    }
+    for (const auto& [viewer, pads_now] : status) {
+        const std::string text = nlohmann::json{{"type", "status"}, {"pads", pads_now}}.dump();
+        if (web_play_status[viewer] == text) continue;
+        web_play_status[viewer] = text;
+        web_play->send_text(viewer, text);
+    }
+}
+#endif
 
 void App::Impl::stop_pad_rumble() {
     for (bool& motor : slot_rumble) motor = false;
@@ -3086,6 +3276,9 @@ std::vector<ControllerRowView> App::Impl::wii_u_controller_rows() const {
             row.pad = pad_identity(pad);
             row.name = pad.name.empty() ? pad_label(pad) : pad.name;
             row.device = pad.on_this_device ? settings.device_name : other;
+            // A browser's, by the name its player gave.
+            const std::string browser = web_pad_owner_name(pad.id);
+            if (!browser.empty()) row.device = browser;
             row.place = row.device + (pad.slot >= 0 ? "  P" + std::to_string(pad.slot + 1) : std::string());
         }
         // What the game has there: the GamePad, or the type Cemu has the
@@ -6632,7 +6825,12 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure, G
                     // only the television's audio here, the mirror image of
                     // the usual case, with nothing here needing to know
                     // which way round it is.
-                    if (host_session) {
+                    // A screen Web Play mirrors arrives here as well, and is
+                    // only the browsers' -- see request_screen()'s `mirrored`.
+                    const bool mirrored_only =
+                        (external_mirrored & (screen == ScreenId::Top ? 1u : 2u)) != 0u &&
+                        external_requested_screen != std::optional<ScreenId>(screen);
+                    if (host_session && !mirrored_only) {
                         host_session->publish_audio(screen == ScreenId::Top
                                                         ? net::AudioStreamId::TopDevice
                                                         : net::AudioStreamId::BottomDevice,
@@ -6640,6 +6838,12 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure, G
                                                     static_cast<uint32_t>(
                                                         external_source->audio_sample_rate()));
                     }
+#if DS_WEB_PLAY
+                    if (web_play) {
+                        web_play->publish_audio(screen, samples, frames,
+                                                static_cast<uint32_t>(external_source->audio_sample_rate()));
+                    }
+#endif
                 });
             external_source->set_rumble_callback([this](bool active) {
                 // The motor belongs to whoever is holding the GamePad, and
@@ -8724,6 +8928,9 @@ int App::run(const AppOptions& options) {
         impl.input.end_frame(touch_layout, static_cast<float>(impl.output_width),
                              static_cast<float>(impl.output_height), impl.screens_geometry(),
                              panel_width, panel_height);
+#if DS_WEB_PLAY
+        impl.update_web_play();
+#endif
 
         if (impl.input.quit_requested() && impl.running) {
             // The window being closed, or the system asking the app to end --
@@ -8950,12 +9157,36 @@ int App::run(const AppOptions& options) {
                     wanted.has_value()
                         ? (*wanted == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top)
                         : peeked(impl.solo_screen);
+                // And whatever a browser is watching, sent besides -- see
+                // Web Play. Sized for it when nothing else has asked.
+                uint8_t mirrored = 0;
+#if DS_WEB_PLAY
+                if (impl.web_play) {
+                    for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+                        if (impl.web_play->screen_watched(screen) && wanted != std::optional<ScreenId>(screen)) {
+                            mirrored |= screen == ScreenId::Top ? 1u : 2u;
+                        }
+                    }
+                    if (mirrored != 0 && !wanted.has_value()) {
+                        wanted_width = 1280;
+                        wanted_height = 720;
+                    }
+                }
+#endif
                 if (freshly_connected || wanted != impl.external_requested_screen ||
                     wanted_width != impl.external_requested_width ||
                     wanted_height != impl.external_requested_height ||
-                    impl.external_shown_screen != std::optional<ScreenId>(shown)) {
+                    impl.external_shown_screen != std::optional<ScreenId>(shown) ||
+                    mirrored != impl.external_mirrored) {
                     impl.external_source->request_screen(wanted, wanted_width, wanted_height,
-                                                         shown);
+                                                         shown, mirrored);
+                    if (mirrored != impl.external_mirrored) {
+                        log_info(mirrored == 0 ? std::string("no browser is watching; asking Cemu to stop sending it")
+                                               : std::string("a browser is watching the ") +
+                                                     ((mirrored & 1u) ? "TV" : "GamePad") +
+                                                     "; asking Cemu to send it as well");
+                    }
+                    impl.external_mirrored = mirrored;
                     impl.external_requested_screen = wanted;
                     impl.external_requested_width = wanted_width;
                     impl.external_requested_height = wanted_height;
@@ -9954,6 +10185,25 @@ int App::run(const AppOptions& options) {
                 impl.host_session->publish_screens(top_pixels, bottom_pixels, serial);
             }
         }
+#if DS_WEB_PLAY
+        // And to the browsers, whichever screen each is watching: a new frame
+        // of it only, read off the link as it came.
+        if (impl.web_play && impl.external_source && impl.external_source->running()) {
+            for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+                if (!impl.web_play->screen_watched(screen)) continue;
+                const uint64_t serial = impl.external_source->screen_serial(screen);
+                uint64_t& sent = impl.web_play_serial[screen == ScreenId::Top ? 0 : 1];
+                if (serial == sent) continue;
+                ScreenReadback pixels;
+                if (!impl.external_source->read_screen(screen, pixels) || !pixels.valid()) continue;
+                sent = serial;
+                impl.web_play->publish_screen(screen, pixels.pixels, pixels.width, pixels.height,
+                                              pixels.stride_pixels,
+                                              pixels.channel_order == ChannelOrder::Rgba ? video::PixelOrder::Rgba
+                                                                                         : video::PixelOrder::Bgra);
+            }
+        }
+#endif
         impl.pass_times.stream_us += steady_micros() - stream_began_us;
 
         if (playing != nullptr && !game_running) {

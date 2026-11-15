@@ -148,10 +148,13 @@ public:
     // ExternalFrameLink::request_screen(). Leaving all of it alone (the
     // defaults) costs the far end nothing at all: nothing is captured and it
     // shows whatever it was already showing.
+    // `mirrored`: screens to send as well as show there (bit 0 top, bit 1
+    // bottom) -- what Web Play watches the television through.
     void request_screen(std::optional<ScreenId> screen, int max_width = 0, int max_height = 0,
-                        std::optional<ScreenId> shown = std::nullopt) {
-        link_.request_screen(screen, max_width, max_height, shown);
+                        std::optional<ScreenId> shown = std::nullopt, uint8_t mirrored = 0) {
+        link_.request_screen(screen, max_width, max_height, shown, mirrored);
     }
+    bool mirror_supported() const { return link_.mirror_supported(); }
 
     // The console's own pad -- the GamePad, on a Wii U -- on its way to
     // whatever is playing the game. Translated on the way out: what crosses the link is a
