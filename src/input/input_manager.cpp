@@ -1866,15 +1866,28 @@ void InputManager::end_frame(const Layout& layout,
     // Off centre by enough that the menu would have moved on it, which is the
     // deflection worth holding back after the menu closes.
     const int16_t deadzone_threshold = static_cast<int16_t>(settings_.stick_deadzone * 32767.0f);
-    const bool stick_off_centre =
+    bool stick_off_centre =
         std::abs(held.circle_x) > deadzone_threshold || std::abs(held.circle_y) > deadzone_threshold;
-    const bool c_stick_off_centre = std::abs(held.c_stick_x) > deadzone_threshold ||
-                                    std::abs(held.c_stick_y) > deadzone_threshold;
-    held_input_gate_.update(held.buttons, pointer_down, stick_off_centre, c_stick_off_centre);
+    bool c_stick_off_centre = std::abs(held.c_stick_x) > deadzone_threshold ||
+                              std::abs(held.c_stick_y) > deadzone_threshold;
+    // A browser's pads go through the same gate -- see gated() -- so the gate
+    // has to know what they hold too, or it would let through only what a
+    // pad of this computer's happened to be holding as well.
+    uint32_t gate_buttons = held.buttons;
+    for (const ForeignPad& pad : foreign_pads_) {
+        const DsInputState foreign = held_state_from(pad.raw);
+        gate_buttons |= foreign.buttons;
+        stick_off_centre = stick_off_centre || std::abs(foreign.circle_x) > deadzone_threshold ||
+                           std::abs(foreign.circle_y) > deadzone_threshold;
+        c_stick_off_centre = c_stick_off_centre || std::abs(foreign.c_stick_x) > deadzone_threshold ||
+                             std::abs(foreign.c_stick_y) > deadzone_threshold;
+    }
+    held_input_gate_.update(gate_buttons, pointer_down, stick_off_centre, c_stick_off_centre);
 
     ds_state_.clear();
     if (game_input_enabled_) {
-        ds_state_.buttons = held_input_gate_.buttons();
+        // This computer's own, of what the gate lets through.
+        ds_state_.buttons = held_input_gate_.buttons() & held.buttons;
         // Not gated the way buttons and sticks are. The gate exists to stop
         // the press that dismissed a menu also landing in the game, and
         // there is no equivalent for how the device is being held: it was

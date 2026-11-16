@@ -1536,6 +1536,46 @@ void test_a_touch_point_touches_and_turbo_repeats() {
     pad.detach();
 }
 
+// A browser's pad, with nothing plugged into this computer: its presses reach
+// the game. The gate that holds back a press from the menu once only let
+// through what this computer's own pads held, which was nothing.
+void test_a_browser_pad_reaches_the_game_on_its_own() {
+    InputManager input;
+    input.initialize(Settings());
+    const auto frame = [&](bool east_held) {
+        InputManager::ForeignPad pad;
+        pad.id = 0x7E000010u;
+        pad.name = "Xbox Wireless Controller";
+        pad.raw.buttons[SDL_CONTROLLER_BUTTON_B] = east_held;
+        input.set_foreign_pads({pad});
+        input.begin_frame();
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f, system_profile(SystemId::WiiU).screens);
+    };
+    frame(true);
+    const auto find = [&]() {
+        for (const PadReading& reading : input.pad_readings()) {
+            if (static_cast<uint32_t>(reading.id) == 0x7E000010u) return reading;
+        }
+        return PadReading();
+    };
+    PadReading reading = find();
+    CHECK_MSG(reading.controls & (1u << static_cast<unsigned>(PadControl::A)), "the browser's east button was not A");
+    CHECK_MSG(reading.held.buttons != 0, "the browser's press was held back from the game");
+    // Not this computer's own state: that is its own pads'.
+    CHECK_EQ(input.ds_state().buttons, 0u);
+
+    // A press held over from a menu is still held back until let go.
+    input.set_game_input_enabled(false);
+    frame(true);
+    input.set_game_input_enabled(true);
+    frame(true);
+    CHECK_MSG(find().controls == 0, "a press from the menu reached the game");
+    frame(false);
+    frame(true);
+    CHECK_MSG(find().controls != 0, "a fresh press after the menu was lost");
+    input.shutdown();
+}
+
 int main() {
     test_only_the_device_showing_the_gamepad_controls_it();
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
@@ -1548,6 +1588,7 @@ int main() {
     }
 
     test_each_pad_is_read_on_its_own_in_order();
+    test_a_browser_pad_reaches_the_game_on_its_own();
     test_a_touch_point_touches_and_turbo_repeats();
     test_holding_a_direction_keeps_moving();
     test_a_pad_arriving_pushed_does_not_move_the_menu();
