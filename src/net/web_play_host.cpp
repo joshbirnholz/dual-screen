@@ -7,6 +7,27 @@
 #include "util/log.hpp"
 #include "video/video_encoder.hpp"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#endif
+#define STBIW_NO_STDIO
+#define STB_IMAGE_WRITE_STATIC
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
+#define STB_IMAGE_RESIZE_STATIC
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb/stb_image_resize2.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 namespace ds::net {
 
 namespace {
@@ -26,7 +47,53 @@ void fit_within(int width, int height, int max_width, int max_height, int& out_w
     out_height = std::max(2, out_height & ~1);
 }
 
+void append_bytes(void* context, void* data, int size) {
+    auto* out = static_cast<std::vector<uint8_t>*>(context);
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    out->insert(out->end(), bytes, bytes + size);
+}
+
 }  // namespace
+
+std::vector<uint8_t> web_menu_message(const uint8_t* rgba, int width, int height, int max_width, int max_height) {
+    std::vector<uint8_t> out;
+    if (rgba == nullptr || width <= 0 || height <= 0) return out;
+    int w = width;
+    int h = height;
+    if (w > max_width || h > max_height) {
+        const double scale = std::min(static_cast<double>(max_width) / w, static_cast<double>(max_height) / h);
+        w = std::max(1, static_cast<int>(w * scale));
+        h = std::max(1, static_cast<int>(h * scale));
+    }
+    std::vector<uint8_t> scaled;
+    const uint8_t* pixels = rgba;
+    if (w != width || h != height) {
+        scaled.resize(static_cast<std::size_t>(w) * h * 4);
+        stbir_resize_uint8_srgb(rgba, width, height, 0, scaled.data(), w, h, 0, STBIR_RGBA);
+        pixels = scaled.data();
+    }
+    // Paused, the game's picture is behind all of it and a photo's
+    // compression suits it; over a game still running, the menu needs its
+    // see-through parts, which only a PNG keeps.
+    bool opaque = true;
+    for (std::size_t i = 3; i < static_cast<std::size_t>(w) * h * 4; i += 4) {
+        if (pixels[i] != 255) {
+            opaque = false;
+            break;
+        }
+    }
+    out.push_back(static_cast<uint8_t>(WebMessage::Menu));
+    out.push_back(opaque ? 0 : 1);
+    out.push_back(static_cast<uint8_t>(w & 0xFF));
+    out.push_back(static_cast<uint8_t>(w >> 8));
+    out.push_back(static_cast<uint8_t>(h & 0xFF));
+    out.push_back(static_cast<uint8_t>(h >> 8));
+    const std::size_t header = out.size();
+    const int ok = opaque ? stbi_write_jpg_to_func(append_bytes, &out, w, h, 4, pixels, 85)
+                          : stbi_write_png_to_func(append_bytes, &out, w, h, 4, pixels, w * 4);
+    if (!ok || out.size() == header) out.clear();
+    return out;
+}
 
 struct WebPlayHost::Encoder {
     video::VideoEncoder encoder;
@@ -97,6 +164,31 @@ void WebPlayHost::publish_screen(ScreenId screen, const uint32_t* pixels, int wi
         pending.height = height;
         pending.order = order;
         pending.fresh = true;
+    }
+    wake_.notify_all();
+}
+
+void WebPlayHost::publish_menu(const uint8_t* rgba, int width, int height) {
+    if (!running_ || rgba == nullptr || width <= 0 || height <= 0) return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        menu_.pixels.assign(rgba, rgba + static_cast<std::size_t>(width) * height * 4);
+        menu_.width = width;
+        menu_.height = height;
+        menu_.open = true;
+        menu_.fresh = true;
+    }
+    wake_.notify_all();
+}
+
+void WebPlayHost::close_menu() {
+    if (!running_) return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!menu_.open && !menu_.fresh) return;
+        menu_.pixels.clear();
+        menu_.open = false;
+        menu_.fresh = true;
     }
     wake_.notify_all();
 }
@@ -214,11 +306,12 @@ void WebPlayHost::run() {
     std::vector<int16_t> sound[2];
     uint32_t sound_rate[2] = {0, 0};
     std::vector<Command> commands;
+    PendingMenu menu;
     while (!quit_) {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             const bool anything = pending_[0].fresh || pending_[1].fresh || !audio_[0].samples.empty() ||
-                                  !audio_[1].samples.empty() || !commands_.empty();
+                                  !audio_[1].samples.empty() || !commands_.empty() || menu_.fresh;
             if (!anything) wake_.wait_for(lock, std::chrono::milliseconds(2));
             for (int i = 0; i < 2; ++i) {
                 if (pending_[i].fresh) {
@@ -231,6 +324,21 @@ void WebPlayHost::run() {
             }
             commands.clear();
             std::swap(commands, commands_);
+            if (menu_.fresh) {
+                std::swap(menu, menu_);
+                menu_.fresh = false;
+                menu_.open = menu.open;
+            }
+        }
+        if (menu.fresh) {
+            menu.fresh = false;
+            if (menu.open) {
+                std::vector<uint8_t> message = web_menu_message(menu.pixels.data(), menu.width, menu.height,
+                                                                config_.max_tv_width, config_.max_tv_height);
+                if (!message.empty()) server_.send_menu(true, std::move(message));
+            } else {
+                server_.send_menu(false, {});
+            }
         }
         for (const Command& command : commands) {
             switch (command.kind) {

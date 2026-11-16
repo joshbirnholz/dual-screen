@@ -15,6 +15,7 @@
 
 #include "net/socket_api.hpp"
 #include "net/transport.hpp"
+#include "net/web_play_host.hpp"
 #include "net/web_play_server.hpp"
 #include "net/web_tls.hpp"
 
@@ -242,6 +243,63 @@ void run_session(bool tls) {
     CHECK(!server.screen_watched(ScreenId::Top));
     CHECK(server.screen_watched(ScreenId::Bottom));
     CHECK(server.take_keyframe_request(ScreenId::Bottom));
+    const uint32_t sam = viewers.empty() ? 0 : viewers[0].id;
+    const auto settle = [&] { pump_until(server, browser, [] { return false; }, 50); };
+
+    // A finger on the GamePad's picture is the GamePad's touch screen.
+    browser.send_masked(2, {static_cast<uint8_t>(WebMessage::Touch), 1, 0x00, 0x80, 0xFF, 0xFF});
+    pump_until(server, browser, [&] { return !server.viewers().empty() && server.viewers()[0].touching; });
+    {
+        const auto now = server.viewers();
+        CHECK(!now.empty() && now[0].touching);
+        if (!now.empty()) {
+            CHECK_EQ(static_cast<int>(now[0].touch_x), 0x8000);
+            CHECK_EQ(static_cast<int>(now[0].touch_y), 0xFFFF);
+        }
+    }
+
+    // Asking to see both: both are sent to it, and it still touches the
+    // GamePad's.
+    browser.send_text(R"({"type":"view","view":"both"})");
+    pump_until(server, browser, [&] { return server.screen_watched(ScreenId::Top); });
+    CHECK(server.screen_watched(ScreenId::Top));
+    CHECK(server.screen_watched(ScreenId::Bottom));
+    CHECK(server.take_keyframe_request(ScreenId::Top));
+    browser.send_masked(2, {static_cast<uint8_t>(WebMessage::Touch), 1, 0x10, 0x00, 0x10, 0x00});
+    pump_until(server, browser, [&] { return !server.viewers().empty() && server.viewers()[0].touching; });
+    CHECK(!server.viewers().empty() && server.viewers()[0].touching);
+    // Only the TV: the GamePad is not sent, and there is nothing to touch.
+    browser.send_text(R"({"type":"view","view":"tv"})");
+    pump_until(server, browser, [&] { return !server.screen_watched(ScreenId::Bottom); });
+    CHECK(server.screen_watched(ScreenId::Top));
+    CHECK(!server.screen_watched(ScreenId::Bottom));
+    CHECK(!server.viewers().empty() && !server.viewers()[0].touching);
+    // Given up the GamePad, it sees the TV whatever it chose.
+    server.set_viewer_screen(sam, ScreenId::Top);
+    browser.send_text(R"({"type":"view","view":"gamepad"})");
+    settle();
+    CHECK(server.screen_watched(ScreenId::Top));
+    CHECK(!server.screen_watched(ScreenId::Bottom));
+
+    // The quick menu: its picture while it is open, and that it closed.
+    const auto count_menu = [&] {
+        int count = 0;
+        for (const auto& frame : server_frames(browser.inbox)) {
+            if (frame.opcode == 2 && !frame.data.empty() && frame.data[0] == static_cast<uint8_t>(WebMessage::Menu)) {
+                ++count;
+            }
+        }
+        return count;
+    };
+    std::vector<uint8_t> picture = {static_cast<uint8_t>(WebMessage::Menu), 0, 4, 0, 2, 0, 0xFF, 0xD8};
+    server.send_menu(true, picture);
+    CHECK(server.menu_open());
+    pump_until(server, browser, [&] { return count_menu() == 1; });
+    CHECK_EQ(count_menu(), 1);
+    server.send_menu(false, {});
+    pump_until(server, browser, [&] { return as_text(browser.inbox).find(R"("type":"menu","open":false)") != std::string::npos; });
+    CHECK(as_text(browser.inbox).find(R"("type":"menu","open":false)") != std::string::npos);
+    CHECK(!server.menu_open());
 
     // Leaving: gone from the list, and its pads with it.
     browser.send_masked(8, {});
@@ -253,8 +311,32 @@ void run_session(bool tls) {
 
 }  // namespace
 
+// The menu's picture: a JPEG when nothing shows through it, a PNG when
+// something does, no bigger than asked.
+void test_menu_picture() {
+    std::vector<uint8_t> rgba(64 * 32 * 4, 200);
+    std::vector<uint8_t> message = web_menu_message(rgba.data(), 64, 32, 32, 32);
+    CHECK(message.size() > 8);
+    if (message.size() > 8) {
+        CHECK_EQ(static_cast<int>(message[0]), static_cast<int>(WebMessage::Menu));
+        CHECK_EQ(static_cast<int>(message[1]), 1);  // alpha 200 shows through
+        CHECK_EQ(static_cast<int>(message[2] | (message[3] << 8)), 32);
+        CHECK_EQ(static_cast<int>(message[4] | (message[5] << 8)), 16);
+        CHECK(message[6] == 0x89 && message[7] == 'P');
+    }
+    for (std::size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
+    message = web_menu_message(rgba.data(), 64, 32, 1280, 720);
+    CHECK(message.size() > 8);
+    if (message.size() > 8) {
+        CHECK_EQ(static_cast<int>(message[1]), 0);
+        CHECK_EQ(static_cast<int>(message[2] | (message[3] << 8)), 64);
+        CHECK(message[6] == 0xFF && message[7] == 0xD8);
+    }
+}
+
 int main() {
     test_accept_key();
+    test_menu_picture();
     test_reader();
     run_session(false);
     run_session(true);

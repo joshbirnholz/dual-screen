@@ -21,6 +21,20 @@ the TV. Passing the GamePad, with Change Order or a player's page, passes the
 screen too: in Nintendo Land, whoever takes the GamePad sees it, and whoever
 gives it up goes back to the TV.
 
+Holding the GamePad, the page's menu (the button in the corner) has
+**Show**: the **GamePad** screen, the **TV**, or **Both** side by side (one
+above the other on a phone held upright). With both, you hear both, and
+touching the GamePad's picture still touches the GamePad.
+
+## The quick menu
+
+When you open the quick menu, everyone in a browser sees it over the game,
+so they can see the game is paused and follow along in Change Order: when
+Controls is waiting for the next player, they press a button on their own
+controller. They can watch it but can't move around in it. A page opened
+from the menu, such as Settings or a player's page, isn't shown; they keep
+seeing the main menu until you come back to it or close it.
+
 Web Play works in Chrome, Edge, Safari 16.4+ (iOS too) and Firefox 130+.
 
 ## HTTPS and the certificate
@@ -87,8 +101,10 @@ behind.
 `src/net/web_tls.*`), the page (`assets/web/index.html`, built into the app),
 and one WebSocket per browser. Over it go H.264 (Annex B, decoded in the
 browser with WebCodecs) and plain PCM out, and the browser's gamepads (in
-SDL's button and axis order) in. `src/net/web_play_host.*` runs it on a
-thread of its own with the encoders.
+SDL's button and axis order) in. The quick menu goes out as a picture of the
+same overlay drawn over Cemu's window (JPEG when it covers the game, PNG when
+the game shows through), sent only from its main page. `src/net/web_play_host.*`
+runs it on a thread of its own with the encoders.
 
 Cemu sends Dualscreen only the screens it asks for, and the TV is normally
 shown in Cemu's own window instead. So Web Play asks Cemu to *mirror* the

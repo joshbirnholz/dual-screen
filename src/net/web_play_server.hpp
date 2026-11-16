@@ -59,10 +59,15 @@ enum class WebMessage : uint8_t {
     // Server to browser.
     Video = 1,  // screen, flags (1 keyframe), width u16, height u16, then Annex B H.264
     Audio = 2,  // screen, rate u32, channels u8, then s16 interleaved
+    Menu = 3,   // format (0 JPEG, 1 PNG), width u16, height u16, then the picture
     // Browser to server.
     Pads = 16,  // count, then per pad: index, buttons u32 (SDL bits), 6 axes s16 (SDL order)
     Touch = 17,  // down u8, x u16, y u16: where on the picture, 0 to 65535 across and down
 };
+
+// What a browser holding the GamePad asked to see: the GamePad's screen, the
+// TV's, or both. Everyone else sees the TV.
+enum class WebView : uint8_t { Own, Tv, Both };
 
 // What a browser's gamepads look like from here: one RawPadState each, the
 // same as a pad plugged into this computer.
@@ -92,8 +97,10 @@ struct WebViewer {
     // What they typed when they opened the page.
     std::string name;
     std::string address;
-    // Which screen they are being sent.
+    // Which screen is theirs: the GamePad's while their controller is it.
     ScreenId screen = ScreenId::Top;
+    // And what of it they asked to see.
+    WebView view = WebView::Own;
     // A finger (or the mouse) on that picture, from 0 to 65535 across and
     // down it -- the GamePad's touch screen, to a browser holding it.
     bool touching = false;
@@ -153,6 +160,11 @@ public:
     void send_audio(ScreenId screen, const int16_t* samples, std::size_t frames, uint32_t rate, uint8_t channels);
     // A JSON text message, to one browser or (viewer 0) all of them.
     void send_text(uint32_t viewer, const std::string& json);
+    // The quick menu: a picture of it (a whole Menu message, see WebMessage)
+    // while it is open, to every browser and to each one that joins; or that
+    // it has closed. Open with no picture keeps the last one.
+    void send_menu(bool open, std::vector<uint8_t> message);
+    bool menu_open() const { return menu_open_; }
     // Vibration, for a browser's pad.
     void send_rumble(uint32_t pad_id, uint16_t low, uint16_t high, uint32_t duration_ms);
 
@@ -165,6 +177,8 @@ private:
     void handle_http(Viewer& viewer);
     void handle_message(Viewer& viewer, const WebSocketReader::Message& message);
     void send_frame(Viewer& viewer, uint8_t opcode, const uint8_t* data, std::size_t size);
+    void want_keyframes(Viewer& viewer);
+    void send_menu_to(Viewer& viewer);
 
     Config config_;
     TlsContext tls_;
@@ -174,6 +188,8 @@ private:
     uint32_t next_viewer_id_ = 1;
     uint64_t roster_serial_ = 0;
     bool keyframe_wanted_[2] = {false, false};
+    bool menu_open_ = false;
+    std::vector<uint8_t> menu_image_;
 };
 
 }  // namespace ds::net

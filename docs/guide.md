@@ -1235,8 +1235,10 @@ on their device become players in Controls and Change Order, under their
 name. A phone with no controller gets touch controls.
 
 Whoever's controller is the GamePad is shown the GamePad's screen instead,
-and touching it is the GamePad's touch screen. Passing the GamePad passes the
-screen with it. The first time, a browser warns about Dualscreen's own
+and touching it is the GamePad's touch screen; their page's menu can show
+the TV, or both screens, instead. Passing the GamePad passes the screen with
+it. While the quick menu is open, browsers see its main page over the game,
+to follow along (Change Order included) but not to use. The first time, a browser warns about Dualscreen's own
 certificate; choose to continue. [docs/web-play.md](web-play.md) covers
 certificates, playing over the internet and bandwidth.
 

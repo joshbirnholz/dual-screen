@@ -849,6 +849,10 @@ struct App::Impl {
     // The GamePad's touch screen, from the browser holding the GamePad --
     // see route_wii_u_pads(). Not touching when none does.
     DsInputState web_gamepad_touch;
+    // Whether browsers have been shown the quick menu since it opened: its
+    // main page, which they watch but cannot touch -- never a page opened from
+    // it, under which they keep the main page as it was.
+    bool web_menu_shown = false;
     void update_web_play();
     void stop_web_play();
     bool load_web_play_identity(net::TlsIdentity& identity, std::string* error);
@@ -2755,6 +2759,7 @@ void App::Impl::stop_web_play() {
     web_play_status.clear();
     web_play_serial[0] = web_play_serial[1] = 0;
     web_gamepad_touch = DsInputState();
+    web_menu_shown = false;
     log_info("Web Play: stopped");
 }
 
@@ -2851,6 +2856,13 @@ void App::Impl::update_web_play() {
         if (web_play_status[viewer] == text) continue;
         web_play_status[viewer] = text;
         web_play->send_text(viewer, text);
+    }
+
+    // The quick menu gone, gone for them too; render_menu_overlay() sends it
+    // while it is up.
+    if (web_menu_shown && !(menu_overlay_shown && menu_over_wii_u_game())) {
+        web_play->close_menu();
+        web_menu_shown = false;
     }
 }
 #endif
@@ -4799,6 +4811,14 @@ void App::Impl::render_menu_overlay() {
     render_corner_alerts(w, h);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
+#if DS_WEB_PLAY
+    // Browsers see the menu's main page, as it is here; not a page opened
+    // from it.
+    if (web_play && menu_over && state == State::Menu && !quick_menu_leaving() && (changed || !web_menu_shown)) {
+        web_play->publish_menu(menu_overlay.pixels().data(), menu_overlay.width(), menu_overlay.height());
+        web_menu_shown = true;
+    }
+#endif
     // A notice alone, the game running under it and refused the pause, keeps
     // the pads and keys going to the game, as the Switch's own does.
     const bool takes_input = menu_over_wii_u_game();

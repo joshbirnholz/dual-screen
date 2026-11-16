@@ -20,6 +20,11 @@ namespace ds::net {
 // pads out, and never waits on a browser -- TLS, compression and a slow
 // friend's connection all happen over here. See WebPlayServer for what goes
 // over the wire.
+// A picture of the quick menu as a whole Menu message (see WebMessage): no
+// bigger than `max_width` x `max_height`, a JPEG where nothing of it is
+// see-through and a PNG where something is. Empty if it could not be made.
+std::vector<uint8_t> web_menu_message(const uint8_t* rgba, int width, int height, int max_width, int max_height);
+
 class WebPlayHost {
 public:
     struct Config {
@@ -56,6 +61,11 @@ public:
     // it that has not been encoded yet.
     void publish_screen(ScreenId screen, const uint32_t* pixels, int width, int height, int stride_pixels,
                         video::PixelOrder order);
+    // The quick menu as this computer shows it -- RGBA, top row first, straight
+    // alpha -- for browsers to see but not touch; close_menu() once it is gone.
+    // Copied, and the latest waiting replaces any before it.
+    void publish_menu(const uint8_t* rgba, int width, int height);
+    void close_menu();
     // Some of a screen's sound, s16 stereo.
     void publish_audio(ScreenId screen, const int16_t* samples, std::size_t frames, uint32_t rate);
 
@@ -77,6 +87,13 @@ private:
         int width = 0;
         int height = 0;
         video::PixelOrder order = video::PixelOrder::Bgra;
+        bool fresh = false;
+    };
+    struct PendingMenu {
+        std::vector<uint8_t> pixels;
+        int width = 0;
+        int height = 0;
+        bool open = false;
         bool fresh = false;
     };
     struct PendingAudio {
@@ -105,6 +122,7 @@ private:
     std::condition_variable wake_;
     PendingScreen pending_[2];
     PendingAudio audio_[2];
+    PendingMenu menu_;
     std::vector<Command> commands_;
     // What the thread last saw, for the frame loop to read without waiting.
     std::vector<WebViewer> viewers_;

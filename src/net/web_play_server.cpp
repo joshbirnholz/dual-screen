@@ -72,6 +72,15 @@ void put_u32(std::vector<uint8_t>& out, uint32_t value) {
 
 const char* screen_word(ScreenId screen) { return screen == ScreenId::Top ? "tv" : "gamepad"; }
 
+const char* view_word(WebView view) {
+    switch (view) {
+        case WebView::Tv: return "tv";
+        case WebView::Both: return "both";
+        case WebView::Own: break;
+    }
+    return "gamepad";
+}
+
 std::string http_response(const std::string& status, const std::string& type, const std::string& body,
                           const std::string& extra = "") {
     return "HTTP/1.1 " + status + "\r\nContent-Type: " + type + "\r\nContent-Length: " +
@@ -177,8 +186,24 @@ struct WebPlayServer::Viewer {
     bool touching = false;
     uint16_t touch_x = 0;
     uint16_t touch_y = 0;
-    bool waiting_keyframe = true;
+    // Holding the GamePad, what they asked to see of it: its screen, the
+    // TV's, or both.
+    WebView view = WebView::Own;
+    bool waiting_keyframe[2] = {true, true};
+    // The quick menu's picture is still owed to them: it came while they
+    // were too far behind, or before they joined.
+    bool menu_owed = false;
     std::map<uint8_t, WebPad> pads;
+    // Whether they are sent this screen's picture and sound.
+    bool watches(ScreenId which) const {
+        if (screen == ScreenId::Top) return which == ScreenId::Top;
+        switch (view) {
+            case WebView::Own: return which == ScreenId::Bottom;
+            case WebView::Tv: return which == ScreenId::Top;
+            case WebView::Both: return true;
+        }
+        return false;
+    }
     uint64_t heard_ms = 0;
     bool finished = false;
 };
@@ -238,6 +263,7 @@ void WebPlayServer::pump() {
     }
     for (auto& viewer : viewers_) {
         pump_viewer(*viewer);
+        if (viewer->menu_owed && viewer->joined && !viewer->finished) send_menu_to(*viewer);
         // Read the clock after pumping: what was just heard is stamped now,
         // and a clock read before it would make that a wrap-around, not 0.
         const uint64_t now = now_ms();
@@ -403,16 +429,33 @@ void WebPlayServer::handle_message(Viewer& viewer, const WebSocketReader::Messag
                 const bool first = !viewer.joined;
                 viewer.name = name;
                 viewer.joined = true;
-                viewer.waiting_keyframe = true;
-                keyframe_wanted_[viewer.screen == ScreenId::Top ? 0 : 1] = true;
+                want_keyframes(viewer);
+                viewer.menu_owed = menu_open_;
                 ++roster_serial_;
                 if (first) log_info("Web Play: " + name + " joined from " + viewer.address);
-                nlohmann::json welcome = {{"type", "welcome"}, {"id", viewer.id}, {"screen", screen_word(viewer.screen)}};
+                nlohmann::json welcome = {{"type", "welcome"},
+                                          {"id", viewer.id},
+                                          {"screen", screen_word(viewer.screen)},
+                                          {"view", view_word(viewer.view)},
+                                          {"menu", menu_open_}};
                 send_text(viewer.id, welcome.dump());
             } else if (type == "keyframe") {
-                // Its decoder lost its place.
-                viewer.waiting_keyframe = true;
-                keyframe_wanted_[viewer.screen == ScreenId::Top ? 0 : 1] = true;
+                // A decoder of its lost its place: the one named, or all.
+                const std::string which = json.value("screen", std::string());
+                for (const ScreenId each : {ScreenId::Top, ScreenId::Bottom}) {
+                    if (!which.empty() && which != screen_word(each)) continue;
+                    viewer.waiting_keyframe[each == ScreenId::Top ? 0 : 1] = true;
+                    if (viewer.watches(each)) keyframe_wanted_[each == ScreenId::Top ? 0 : 1] = true;
+                }
+            } else if (type == "view") {
+                const std::string word = json.value("view", std::string());
+                const WebView view = word == "tv" ? WebView::Tv : word == "both" ? WebView::Both : WebView::Own;
+                if (view != viewer.view) {
+                    viewer.view = view;
+                    viewer.touching = false;
+                    want_keyframes(viewer);
+                    ++roster_serial_;
+                }
             } else if (type == "pads" && json.contains("pads") && json["pads"].is_array()) {
                 std::map<uint8_t, WebPad> pads;
                 for (const auto& entry : json["pads"]) {
@@ -483,8 +526,9 @@ std::vector<WebViewer> WebPlayServer::viewers() const {
         view.name = viewer->name;
         view.address = viewer->address;
         view.screen = viewer->screen;
+        view.view = viewer->view;
         // Only on the GamePad: on the TV there is nothing to touch.
-        view.touching = viewer->touching && viewer->screen == ScreenId::Bottom;
+        view.touching = viewer->touching && viewer->screen == ScreenId::Bottom && viewer->watches(ScreenId::Bottom);
         view.touch_x = viewer->touch_x;
         view.touch_y = viewer->touch_y;
         out.push_back(view);
@@ -506,8 +550,7 @@ void WebPlayServer::set_viewer_screen(uint32_t id, ScreenId screen) {
         if (viewer->id != id || viewer->screen == screen) continue;
         viewer->screen = screen;
         viewer->touching = false;
-        viewer->waiting_keyframe = true;
-        keyframe_wanted_[screen == ScreenId::Top ? 0 : 1] = true;
+        want_keyframes(*viewer);
         if (viewer->websocket) {
             const std::string text = nlohmann::json{{"type", "screen"}, {"screen", screen_word(screen)}}.dump();
             send_frame(*viewer, 1, reinterpret_cast<const uint8_t*>(text.data()), text.size());
@@ -518,7 +561,7 @@ void WebPlayServer::set_viewer_screen(uint32_t id, ScreenId screen) {
 
 bool WebPlayServer::screen_watched(ScreenId screen) const {
     for (const auto& viewer : viewers_) {
-        if (viewer->joined && !viewer->finished && viewer->screen == screen) return true;
+        if (viewer->joined && !viewer->finished && viewer->watches(screen)) return true;
     }
     return false;
 }
@@ -534,10 +577,11 @@ void WebPlayServer::send_video(ScreenId screen, const uint8_t* data, std::size_t
                                int height) {
     std::vector<uint8_t> payload;
     for (auto& viewer : viewers_) {
-        if (!viewer->joined || viewer->finished || viewer->screen != screen) continue;
-        if (viewer->waiting_keyframe && !keyframe) continue;
+        if (!viewer->joined || viewer->finished || !viewer->watches(screen)) continue;
+        bool& waiting = viewer->waiting_keyframe[screen == ScreenId::Top ? 0 : 1];
+        if (waiting && !keyframe) continue;
         if (viewer->stream.pending_bytes() > kVideoBacklogLimit) {
-            viewer->waiting_keyframe = true;
+            waiting = true;
             keyframe_wanted_[screen == ScreenId::Top ? 0 : 1] = true;
             continue;
         }
@@ -550,7 +594,7 @@ void WebPlayServer::send_video(ScreenId screen, const uint8_t* data, std::size_t
             put_u16(payload, static_cast<uint16_t>(height));
             payload.insert(payload.end(), data, data + size);
         }
-        viewer->waiting_keyframe = false;
+        waiting = false;
         send_frame(*viewer, 2, payload.data(), payload.size());
     }
 }
@@ -559,7 +603,7 @@ void WebPlayServer::send_audio(ScreenId screen, const int16_t* samples, std::siz
                                uint8_t channels) {
     std::vector<uint8_t> payload;
     for (auto& viewer : viewers_) {
-        if (!viewer->joined || viewer->finished || viewer->screen != screen) continue;
+        if (!viewer->joined || viewer->finished || !viewer->watches(screen)) continue;
         if (viewer->stream.pending_bytes() > kAudioBacklogLimit) continue;
         if (payload.empty()) {
             const std::size_t count = frames * channels;
@@ -595,6 +639,45 @@ void WebPlayServer::send_rumble(uint32_t pad_id, uint16_t low, uint16_t high, ui
             return;
         }
     }
+}
+
+void WebPlayServer::want_keyframes(Viewer& viewer) {
+    for (const ScreenId each : {ScreenId::Top, ScreenId::Bottom}) {
+        const int index = each == ScreenId::Top ? 0 : 1;
+        viewer.waiting_keyframe[index] = true;
+        if (viewer.watches(each)) keyframe_wanted_[index] = true;
+    }
+}
+
+void WebPlayServer::send_menu(bool open, std::vector<uint8_t> image) {
+    if (!open) image.clear();
+    const bool was_open = menu_open_;
+    menu_open_ = open;
+    if (!image.empty()) menu_image_ = std::move(image);
+    if (!open) menu_image_.clear();
+    for (auto& viewer : viewers_) {
+        if (!viewer->joined || viewer->finished) continue;
+        if (!open) {
+            viewer->menu_owed = false;
+            if (was_open) send_menu_to(*viewer);
+            continue;
+        }
+        viewer->menu_owed = true;
+        send_menu_to(*viewer);
+    }
+}
+
+void WebPlayServer::send_menu_to(Viewer& viewer) {
+    if (!menu_open_) {
+        static const std::string closed = R"({"type":"menu","open":false})";
+        send_frame(viewer, 1, reinterpret_cast<const uint8_t*>(closed.data()), closed.size());
+        return;
+    }
+    // A picture is big; one that would only queue behind a slow connection
+    // waits for it to drain, and is then the latest one.
+    if (menu_image_.empty() || viewer.stream.pending_bytes() > kVideoBacklogLimit) return;
+    send_frame(viewer, 2, menu_image_.data(), menu_image_.size());
+    viewer.menu_owed = false;
 }
 
 std::size_t WebPlayServer::pending_bytes(uint32_t id) const {

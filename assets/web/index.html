@@ -43,7 +43,13 @@ button { font: inherit; color: inherit; }
 /* Playing */
 #play { position: fixed; inset: 0; background: #000; }
 #stage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
-#video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+#stage.both-row { flex-direction: row; }
+#stage.both-column { flex-direction: column; }
+#stage canvas { flex: 1 1 0; min-width: 0; min-height: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+#menuPicture { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; z-index: 3; pointer-events: none; }
+.choices { display: flex; gap: 6px; }
+.choice { border: 0; border-radius: 999px; padding: 6px 12px; background: #3a4255; cursor: pointer; font-size: 14px; }
+.choice.on { background: var(--accent); color: #06111d; font-weight: 650; }
 #notice { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px;
   background: rgba(26,31,43,.92); color: var(--text); font-size: 15px; white-space: nowrap; pointer-events: none;
   transition: opacity .3s; z-index: 5; }
@@ -110,7 +116,8 @@ button { font: inherit; color: inherit; }
 </div>
 
 <div id="play" class="hidden">
-  <div id="stage"><canvas id="video" width="1280" height="720"></canvas></div>
+  <div id="stage"><canvas id="videoTv" width="1280" height="720"></canvas><canvas id="videoPad" class="hidden" width="854" height="480"></canvas></div>
+  <canvas id="menuPicture" class="hidden" width="1280" height="720"></canvas>
   <div id="waiting">Waiting for the picture…</div>
   <div id="notice" style="opacity:0"></div>
   <div id="touch" class="hidden"></div>
@@ -122,6 +129,12 @@ button { font: inherit; color: inherit; }
       <h2 id="menuGame">Dualscreen</h2>
       <p class="who" id="menuWho"></p>
       <div id="padRows"></div>
+      <div id="viewRows" class="hidden">
+        <div class="heading">GamePad</div>
+        <div class="row pad-row"><span>Show</span><span class="choices" id="viewChoices">
+          <button class="choice" data-view="gamepad">GamePad</button><button class="choice" data-view="tv">TV</button><button class="choice" data-view="both">Both</button>
+        </span></div>
+      </div>
       <div class="heading">This Device</div>
       <button class="row" id="touchRow"><span>Touch Controls</span><span class="toggle" id="touchToggle"></span></button>
       <div class="row pad-row"><span>Volume</span><input class="slider" id="volume" type="range" min="0" max="100" step="1" value="100"></div>
@@ -167,6 +180,9 @@ let joined = false;
 let wantJoined = false;
 let myName = "";
 let screen = "tv";
+// Holding the GamePad, what to show of it: "gamepad", "tv" or "both".
+let view = "gamepad";
+try { const v = localStorage.getItem("dualscreen-view"); if (v === "tv" || v === "both" || v === "gamepad") view = v; } catch (e) {}
 let info = { device: "", game: "" };
 let reconnectTimer = 0;
 
@@ -200,7 +216,10 @@ function connect() {
 function send(data) {
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
 }
-function sendHello() { send(JSON.stringify({ type: "hello", name: myName })); }
+function sendHello() {
+  send(JSON.stringify({ type: "hello", name: myName }));
+  send(JSON.stringify({ type: "view", view }));
+}
 
 function onText(message) {
   switch (message.type) {
@@ -215,6 +234,8 @@ function onText(message) {
     case "welcome":
       joined = true;
       screen = message.screen || "tv";
+      showScreens();
+      if (!message.menu) showMenuPicture(false);
       hideNotice();
       break;
     case "screen":
@@ -222,9 +243,12 @@ function onText(message) {
         screen = message.screen;
         if (touchPointer !== null) { touchPointer = null; sendTouch(false, 0, 0); }
         resetVideo();
+        showScreens();
         showNotice(screen === "gamepad" ? "You have the GamePad" : "Showing the TV", 3000);
-        layoutTouch();
       }
+      break;
+    case "menu":
+      if (!message.open) showMenuPicture(false);
       break;
     case "status":
       onStatus(message);
@@ -239,17 +263,37 @@ function onBinary(buffer) {
   const bytes = new Uint8Array(buffer);
   if (bytes[0] === 1) onVideo(bytes);
   else if (bytes[0] === 2) onAudio(buffer, bytes);
+  else if (bytes[0] === 3) onMenuPicture(bytes);
 }
 
 // --- Video -----------------------------------------------------------------
 
-const canvas = $("video");
-const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
-let decoder = null;
-let decoderCodec = "";
-let needKey = true;
-let timestamp = 0;
-let gotPicture = false;
+// One of each screen: the TV, and the GamePad's for whoever holds it -- both,
+// side by side or one above the other, if that is what they chose to see.
+const videos = [
+  { name: "tv", canvas: $("videoTv") },
+  { name: "gamepad", canvas: $("videoPad") },
+];
+for (const v of videos) {
+  v.context = v.canvas.getContext("2d", { alpha: false, desynchronized: true });
+  v.decoder = null; v.codec = ""; v.needKey = true; v.timestamp = 0; v.gotPicture = false;
+}
+const padVideo = videos[1];
+function shown(v) {
+  if (screen !== "gamepad") return v.name === "tv";
+  return view === "both" || v.name === (view === "tv" ? "tv" : "gamepad");
+}
+function showScreens() {
+  for (const v of videos) v.canvas.classList.toggle("hidden", !shown(v));
+  layoutTouch();
+  updateWaiting();
+  $("viewRows").classList.toggle("hidden", screen !== "gamepad");
+  for (const b of document.querySelectorAll("#viewChoices .choice")) b.classList.toggle("on", b.dataset.view === view);
+}
+function updateWaiting() {
+  const ready = videos.some((v) => shown(v) && v.gotPicture) || !$("menuPicture").classList.contains("hidden");
+  $("waiting").classList.toggle("hidden", ready);
+}
 
 function hex2(n) { return n.toString(16).toUpperCase().padStart(2, "0"); }
 
@@ -263,56 +307,92 @@ function codecOf(data) {
   return "avc1.42E01F";
 }
 
-function resetVideo() {
-  needKey = true;
-  if (decoder && decoder.state !== "closed") { try { decoder.close(); } catch (e) {} }
-  decoder = null;
-  decoderCodec = "";
-  gotPicture = false;
-  $("waiting").classList.remove("hidden");
+function resetOne(v) {
+  v.needKey = true;
+  if (v.decoder && v.decoder.state !== "closed") { try { v.decoder.close(); } catch (e) {} }
+  v.decoder = null;
+  v.codec = "";
+  v.gotPicture = false;
 }
+function resetVideo() {
+  for (const v of videos) resetOne(v);
+  updateWaiting();
+}
+function askKeyframe(v) { send(JSON.stringify({ type: "keyframe", screen: v.name })); }
 
-function makeDecoder(codec) {
-  decoder = new VideoDecoder({
+function makeDecoder(v, codec) {
+  v.decoder = new VideoDecoder({
     output: (frame) => {
       const w = frame.displayWidth, h = frame.displayHeight;
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; layoutTouch(); }
-      context.drawImage(frame, 0, 0, w, h);
+      if (v.canvas.width !== w || v.canvas.height !== h) { v.canvas.width = w; v.canvas.height = h; layoutTouch(); }
+      v.context.drawImage(frame, 0, 0, w, h);
       frame.close();
-      if (!gotPicture) { gotPicture = true; $("waiting").classList.add("hidden"); }
+      if (!v.gotPicture) { v.gotPicture = true; updateWaiting(); }
     },
-    error: () => { resetVideo(); send(JSON.stringify({ type: "keyframe" })); },
+    error: () => { resetOne(v); updateWaiting(); askKeyframe(v); },
   });
-  decoder.configure({ codec, optimizeForLatency: true });
-  decoderCodec = codec;
+  v.decoder.configure({ codec, optimizeForLatency: true });
+  v.codec = codec;
 }
 
 function onVideo(bytes) {
+  const v = videos[bytes[1] === 1 ? 1 : 0];
   const key = (bytes[2] & 1) !== 0;
   const data = bytes.subarray(7);
-  if (needKey && !key) return;
+  if (v.needKey && !key) return;
   if (key) {
     const codec = codecOf(data);
-    if (!decoder || decoder.state === "closed" || codec !== decoderCodec) {
-      if (decoder && decoder.state !== "closed") { try { decoder.close(); } catch (e) {} }
-      makeDecoder(codec);
+    if (!v.decoder || v.decoder.state === "closed" || codec !== v.codec) {
+      if (v.decoder && v.decoder.state !== "closed") { try { v.decoder.close(); } catch (e) {} }
+      makeDecoder(v, codec);
     }
-    needKey = false;
+    v.needKey = false;
   }
-  if (!decoder) return;
+  if (!v.decoder) return;
   // Behind: what is queued is already late, so skip to the next keyframe.
-  if (decoder.decodeQueueSize > 3 && !key) {
-    needKey = true;
-    send(JSON.stringify({ type: "keyframe" }));
+  if (v.decoder.decodeQueueSize > 3 && !key) {
+    v.needKey = true;
+    askKeyframe(v);
     return;
   }
-  timestamp += 16667;
+  v.timestamp += 16667;
   try {
-    decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data }));
+    v.decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: v.timestamp, data }));
   } catch (e) {
-    resetVideo();
-    send(JSON.stringify({ type: "keyframe" }));
+    resetOne(v);
+    askKeyframe(v);
   }
+}
+
+// --- The host's quick menu -------------------------------------------------
+
+// While it is open, a picture of its main page over the game: to watch,
+// never to touch -- the host's controllers work it.
+const menuPicture = $("menuPicture");
+const menuContext = menuPicture.getContext("2d");
+let menuSerial = 0;
+function showMenuPicture(on) {
+  if (!on) menuSerial++;
+  menuPicture.classList.toggle("hidden", !on);
+  updateWaiting();
+}
+async function onMenuPicture(bytes) {
+  const serial = ++menuSerial;
+  const type = bytes[1] === 1 ? "image/png" : "image/jpeg";
+  try {
+    const picture = await createImageBitmap(new Blob([bytes.subarray(6)], { type }));
+    if (serial !== menuSerial) { picture.close(); return; }
+    if (menuPicture.width !== picture.width || menuPicture.height !== picture.height) {
+      menuPicture.width = picture.width; menuPicture.height = picture.height;
+    }
+    // Paused, it covers the game: nothing of the picture under it shows
+    // around its edges either.
+    menuPicture.style.background = bytes[1] === 1 ? "transparent" : "#000";
+    menuContext.clearRect(0, 0, picture.width, picture.height);
+    menuContext.drawImage(picture, 0, 0);
+    picture.close();
+    showMenuPicture(true);
+  } catch (e) {}
 }
 
 // --- Sound -----------------------------------------------------------------
@@ -325,33 +405,43 @@ let volume = 1;
 try { const v = parseFloat(localStorage.getItem("dualscreen-volume")); if (v >= 0 && v <= 1) volume = v; } catch (e) {}
 
 const workletSource = `
+// Each screen's sound in a queue of its own, and the two played together.
 class Player extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.queue = []; this.offset = 0; this.buffered = 0; this.started = false;
+    this.streams = [0, 1].map(() => ({ queue: [], offset: 0, buffered: 0, started: false }));
     this.port.onmessage = (event) => {
-      this.queue.push(event.data);
-      this.buffered += event.data.length / 2;
+      const s = this.streams[event.data.screen ? 1 : 0];
+      const samples = event.data.samples;
+      s.queue.push(samples);
+      s.buffered += samples.length / 2;
       // Never more than a quarter of a second behind.
-      while (this.buffered > sampleRate * 0.25 && this.queue.length > 1) {
-        const dropped = this.queue.shift();
-        this.buffered -= (dropped.length - this.offset) / 2;
-        this.offset = 0;
+      while (s.buffered > sampleRate * 0.25 && s.queue.length > 1) {
+        const dropped = s.queue.shift();
+        s.buffered -= (dropped.length - s.offset) / 2;
+        s.offset = 0;
       }
     };
   }
   process(inputs, outputs) {
     const left = outputs[0][0], right = outputs[0][1] || outputs[0][0];
-    if (!this.started) {
-      if (this.buffered < sampleRate * 0.05) { left.fill(0); right.fill(0); return true; }
-      this.started = true;
+    left.fill(0); right.fill(0);
+    for (const s of this.streams) {
+      if (!s.started) {
+        if (s.buffered < sampleRate * 0.05) continue;
+        s.started = true;
+      }
+      for (let n = 0; n < left.length; n++) {
+        if (s.queue.length === 0) { s.started = false; break; }
+        const chunk = s.queue[0];
+        left[n] += chunk[s.offset]; right[n] += chunk[s.offset + 1];
+        s.offset += 2; s.buffered--;
+        if (s.offset >= chunk.length) { s.queue.shift(); s.offset = 0; }
+      }
     }
     for (let n = 0; n < left.length; n++) {
-      if (this.queue.length === 0) { left.fill(0, n); right.fill(0, n); this.started = false; break; }
-      const chunk = this.queue[0];
-      left[n] = chunk[this.offset]; right[n] = chunk[this.offset + 1];
-      this.offset += 2; this.buffered--;
-      if (this.offset >= chunk.length) { this.queue.shift(); this.offset = 0; }
+      left[n] = Math.max(-1, Math.min(1, left[n]));
+      right[n] = Math.max(-1, Math.min(1, right[n]));
     }
     return true;
   }
@@ -388,7 +478,7 @@ function onAudio(buffer, bytes) {
   const view = new DataView(buffer, 7);
   const samples = new Float32Array(count);
   for (let i = 0; i < count; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
-  audioNode.port.postMessage(samples, [samples.buffer]);
+  audioNode.port.postMessage({ screen: bytes[1], samples }, [samples.buffer]);
 }
 
 // --- Controllers -----------------------------------------------------------
@@ -619,12 +709,16 @@ function layoutTouch() {
   let top = 0, height = h;
   if (touchOn && portrait) {
     // The picture on top, the controls under it.
-    const pictureHeight = Math.min(w * canvas.height / Math.max(1, canvas.width), h * 0.5);
+    let natural = 0;
+    for (const v of videos) if (shown(v)) natural += w * v.canvas.height / Math.max(1, v.canvas.width);
+    const pictureHeight = Math.min(natural || w * 9 / 16, h * (natural > w ? 0.62 : 0.5));
     stage.style.bottom = (h - pictureHeight) + "px";
+    menuPicture.style.height = pictureHeight + "px";
     top = pictureHeight;
     height = h - pictureHeight;
   } else {
     stage.style.bottom = "0px";
+    menuPicture.style.height = h + "px";
   }
   touchLayer.style.top = top + "px";
   touchLayer.style.height = height + "px";
@@ -634,6 +728,8 @@ function layoutTouch() {
     el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = cw + "px"; el.style.height = ch + "px";
     el.style.fontSize = Math.max(12, Math.min(cw, ch) * 0.38) + "px";
   };
+  stage.classList.toggle("both-row", !portrait && screen === "gamepad" && view === "both");
+  stage.classList.toggle("both-column", portrait && screen === "gamepad" && view === "both");
   for (const { c, el } of controlElements) place(el, portrait ? c.p : c.l, c.kind === "round");
   for (const stick of stickElements) {
     const r = portrait ? stick.s.p : stick.s.l;
@@ -737,6 +833,7 @@ touchLayer.addEventListener("pointercancel", lift);
 // on it is sent as where on the picture it is.
 let touchPointer = null;
 function touchAt(event) {
+  const canvas = padVideo.canvas;
   const box = canvas.getBoundingClientRect();
   const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
   const width = canvas.width * scale, height = canvas.height * scale;
@@ -755,7 +852,7 @@ function sendTouch(down, x, y) {
   send(bytes);
 }
 stage.addEventListener("pointerdown", (event) => {
-  if (screen !== "gamepad" || touchPointer !== null) return;
+  if (screen !== "gamepad" || !shown(padVideo) || touchPointer !== null) return;
   const [x, y, inside] = touchAt(event);
   if (!inside) return;
   event.preventDefault();
@@ -817,6 +914,17 @@ $("menuButton").addEventListener("click", openMenu);
 $("menu").addEventListener("click", (event) => { if (event.target === $("menu")) closeMenu(); });
 document.querySelector("#menu .guide").addEventListener("click", closeMenu);
 $("touchRow").addEventListener("click", () => setTouch(!touchOn, true));
+for (const b of document.querySelectorAll("#viewChoices .choice")) {
+  b.addEventListener("click", () => {
+    if (view === b.dataset.view) return;
+    view = b.dataset.view;
+    try { localStorage.setItem("dualscreen-view", view); } catch (e) {}
+    if (touchPointer !== null) { touchPointer = null; sendTouch(false, 0, 0); }
+    resetVideo();
+    showScreens();
+    send(JSON.stringify({ type: "view", view }));
+  });
+}
 const volumeSlider = $("volume");
 const showVolume = () => volumeSlider.style.setProperty("--fill", volumeSlider.value + "%");
 volumeSlider.value = Math.round(volume * 100);
