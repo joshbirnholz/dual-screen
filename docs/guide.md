@@ -1163,6 +1163,11 @@ it. **A** on a controller already taken is **Done**; **B** puts the old order
 back. A GamePad the other device is holding stays with it, and the order
 starts at Player 1. Any controller can be the GamePad, on either device.
 
+**-** is **Swap**: it picks up the highlighted row (filled in, reading **Swap
+with…**), and **A** on another row trades the two rows' controllers, nobody
+else moving -- what a game like Nintendo Land asks for when it says who will
+play with the GamePad next. **B**, or **-** again, puts it back down.
+
 Each row starts with what that controller is: the GamePad, drawn as one, or
 a player, drawn as four small squares the way a Wii Remote's lights show it
 -- the second square alone filled for Player 2, as a Wii U lights them,
@@ -1235,10 +1240,13 @@ on their device become players in Controls and Change Order, under their
 name. A phone with no controller gets touch controls.
 
 Whoever's controller is the GamePad is shown the GamePad's screen instead,
-and touching it is the GamePad's touch screen; their page's menu can show
-the TV, or both screens, instead. Passing the GamePad passes the screen with
-it. While the quick menu is open, browsers see its main page over the game,
-to follow along (Change Order included) but not to use. The first time, a browser warns about Dualscreen's own
+hears both screens, and touching it is the GamePad's touch screen; their
+page's menu can show the TV, or both screens side by side or stacked, and
+mute either screen's sound. A phone holding the GamePad is its motion too.
+Passing the GamePad passes the screen with it. While the quick menu is open,
+browsers see its main page over the game, to follow along (Change Order
+included) but not to use, and they see the corner alerts. Someone joining or
+leaving is an alert in the corner here. The first time, a browser warns about Dualscreen's own
 certificate; choose to continue. [docs/web-play.md](web-play.md) covers
 certificates, playing over the internet and bandwidth.
 

@@ -186,6 +186,8 @@ struct WebPlayServer::Viewer {
     bool touching = false;
     uint16_t touch_x = 0;
     uint16_t touch_y = 0;
+    DsMotionState motion;
+    uint64_t motion_ms = 0;
     // Holding the GamePad, what they asked to see of it: its screen, the
     // TV's, or both.
     WebView view = WebView::Own;
@@ -194,7 +196,11 @@ struct WebPlayServer::Viewer {
     // were too far behind, or before they joined.
     bool menu_owed = false;
     std::map<uint8_t, WebPad> pads;
-    // Whether they are sent this screen's picture and sound.
+    // Whether they are sent this screen's sound: the TV's always, and the
+    // GamePad's too while it is theirs, whatever they are looking at -- the
+    // page mutes either.
+    bool hears(ScreenId which) const { return which == ScreenId::Top || screen == ScreenId::Bottom; }
+    // Whether they are sent this screen's picture.
     bool watches(ScreenId which) const {
         if (screen == ScreenId::Top) return which == ScreenId::Top;
         switch (view) {
@@ -489,6 +495,29 @@ void WebPlayServer::handle_message(Viewer& viewer, const WebSocketReader::Messag
                 viewer.touch_y = static_cast<uint16_t>(data[4] | (data[5] << 8));
                 return;
             }
+            if (data.size() >= 26 && data[0] == static_cast<uint8_t>(WebMessage::Motion)) {
+                float values[6];
+                for (int i = 0; i < 6; ++i) std::memcpy(&values[i], &data[2 + i * 4], 4);  // little-endian, as every host here is
+                DsMotionState reading;
+                reading.present = true;
+                reading.gyro_x = values[0];
+                reading.gyro_y = values[1];
+                reading.gyro_z = values[2];
+                reading.accel_x = values[3];
+                reading.accel_y = values[4];
+                reading.accel_z = values[5];
+                const DisplayTurn turn = data[1] == 1   ? DisplayTurn::TopToTheRight
+                                         : data[1] == 2 ? DisplayTurn::TopToTheLeft
+                                         : data[1] == 3 ? DisplayTurn::UpsideDown
+                                                        : DisplayTurn::None;
+                // A phone's frame, turned to its screen, then held like a
+                // controller -- as this app's own phones send theirs.
+                reading = motion_held_like_a_controller(motion_turned_to_display(reading, turn));
+                viewer.motion_ms = now_ms();
+                reading.sampled_us = static_cast<uint32_t>(viewer.motion_ms * 1000u);
+                viewer.motion = reading;
+                return;
+            }
             if (data.size() < 2 || data[0] != static_cast<uint8_t>(WebMessage::Pads)) return;
             const std::size_t count = data[1];
             constexpr std::size_t kEach = 1 + 4 + 12;
@@ -531,6 +560,10 @@ std::vector<WebViewer> WebPlayServer::viewers() const {
         view.touching = viewer->touching && viewer->screen == ScreenId::Bottom && viewer->watches(ScreenId::Bottom);
         view.touch_x = viewer->touch_x;
         view.touch_y = viewer->touch_y;
+        // Lately, or it has stopped: a phone put down in another tab says
+        // nothing more, and its last reading is not how it is held now.
+        const uint64_t now = now_ms();
+        if (viewer->motion_ms != 0 && now >= viewer->motion_ms && now - viewer->motion_ms < 500) view.motion = viewer->motion;
         out.push_back(view);
     }
     return out;
@@ -562,6 +595,13 @@ void WebPlayServer::set_viewer_screen(uint32_t id, ScreenId screen) {
 bool WebPlayServer::screen_watched(ScreenId screen) const {
     for (const auto& viewer : viewers_) {
         if (viewer->joined && !viewer->finished && viewer->watches(screen)) return true;
+    }
+    return false;
+}
+
+bool WebPlayServer::screen_heard(ScreenId screen) const {
+    for (const auto& viewer : viewers_) {
+        if (viewer->joined && !viewer->finished && viewer->hears(screen)) return true;
     }
     return false;
 }
@@ -603,7 +643,7 @@ void WebPlayServer::send_audio(ScreenId screen, const int16_t* samples, std::siz
                                uint8_t channels) {
     std::vector<uint8_t> payload;
     for (auto& viewer : viewers_) {
-        if (!viewer->joined || viewer->finished || !viewer->watches(screen)) continue;
+        if (!viewer->joined || viewer->finished || !viewer->hears(screen)) continue;
         if (viewer->stream.pending_bytes() > kAudioBacklogLimit) continue;
         if (payload.empty()) {
             const std::size_t count = frames * channels;

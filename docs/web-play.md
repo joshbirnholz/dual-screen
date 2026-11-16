@@ -21,10 +21,27 @@ the TV. Passing the GamePad, with Change Order or a player's page, passes the
 screen too: in Nintendo Land, whoever takes the GamePad sees it, and whoever
 gives it up goes back to the TV.
 
-Holding the GamePad, the page's menu (the button in the corner) has
-**Show**: the **GamePad** screen, the **TV**, or **Both** side by side (one
-above the other on a phone held upright). With both, you hear both, and
-touching the GamePad's picture still touches the GamePad.
+Holding the GamePad, you hear both screens, and the page's menu (the button
+in the corner) has **Show**: the **GamePad** screen, the **TV**, or **Both**,
+with **Layout** **Side by Side** or **Stacked** (stacked on a phone held
+upright until you choose). **TV Sound** and **GamePad Sound** mute either
+one. Touching the GamePad's picture still touches the GamePad.
+
+A phone holding the GamePad is the GamePad being tilted: its own motion
+sensors are the GamePad's gyro (Safari asks once). A browser can't read a
+controller's own gyro, so a controller plugged into a computer or phone has
+none here.
+
+Someone joining or leaving shows as an alert in the corner on this computer,
+and everyone in a browser sees the corner alerts too: a player's profile
+switched, a controller low on battery.
+
+### Passing it in Controls
+
+In the quick menu's **Controls**, **-** (Swap) picks up a row and **A** on
+another trades the two controllers, nobody else moving. When Nintendo Land
+asks who will play with the GamePad next, swap the GamePad's row with that
+player's.
 
 ## The quick menu
 

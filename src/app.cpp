@@ -849,10 +849,16 @@ struct App::Impl {
     // The GamePad's touch screen, from the browser holding the GamePad --
     // see route_wii_u_pads(). Not touching when none does.
     DsInputState web_gamepad_touch;
-    // Whether browsers have been shown the quick menu since it opened: its
+    // And how that browser's device is held, which is the GamePad's motion
+    // while a browser's controller is the GamePad -- none, if it has none.
+    DsMotionState web_gamepad_motion;
+    // Whether browsers have been shown the quick menu (or corner alerts) since
+    // it came up: its
     // main page, which they watch but cannot touch -- never a page opened from
     // it, under which they keep the main page as it was.
     bool web_menu_shown = false;
+    // Who was here last frame, by browser, to say who has come and gone.
+    std::map<uint32_t, std::string> web_viewers_seen;
     void update_web_play();
     void stop_web_play();
     bool load_web_play_identity(net::TlsIdentity& identity, std::string* error);
@@ -1273,6 +1279,8 @@ struct App::Impl {
     // Change Order: begun from Controls, watched every frame for a press on
     // each controller, and over -- the order kept, or the old one put back.
     void start_change_order();
+    // Controls' Swap: two rows' controllers trade places.
+    void swap_controllers(const ControllerRowView& from, const ControllerRowView& to);
     void tick_change_order();
     void end_change_order(bool keep);
     // The page on screen now that taps reach as a MenuPage, or none -- and
@@ -1447,6 +1455,8 @@ struct App::Impl {
     // to draw for this app.
     bool wants_menu_overlay() const;
     bool corner_notice_up() const;
+    // Any alert in a corner: a notice, or one about a controller.
+    bool corner_alerts_up() const;
     void show_corner_notice(const std::string& message);
     // A corner alert about the controller in `slot`, drawn as it, under any
     // others still up.
@@ -2538,6 +2548,16 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
                                  : other_device_holds_it ? &other_device
                                                          : nullptr;
     if (holder != nullptr && holder->motion.present) gamepad.motion = holder->motion;
+#if DS_WEB_PLAY
+    // A browser's controller as the GamePad: that browser's device is what is
+    // being held, not this one.
+    for (const std::size_t index : pads_in_slot(pad_slots, PadSlot::gamepad())) {
+        if (known_pads[index].on_this_device && net::is_web_pad_id(known_pads[index].id)) {
+            gamepad.motion = web_gamepad_motion;
+            break;
+        }
+    }
+#endif
 
     apply_pad_rumble();
     return gamepad;
@@ -2759,7 +2779,9 @@ void App::Impl::stop_web_play() {
     web_play_status.clear();
     web_play_serial[0] = web_play_serial[1] = 0;
     web_gamepad_touch = DsInputState();
+    web_gamepad_motion = DsMotionState();
     web_menu_shown = false;
+    web_viewers_seen.clear();
     log_info("Web Play: stopped");
 }
 
@@ -2800,6 +2822,14 @@ void App::Impl::update_web_play() {
     std::map<uint32_t, std::string> owners;
     std::map<uint32_t, std::string> names;
     for (const net::WebViewer& viewer : web_play->viewers()) names[viewer.id] = viewer.name;
+    // Someone come or gone, said in a corner here (and so to the browsers).
+    for (const auto& [id, name] : names) {
+        if (!web_viewers_seen.count(id)) show_corner_notice(name + " joined from a browser.");
+    }
+    for (const auto& [id, name] : web_viewers_seen) {
+        if (!names.count(id)) show_corner_notice(name + " left.");
+    }
+    web_viewers_seen = names;
     for (const net::WebPad& pad : web_play->pads()) {
         InputManager::ForeignPad foreign;
         foreign.id = pad.id;
@@ -2822,9 +2852,13 @@ void App::Impl::update_web_play() {
         }
     }
     web_gamepad_touch = DsInputState();
+    web_gamepad_motion = DsMotionState();
     const ScreenSize pad_screen = system_profile(system).screens.bottom;
     for (const net::WebViewer& viewer : web_play->viewers()) {
         const ScreenId screen = holds_gamepad_now.count(viewer.id) ? ScreenId::Bottom : ScreenId::Top;
+        if (screen == ScreenId::Bottom && viewer.motion.present && !web_gamepad_motion.present) {
+            web_gamepad_motion = viewer.motion;
+        }
         if (screen != viewer.screen) {
             log_info("Web Play: " + viewer.name + " is shown the " + (screen == ScreenId::Top ? "TV" : "GamePad"));
             web_play->set_viewer_screen(viewer.id, screen);
@@ -2860,7 +2894,7 @@ void App::Impl::update_web_play() {
 
     // The quick menu gone, gone for them too; render_menu_overlay() sends it
     // while it is up.
-    if (web_menu_shown && !(menu_overlay_shown && menu_over_wii_u_game())) {
+    if (web_menu_shown && !(menu_overlay_shown && (menu_over_wii_u_game() || corner_alerts_up()))) {
         web_play->close_menu();
         web_menu_shown = false;
     }
@@ -3384,6 +3418,9 @@ void App::Impl::apply_controls_result(const LayoutPickerResult& result) {
         const int pad = pad_index(pads, row->pad);
         if (pad >= 0) identify_pad(pads[static_cast<std::size_t>(pad)]);
     }
+    if (row_at(result.controller_swap_from) != nullptr && row_at(result.controller_swap_to) != nullptr) {
+        swap_controllers(*row_at(result.controller_swap_from), *row_at(result.controller_swap_to));
+    }
     if (result.change_order_started) start_change_order();
     if (result.change_order_skipped && change_order.going && change_order.next == 0) {
         change_order.skip_asked = true;
@@ -3401,6 +3438,27 @@ void App::Impl::apply_controls_result(const LayoutPickerResult& result) {
         }
     }
     picker->set_wii_u_controllers(wii_u_controller_rows());
+}
+
+void App::Impl::swap_controllers(const ControllerRowView& from, const ControllerRowView& to) {
+    if (system != SystemId::WiiU || !local_game() || !external_source) return;
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
+    PadLineup lineup = line_up_pads(pads, pad_order, holds_gamepad());
+    const int from_pad = pad_index(pads, from.pad);
+    const int to_pad = pad_index(pads, to.pad);
+    // Whichever has a controller goes to the other's place, trading with the
+    // one there: two players hand their controllers over, as on a Wii U when
+    // the game asks who will have the GamePad next, and nobody else moves.
+    bool moved = false;
+    if (from_pad >= 0) {
+        moved = put_in_slot(lineup, from_pad, to.slot);
+    } else if (to_pad >= 0) {
+        moved = put_in_slot(lineup, to_pad, from.slot);
+    }
+    if (!moved) return;
+    pad_order = keeping_joinable(order_of(pads, lineup, holds_gamepad()));
+    play_ui_sound(UiSound::Confirm, sound_view());
+    log_info("controllers: " + pad_slot_name(from.slot) + " and " + pad_slot_name(to.slot) + " swapped controllers");
 }
 
 void App::Impl::start_change_order() {
@@ -4451,6 +4509,10 @@ bool App::Impl::wants_menu_overlay() const {
            MenuOverlay::supported();
 }
 
+bool App::Impl::corner_alerts_up() const {
+    return !shown_corner_notice().empty() || !shown_controller_notices().empty();
+}
+
 bool App::Impl::corner_notice_up() const {
     return !corner_notice.empty() && std::chrono::steady_clock::now() < corner_notice_until;
 }
@@ -4812,9 +4874,12 @@ void App::Impl::render_menu_overlay() {
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
 #if DS_WEB_PLAY
-    // Browsers see the menu's main page, as it is here; not a page opened
-    // from it.
-    if (web_play && menu_over && state == State::Menu && !quick_menu_leaving() && (changed || !web_menu_shown)) {
+    // Browsers see the menu's main page, as it is here, but not a page opened
+    // from it; and with no menu, the corner alerts -- a player's profile
+    // switched, a controller low on battery.
+    const bool for_browsers =
+        menu_over ? state == State::Menu && !quick_menu_leaving() : corner_alerts_up();
+    if (web_play && for_browsers && (changed || !web_menu_shown)) {
         web_play->publish_menu(menu_overlay.pixels().data(), menu_overlay.width(), menu_overlay.height());
         web_menu_shown = true;
     }
@@ -9219,7 +9284,8 @@ int App::run(const AppOptions& options) {
 #if DS_WEB_PLAY
                 if (impl.web_play) {
                     for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
-                        if (impl.web_play->screen_watched(screen) && wanted != std::optional<ScreenId>(screen)) {
+                        if ((impl.web_play->screen_watched(screen) || impl.web_play->screen_heard(screen)) &&
+                            wanted != std::optional<ScreenId>(screen)) {
                             mirrored |= screen == ScreenId::Top ? 1u : 2u;
                         }
                     }

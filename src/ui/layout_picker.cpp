@@ -838,9 +838,9 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
             choice_.close();
         } else if (confirm == MenuConfirm::Choice) {
             open_choice();
-        } else if (confirm == MenuConfirm::Ordering) {
+        } else if (confirm == MenuConfirm::Ordering || confirm == MenuConfirm::Swapping) {
             choice_.close();
-            confirm_ = MenuConfirm::Ordering;
+            confirm_ = confirm;
         } else {
             ask(confirm);
         }
@@ -854,6 +854,8 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
     if (confirm_ == MenuConfirm::Ordering) {
         ordering_waiting_ = (confirm_focus_wire & ~kOrderingAssigned) - 1;
         ordering_assigned_ = (confirm_focus_wire & kOrderingAssigned) != 0;
+    } else if (confirm_ == MenuConfirm::Swapping) {
+        swapping_from_ = confirm_focus_wire - 1;
     } else if (confirm_ == MenuConfirm::Choice) {
         if (confirm_focus_wire > 0) choice_.set_focus(confirm_focus_wire - 1);
     } else if (confirming()) {
@@ -1081,6 +1083,8 @@ void LayoutPicker::handle_tap(int entry, LayoutPickerResult& result) {
     MenuSection section = MenuSection::Continue;
     int item = -1;
     if (!decode_focus(entry, section, item)) return;
+    // Off the list, a swap is put down.
+    if (swapping_controllers() && (section != MenuSection::ControllerOrder || item < 0)) end_swapping();
     if (item < 0) {
         if (section != section_) content_scroll_ = 0.0f;
         section_ = section;
@@ -1130,6 +1134,7 @@ PopupText LayoutPicker::confirm_text() const {
         case MenuConfirm::Notice: words.message = save_status_; break;
         case MenuConfirm::Choice:
         case MenuConfirm::Ordering:
+        case MenuConfirm::Swapping:
         case MenuConfirm::None: break;
     }
     return words;
@@ -1144,6 +1149,7 @@ std::vector<PopupButton> LayoutPicker::confirm_buttons() const {
         case MenuConfirm::Notice: return {{"OK", ""}};
         case MenuConfirm::Choice:
         case MenuConfirm::Ordering:
+        case MenuConfirm::Swapping:
         case MenuConfirm::None: break;
     }
     return {};
@@ -1230,6 +1236,17 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
         case MenuSection::Options:
         case MenuSection::ControllerOrder: {
             if (item_ >= static_cast<int>(rows().size())) return;
+            // The second row of a swap: the two trade controllers. The same
+            // row again, or one with no player, puts it back.
+            if (swapping_controllers()) {
+                const int to = rows()[static_cast<std::size_t>(item_)].index;
+                if (focused_controller() != nullptr && to != swapping_from_) {
+                    result.controller_swap_from = swapping_from_;
+                    result.controller_swap_to = to;
+                }
+                end_swapping();
+                return;
+            }
             // Greyed out, nothing; a slider is moved left and right, or
             // tapped along, as a Switch's is -- A does nothing on it.
             if (row_unavailable(rows()[static_cast<std::size_t>(item_)]) ||
@@ -1314,6 +1331,15 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         const int next = held ? std::clamp(index + delta, 0, size - 1) : ((index + delta) % size + size) % size;
         section_ = sections_[static_cast<std::size_t>(next)];
     };
+    // A row picked up to swap stays in Controls until it is put down: up and
+    // down to the other row, A there, B or - to put it back.
+    if (swapping_controllers()) {
+        if (action == UiAction::Left || action == UiAction::Right || action == UiAction::MenuReset ||
+            action == UiAction::MenuQuit) {
+            return;
+        }
+        if (action == UiAction::MenuSettings) end_swapping();
+    }
     switch (action) {
         case UiAction::Up:
         case UiAction::Down: {
@@ -1391,7 +1417,9 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         // out of the menu. The section is remembered, so the menu opens on it
         // again -- see open().
         case UiAction::Cancel:
-            if (on_content_) {
+            if (swapping_controllers()) {
+                end_swapping();
+            } else if (on_content_) {
                 on_content_ = false;
             } else if (!state_.embedded) {
                 result.close_requested = true;
@@ -1400,6 +1428,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         // The menu's own button closes it from wherever the cursor is: it is
         // the button that opened it.
         case UiAction::ToggleMenu:
+            end_swapping();
             if (!state_.embedded) {
                 result.close_requested = true;
             } else if (on_content_) {
@@ -1436,7 +1465,17 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         // Not a value this menu holds: the caller puts the screen up and this
         // one gets out of the way.
         case UiAction::MenuSettings: result.settings_requested = true; break;
-        case UiAction::MenuMinus: break;
+        // On a Wii U's Controls, - picks up the row the cursor is on, to trade
+        // controllers with the row A is pressed on next; - again puts it down.
+        case UiAction::MenuMinus:
+            if (swapping_controllers()) {
+                end_swapping();
+            } else if (system_ == SystemId::WiiU && section_ == MenuSection::ControllerOrder && on_content_ &&
+                       focused_controller() != nullptr) {
+                confirm_ = MenuConfirm::Swapping;
+                swapping_from_ = rows()[static_cast<std::size_t>(item_)].index;
+            }
+            break;
         // R3 is handled by the app, so that it means the same thing here as it
         // does in a game; the app pushes the result back in with
         // set_filtering(). Toggling it again here would undo that.
@@ -1580,6 +1619,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case MenuConfirm::Notice:
                 case MenuConfirm::Choice:
                 case MenuConfirm::Ordering:
+                case MenuConfirm::Swapping:
                 case MenuConfirm::None: break;
             }
             confirm_ = MenuConfirm::None;
@@ -1604,6 +1644,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                     break;
                 case ButtonGlyph::Y:
                     if (system_ == SystemId::WiiU) pressed.push_back(UiAction::MenuReset);
+                    break;
+                case ButtonGlyph::Minus:
+                    if (system_ == SystemId::WiiU) pressed.push_back(UiAction::MenuMinus);
                     break;
                 default: break;
             }
@@ -2041,7 +2084,10 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     const bool ordering = ordering_controllers();
     const bool waiting = ordering && option.index == ordering_waiting_;
     const bool connected = !view.pad.empty() || !view.name.empty();
-    if (waiting) quads.draw_solid(row, kWaitingRow);
+    // The row picked up to swap: filled as Change Order's waiting row is,
+    // until the row it goes to is chosen.
+    const bool picked = swapping_controllers() && option.index == swapping_from_;
+    if (waiting || picked) quads.draw_solid(row, kWaitingRow);
     const int count = static_cast<int>(rows().size());
     draw_menu_row(quads, row, focused, scale, index + 1 == count,
                   on_content_ && index == item_ + 1 && !ordering);
@@ -2063,12 +2109,13 @@ void LayoutPicker::render_controller_row(QuadRenderer& quads, TextRenderer& text
     // it as is drawn over its lights.
     const float place_scale = scale * 0.85f;
     const float right = row.x + row.w - pad;
-    text.draw(quads, view.place, right, std::round(centre_y - TextRenderer::line_height(place_scale) * 0.5f),
-              place_scale, dim, TextAlign::Right);
+    const std::string place = picked ? std::string("Swap with\u2026") : view.place;
+    text.draw(quads, place, right, std::round(centre_y - TextRenderer::line_height(place_scale) * 0.5f),
+              place_scale, picked ? theme.text : dim, TextAlign::Right);
     const float name_x = row.x + pad + slot.width + pad;
     const float name_scale = scale * 1.1f;
     const float room =
-        std::max(0.0f, right - name_x - TextRenderer::measure_width(view.place, place_scale) - pad);
+        std::max(0.0f, right - name_x - TextRenderer::measure_width(place, place_scale) - pad);
     const bool disconnected = view.slot.kind == PadSlot::Kind::GamePad && view.type.empty();
     const std::string name = waiting        ? std::string(ordering_tap_ ? "Press a button or tap here" : "Press a button")
                              : connected    ? view.name
@@ -2265,7 +2312,10 @@ void LayoutPicker::render(QuadRenderer& quads,
         // and Done once a controller has been taken.
         const bool on_controls = system_ == SystemId::WiiU && section_ == MenuSection::ControllerOrder &&
                                  on_content_ && !state_.wii_u_controllers.empty();
-        if (ordering_controllers()) {
+        if (swapping_controllers()) {
+            guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+            guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+        } else if (ordering_controllers()) {
             guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             if (ordering_assigned_) guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
             if (ordering_gamepad()) guide.push_back({ButtonGlyph::X, "Skip"});
@@ -2277,6 +2327,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             // The same on every row of Controls: X does nothing on a row
             // with no controller to buzz.
             if (on_controls) {
+                guide.push_back({ButtonGlyph::Minus, "Swap"});
                 guide.push_back({ButtonGlyph::X, "Identify"});
                 guide.push_back({ButtonGlyph::Y, "Change Order"});
             }

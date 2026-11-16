@@ -1301,6 +1301,34 @@ void test_wii_u_controls_list_every_controller() {
     result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(result.controller_adding == 2 && result.controller_opened == -1);
 
+    // Swap: - picks up a row, A on another trades their controllers, and
+    // nothing else moves. B, or A on the same row, puts it back.
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 1));
+    result = picker.update({UiAction::MenuMinus}, {}, kWidth, kHeight);
+    CHECK(picker.swapping_controllers() && !picker.awaiting_confirmation());
+    CHECK_EQ(picker.confirm_focus_wire(), 2);
+    result = picker.update({UiAction::Left, UiAction::Up}, {}, kWidth, kHeight);
+    CHECK(picker.swapping_controllers());
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.controller_swap_from == 1 && result.controller_swap_to == 0);
+    CHECK(result.controller_opened == -1 && !picker.swapping_controllers());
+    result = picker.update({UiAction::MenuMinus}, {}, kWidth, kHeight);
+    CHECK(picker.swapping_controllers());
+    result = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(!picker.swapping_controllers() && result.controller_swap_from == -1 && !result.close_requested);
+    result = picker.update({UiAction::MenuMinus}, {}, kWidth, kHeight);
+    result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!picker.swapping_controllers() && result.controller_swap_from == -1 && result.controller_opened == -1);
+    // The other device, told of it, shows the same row picked up.
+    {
+        LayoutPicker other(registry);
+        other.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+        other.show(state, LayoutPicker::focus_of(MenuSection::ControllerOrder, 2), MenuConfirm::Swapping, 3);
+        CHECK(other.swapping_controllers());
+        CHECK_EQ(other.confirm_focus_wire(), 3);
+    }
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::ControllerOrder, 3));
+
     // Change Order, from anywhere in the list: Add Controller goes, and the
     // list does nothing.
     result = picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);

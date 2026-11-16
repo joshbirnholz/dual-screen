@@ -103,6 +103,10 @@ struct LayoutPickerResult {
     // GamePad -- its screen alone plays it, a phone's touch screen with a
     // controller on the host as Player 1 -- and the next press is Player 1's.
     bool change_order_skipped = false;
+    // -, Swap, then A on another row: the two rows' controllers trade places,
+    // by their indexes in LayoutPickerState::wii_u_controllers. -1 for none.
+    int controller_swap_from = -1;
+    int controller_swap_to = -1;
     // One of Cemu's own options in a Wii U's Options, stepped on: its index
     // in LayoutPickerState::producer_options. -1 for none.
     int producer_option = -1;
@@ -286,6 +290,10 @@ enum class MenuConfirm : uint8_t {
     // on each controller in turn. Its popup focus is the row waiting plus
     // one, 0 for none, and kOrderingAssigned once one has been taken.
     Ordering = 8,
+    // Nor this: a Wii U's Controls with one row picked up by -, Swap, to
+    // trade controllers with the next row chosen. Its popup focus is that
+    // row plus one.
+    Swapping = 9,
 };
 
 // The list down the left of a DS or 3DS quick menu, the way Nintendo Switch
@@ -408,6 +416,7 @@ public:
         if (confirm_ == MenuConfirm::Ordering) {
             return (ordering_waiting_ + 1) | (ordering_assigned_ ? kOrderingAssigned : 0);
         }
+        if (confirm_ == MenuConfirm::Swapping) return swapping_from_ + 1;
         return confirming() && confirm_cursor_.shown() ? confirm_cursor_.focus() + 1 : 0;
     }
     // A focus that stands for one of the popup's buttons rather than for
@@ -483,6 +492,8 @@ public:
     // row is waiting for a press, -1 for none, and whether a controller has
     // been taken yet -- which is when A can say it is done.
     bool ordering_controllers() const { return confirm_ == MenuConfirm::Ordering; }
+    // A Controls row picked up by -, Swap -- see MenuConfirm::Swapping.
+    bool swapping_controllers() const { return confirm_ == MenuConfirm::Swapping; }
     void set_ordering(int waiting, bool assigned) {
         ordering_waiting_ = waiting;
         ordering_assigned_ = assigned;
@@ -672,7 +683,13 @@ private:
     void ask(MenuConfirm confirm);
     // A question or a popup up -- not Change Order, which leaves the list
     // where it is.
-    bool confirming() const { return confirm_ != MenuConfirm::None && confirm_ != MenuConfirm::Ordering; }
+    bool confirming() const {
+        return confirm_ != MenuConfirm::None && confirm_ != MenuConfirm::Ordering && confirm_ != MenuConfirm::Swapping;
+    }
+    void end_swapping() {
+        if (confirm_ == MenuConfirm::Swapping) confirm_ = MenuConfirm::None;
+        swapping_from_ = -1;
+    }
     // The Controls row the cursor is on, if it is a Wii U's controller's.
     const ControllerRowView* focused_controller() const;
     // Y on Controls: Change Order begun.
@@ -771,6 +788,8 @@ private:
     // Change Order's -- see set_ordering().
     int ordering_waiting_ = -1;
     bool ordering_assigned_ = false;
+    // The Controls row picked up to swap -- see MenuConfirm::Swapping.
+    int swapping_from_ = -1;
     bool ordering_tap_ = false;
     // Where the cursor was as it began.
     int ordering_item_ = -1;

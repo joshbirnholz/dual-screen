@@ -57,6 +57,8 @@ public:
 
     // Whether a browser is watching this screen now, so it is worth reading.
     bool screen_watched(ScreenId screen) const;
+    // Or listening to it, which needs it sent just the same.
+    bool screen_heard(ScreenId screen) const;
     // A frame of a screen. Copied; the latest one waiting replaces any before
     // it that has not been encoded yet.
     void publish_screen(ScreenId screen, const uint32_t* pixels, int width, int height, int stride_pixels,
@@ -129,6 +131,7 @@ private:
     std::vector<WebPad> pads_;
     uint64_t roster_serial_ = 0;
     bool watched_[2] = {false, false};
+    bool heard_[2] = {false, false};
     std::string backend_[2];
 
     struct Encoder;

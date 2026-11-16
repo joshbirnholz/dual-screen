@@ -134,6 +134,11 @@ button { font: inherit; color: inherit; }
         <div class="row pad-row"><span>Show</span><span class="choices" id="viewChoices">
           <button class="choice" data-view="gamepad">GamePad</button><button class="choice" data-view="tv">TV</button><button class="choice" data-view="both">Both</button>
         </span></div>
+        <div class="row pad-row" id="arrangeRow"><span>Layout</span><span class="choices" id="arrangeChoices">
+          <button class="choice" data-arrange="row">Side by Side</button><button class="choice" data-arrange="column">Stacked</button>
+        </span></div>
+        <button class="row" id="tvSoundRow"><span>TV Sound</span><span class="toggle" id="tvSoundToggle"></span></button>
+        <button class="row" id="padSoundRow"><span>GamePad Sound</span><span class="toggle" id="padSoundToggle"></span></button>
       </div>
       <div class="heading">This Device</div>
       <button class="row" id="touchRow"><span>Touch Controls</span><span class="toggle" id="touchToggle"></span></button>
@@ -183,6 +188,16 @@ let screen = "tv";
 // Holding the GamePad, what to show of it: "gamepad", "tv" or "both".
 let view = "gamepad";
 try { const v = localStorage.getItem("dualscreen-view"); if (v === "tv" || v === "both" || v === "gamepad") view = v; } catch (e) {}
+// Showing both: side by side ("row") or one above the other ("column"); as
+// the screen is held until chosen.
+let arrange = "";
+// Holding the GamePad, both screens' sound comes; either can be muted.
+let sound = { tv: true, gamepad: true };
+try {
+  const a = localStorage.getItem("dualscreen-arrange"); if (a === "row" || a === "column") arrange = a;
+  const m = JSON.parse(localStorage.getItem("dualscreen-sound") || "null");
+  if (m && typeof m === "object") sound = { tv: m.tv !== false, gamepad: m.gamepad !== false };
+} catch (e) {}
 let info = { device: "", game: "" };
 let reconnectTimer = 0;
 
@@ -289,6 +304,10 @@ function showScreens() {
   updateWaiting();
   $("viewRows").classList.toggle("hidden", screen !== "gamepad");
   for (const b of document.querySelectorAll("#viewChoices .choice")) b.classList.toggle("on", b.dataset.view === view);
+  $("arrangeRow").classList.toggle("hidden", view !== "both");
+  for (const b of document.querySelectorAll("#arrangeChoices .choice")) b.classList.toggle("on", b.dataset.arrange === arrangement());
+  $("tvSoundToggle").classList.toggle("on", sound.tv);
+  $("padSoundToggle").classList.toggle("on", sound.gamepad);
 }
 function updateWaiting() {
   const ready = videos.some((v) => shown(v) && v.gotPicture) || !$("menuPicture").classList.contains("hidden");
@@ -470,6 +489,8 @@ async function startAudio(rate) {
 }
 
 function onAudio(buffer, bytes) {
+  // Not holding the GamePad, only the TV's comes; holding it, both, unless muted.
+  if (screen === "gamepad" && !sound[bytes[1] === 1 ? "gamepad" : "tv"]) return;
   const rate = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
   const channels = bytes[6];
   if (!audio || audioRate !== rate) { startAudio(rate); return; }
@@ -710,7 +731,12 @@ function layoutTouch() {
   if (touchOn && portrait) {
     // The picture on top, the controls under it.
     let natural = 0;
-    for (const v of videos) if (shown(v)) natural += w * v.canvas.height / Math.max(1, v.canvas.width);
+    const stacked = screen === "gamepad" && view === "both" && arrangement() === "column";
+    for (const v of videos) {
+      if (!shown(v)) continue;
+      const height = w * v.canvas.height / Math.max(1, v.canvas.width);
+      natural = stacked ? natural + height : Math.max(natural, height / (screen === "gamepad" && view === "both" ? 2 : 1));
+    }
     const pictureHeight = Math.min(natural || w * 9 / 16, h * (natural > w ? 0.62 : 0.5));
     stage.style.bottom = (h - pictureHeight) + "px";
     menuPicture.style.height = pictureHeight + "px";
@@ -728,8 +754,9 @@ function layoutTouch() {
     el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = cw + "px"; el.style.height = ch + "px";
     el.style.fontSize = Math.max(12, Math.min(cw, ch) * 0.38) + "px";
   };
-  stage.classList.toggle("both-row", !portrait && screen === "gamepad" && view === "both");
-  stage.classList.toggle("both-column", portrait && screen === "gamepad" && view === "both");
+  const both = screen === "gamepad" && view === "both";
+  stage.classList.toggle("both-row", both && arrangement() === "row");
+  stage.classList.toggle("both-column", both && arrangement() === "column");
   for (const { c, el } of controlElements) place(el, portrait ? c.p : c.l, c.kind === "round");
   for (const stick of stickElements) {
     const r = portrait ? stick.s.p : stick.s.l;
@@ -874,6 +901,54 @@ const liftTouch = (event) => {
 stage.addEventListener("pointerup", liftTouch);
 stage.addEventListener("pointercancel", liftTouch);
 
+// --- How this device is held ----------------------------------------------
+
+// A phone holding the GamePad is the GamePad being tilted: its own sensors,
+// sent in the frame it was built in with which way up it is, for the host to
+// turn into a controller's. A controller's own gyro isn't something a page
+// can read.
+const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let lastMotion = null;
+let motionSentAt = 0;
+function displayTurn() {
+  // window.screen: `screen` here is which of the game's screens is ours.
+  const display = window.screen;
+  const angle = (display.orientation && typeof display.orientation.angle === "number") ? display.orientation.angle
+    : (typeof window.orientation === "number" ? window.orientation : 0);
+  switch (((angle % 360) + 360) % 360) {
+    case 90: return 2;   // turned anticlockwise: its top edge to the left
+    case 270: return 1;  // its top edge to the right
+    case 180: return 3;
+    default: return 0;
+  }
+}
+function onMotion(event) {
+  const r = event.rotationRate, a = event.accelerationIncludingGravity;
+  if (!r || !a || a.x === null || r.alpha === null) return;
+  const now = performance.now();
+  if (screen !== "gamepad" || now - motionSentAt < 15) return;
+  motionSentAt = now;
+  const rad = Math.PI / 180;
+  // Safari reports acceleration the other way round from everyone else:
+  // lying face up, -g on z.
+  const g = isApple ? -1 : 1;
+  const bytes = new Uint8Array(26);
+  const view = new DataView(bytes.buffer);
+  bytes[0] = 18;
+  bytes[1] = displayTurn();
+  [r.beta * rad, r.gamma * rad, r.alpha * rad, a.x * g, a.y * g, a.z * g]
+    .forEach((value, i) => view.setFloat32(2 + i * 4, value || 0, true));
+  send(bytes);
+}
+window.addEventListener("devicemotion", onMotion);
+function askForMotion() {
+  // Safari asks once, and only from a tap.
+  if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
+    DeviceMotionEvent.requestPermission().catch(() => {});
+  }
+}
+
 // --- Joining, the menu, and the rest ---------------------------------------
 
 let noticeTimer = 0;
@@ -899,6 +974,7 @@ $("joinForm").addEventListener("submit", (event) => {
   wantJoined = true;
   // Made inside the tap, which is the only time a browser lets a page start sound.
   startAudio(48000);
+  askForMotion();
   $("join").classList.add("hidden");
   $("play").classList.remove("hidden");
   autoTouch();
@@ -914,6 +990,21 @@ $("menuButton").addEventListener("click", openMenu);
 $("menu").addEventListener("click", (event) => { if (event.target === $("menu")) closeMenu(); });
 document.querySelector("#menu .guide").addEventListener("click", closeMenu);
 $("touchRow").addEventListener("click", () => setTouch(!touchOn, true));
+function arrangement() { return arrange || (window.innerHeight > window.innerWidth ? "column" : "row"); }
+for (const b of document.querySelectorAll("#arrangeChoices .choice")) {
+  b.addEventListener("click", () => {
+    arrange = b.dataset.arrange;
+    try { localStorage.setItem("dualscreen-arrange", arrange); } catch (e) {}
+    showScreens();
+  });
+}
+const toggleSound = (which) => {
+  sound[which] = !sound[which];
+  try { localStorage.setItem("dualscreen-sound", JSON.stringify(sound)); } catch (e) {}
+  showScreens();
+};
+$("tvSoundRow").addEventListener("click", () => toggleSound("tv"));
+$("padSoundRow").addEventListener("click", () => toggleSound("gamepad"));
 for (const b of document.querySelectorAll("#viewChoices .choice")) {
   b.addEventListener("click", () => {
     if (view === b.dataset.view) return;

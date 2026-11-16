@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "input/ds_input.hpp"
 #include "input/raw_pad_state.hpp"
 #include "layout/screen_id.hpp"
 #include "net/transport.hpp"
@@ -63,6 +64,11 @@ enum class WebMessage : uint8_t {
     // Browser to server.
     Pads = 16,  // count, then per pad: index, buttons u32 (SDL bits), 6 axes s16 (SDL order)
     Touch = 17,  // down u8, x u16, y u16: where on the picture, 0 to 65535 across and down
+    // How the device is held, from a phone's own sensors: its turn (0 upright,
+    // 1 top to the right, 2 top to the left, 3 upside down), then rotation in
+    // rad/s and acceleration in m/s^2, x y z each, f32, in the frame the phone
+    // was built in, lying face up reading +g on z.
+    Motion = 18,
 };
 
 // What a browser holding the GamePad asked to see: the GamePad's screen, the
@@ -106,6 +112,9 @@ struct WebViewer {
     bool touching = false;
     uint16_t touch_x = 0;
     uint16_t touch_y = 0;
+    // The device's own motion, as a controller reports it -- for the GamePad
+    // while they hold it. Not present when none has come lately.
+    DsMotionState motion;
 };
 
 class WebPlayServer {
@@ -149,6 +158,9 @@ public:
     void set_viewer_screen(uint32_t viewer, ScreenId screen);
     // Whether anyone is watching this screen.
     bool screen_watched(ScreenId screen) const;
+    // Whether anyone is listening to it: the GamePad's sound goes to whoever
+    // holds it even while they look at the TV.
+    bool screen_heard(ScreenId screen) const;
     // Whether someone is waiting on a keyframe of it -- just joined, just
     // switched to it, or fell behind and had frames dropped. Cleared by asking.
     bool take_keyframe_request(ScreenId screen);

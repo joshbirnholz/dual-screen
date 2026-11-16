@@ -140,6 +140,7 @@ void WebPlayHost::stop() {
     viewers_.clear();
     pads_.clear();
     watched_[0] = watched_[1] = false;
+    heard_[0] = heard_[1] = false;
     ++roster_serial_;
     running_ = false;
 }
@@ -250,6 +251,11 @@ void WebPlayHost::send_text(uint32_t viewer, const std::string& json) {
     command.text = json;
     std::lock_guard<std::mutex> lock(mutex_);
     commands_.push_back(std::move(command));
+}
+
+bool WebPlayHost::screen_heard(ScreenId screen) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return heard_[index_of(screen)];
 }
 
 std::string WebPlayHost::backend(ScreenId screen) const {
@@ -369,6 +375,8 @@ void WebPlayHost::run() {
             roster_serial_ = server_.roster_serial();
             watched_[0] = server_.screen_watched(ScreenId::Top);
             watched_[1] = server_.screen_watched(ScreenId::Bottom);
+            heard_[0] = server_.screen_heard(ScreenId::Top);
+            heard_[1] = server_.screen_heard(ScreenId::Bottom);
         }
     }
 }
