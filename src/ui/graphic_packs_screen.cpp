@@ -806,7 +806,11 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                          "Some changes will take effect when the game is restarted.", theme.text_dim);
     }
     guide_hits_.clear();
-    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
+    // OK and Back on every row, as on every list: a row with nothing to
+    // open just does nothing on A.
+    draw_page_guide(quads, text, glyphs, frame,
+                    {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen},
+                     {ButtonGlyph::A, "OK", PromptRole::ActsOnSelection}},
                     &guide_hits_);
     // A preset's choices, over its row wherever that is drawn now.
     if (choice_.is_open()) {
